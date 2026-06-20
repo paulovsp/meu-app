@@ -20,7 +20,12 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ],
+      "package": "com.paulovsp.meuapp"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -28,6 +33,11 @@
     "plugins": [
       "expo-sqlite",
       "expo-audio"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "d716169f-7f0f-411b-8b58-4bff10d26953"
+      }
+    }
   }
 }

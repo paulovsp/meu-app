@@ -2,7 +2,7 @@
 import { useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  StatusBar, Image, Dimensions,
+  StatusBar, Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -26,9 +26,9 @@ const COLORS = {
 };
 
 const BUTTONS = [
-  { id: 'session',  icon: '🎙️', label: 'Nova Sessão',  desc: 'Gravar e transcrever',           screen: 'NewSession' },
-  { id: 'record',   icon: '📋', label: 'Novo Registro', desc: 'Importar, digitar ou fotografar', screen: 'AddRecord'  },
-  { id: 'patients', icon: '👤', label: 'Analisantes',   desc: 'Gerenciar e consultar',           screen: 'Patients'   },
+  { id: 'session',  icon: '🎙️', label: 'Nova Sessão',     desc: 'Gravar e transcrever',           screen: 'NewSession' },
+  { id: 'record',   icon: '📋', label: 'Novo Registro',    desc: 'Importar, digitar ou fotografar', screen: 'AddRecord'  },
+  { id: 'patients', icon: '👤', label: 'Analisantes',      desc: 'Gerenciar e consultar',           screen: 'Patients'   },
   { id: 'search',   icon: '🔍', label: 'Buscador Dr.Sig',  desc: 'Pesquisa clínica inteligente',    screen: 'Search'     },
 ];
 
@@ -79,6 +79,16 @@ function DividerWave() {
   );
 }
 
+// Avatar substituto enquanto a imagem não está disponível
+function FreudAvatar() {
+  return (
+    <View style={s.freudAvatarInner}>
+      <Text style={s.freudAvatarInitials}>FS</Text>
+      <Text style={s.freudAvatarSub}>1856–1939</Text>
+    </View>
+  );
+}
+
 export default function HomeScreen({ navigation }) {
   const [sessoesHoje, setSessoesHoje] = useState(0);
 
@@ -117,12 +127,9 @@ export default function HomeScreen({ navigation }) {
             </View>
           </View>
 
+          {/* ── AVATAR substituto (sem imagem) ── */}
           <View style={s.freudWrap}>
-            <Image
-              source={require('../assets/freud.png')}
-              style={s.freudImage}
-              resizeMode="cover"
-            />
+            <FreudAvatar />
           </View>
         </View>
         <View style={s.dividerWave}><DividerWave /></View>
@@ -157,12 +164,12 @@ const s = StyleSheet.create({
   dividerWave: { position: 'absolute', bottom: 0, left: 0, right: 0 },
   identity:    { flex: 1, paddingRight: FREUD_SIZE * 0.55, justifyContent: 'flex-start' },
 
-  // ── Dr.Sig — dourado suave, quente, elegante sobre o azul ──
+  // ── Dr.Sig ──
   appName: {
     fontSize: 40,
     fontWeight: '700',
     fontStyle: 'italic',
-    color: '#8B5E3C',              // ← dourado acetinado, harmoniza com o azul
+    color: '#8B5E3C',
     letterSpacing: 1.5,
     lineHeight: 48,
     textShadowColor: 'rgba(0,0,0,0.40)',
@@ -170,11 +177,11 @@ const s = StyleSheet.create({
     textShadowRadius: 8,
   },
 
-  // ── Subtítulo — champagne discreto, duas linhas ──
+  // ── Subtítulo ──
   appSub: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#A8734A',              // ← champagne claro, levemente mais claro que o título
+    color: '#A8734A',
     letterSpacing: 2.2,
     textTransform: 'uppercase',
     lineHeight: 18,
@@ -195,16 +202,38 @@ const s = StyleSheet.create({
   sessionText:       { fontSize: 11, color: 'rgba(255,255,255,0.85)', fontWeight: '500' },
   sessionTextActive: { color: '#FFFFFF', fontWeight: '700' },
 
+  // ── Avatar (substituto da foto) ──
   freudWrap: {
     position: 'absolute', right: 0, top: 10,
     width: FREUD_SIZE, height: FREUD_SIZE + FREUD_OVERFLOW,
     borderRadius: FREUD_SIZE / 2, overflow: 'hidden',
     borderWidth: 2.5, borderColor: 'rgba(255,255,255,0.30)',
-    backgroundColor: COLORS.accentGhost,
+    backgroundColor: COLORS.accentMid,
     shadowColor: COLORS.accent, shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.28, shadowRadius: 14, elevation: 12, zIndex: 10,
   },
-  freudImage: { width: FREUD_SIZE, height: FREUD_SIZE + FREUD_OVERFLOW },
+  freudAvatarInner: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  freudAvatarInitials: {
+    fontSize: 34,
+    fontWeight: '700',
+    fontStyle: 'italic',
+    color: '#FFFFFF',
+    letterSpacing: 2,
+    textShadowColor: 'rgba(0,0,0,0.30)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 6,
+  },
+  freudAvatarSub: {
+    fontSize: 9,
+    color: 'rgba(255,255,255,0.70)',
+    fontWeight: '500',
+    letterSpacing: 1,
+  },
 
   grid: {
     flex: 1, flexDirection: 'row', flexWrap: 'wrap',

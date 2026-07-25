@@ -1,4 +1,10 @@
 import * as SQLite from 'expo-sqlite';
+import {
+  pseudonimizar, reverterPseudonimizacao, segmentarRegistro, montarPromptAnalise,
+  chamarGroqEstruturado, validarEvidencia, detectarTransicoes, evidenciasParaManter,
+} from './nucleos';
+import { carregarRubricaAtiva } from './rubricas';
+import { analisarTextoObjetivo } from './perfilObjetivo';
 
 const db = SQLite.openDatabaseSync('psicanalise.db');
 
@@ -1018,4 +1024,245 @@ export function setConsentimentoPerfil(patientId, concedido) {
     'UPDATE patients SET consentimento_perfil = ?, consentimento_perfil_em = ? WHERE id = ?',
     [concedido ? 1 : 0, concedido ? new Date().toISOString() : null, patientId]
   );
+}
+
+function gerarId() {
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+}
+
+// ── EVIDÊNCIAS · NÚCLEOS PSÍQUICOS ─────────────────────
+export function getEvidenciasNucleos(patientId, { apenasValidadas = false } = {}) {
+  const sql = apenasValidadas
+    ? 'SELECT * FROM nucleos_evidencias WHERE patient_id = ? AND status_validacao = ? ORDER BY data_sessao, posicao_inicio'
+    : 'SELECT * FROM nucleos_evidencias WHERE patient_id = ? ORDER BY data_sessao, posicao_inicio';
+  const params = apenasValidadas ? [patientId, 'confirmada'] : [patientId];
+  return db.getAllSync(sql, params);
+}
+
+export function getEvidenciasNucleosDoRegistro(registroId, origemTipo) {
+  return db.getAllSync(
+    'SELECT * FROM nucleos_evidencias WHERE registro_id = ? AND origem_tipo = ? ORDER BY posicao_inicio',
+    [registroId, origemTipo]
+  );
+}
+
+function inserirEvidenciaNucleo(patientId, registroId, origemTipo, tipoRegistro, dataSessao, rubricaVersao, evidencia) {
+  const id = gerarId();
+  db.runSync(
+    `INSERT INTO nucleos_evidencias (
+      id, patient_id, registro_id, origem_tipo, tipo_registro, data_sessao,
+      trecho_literal, posicao_inicio, posicao_fim, nucleo, indicador, via,
+      intensidade, confianca, justificativa, diferenciais_considerados,
+      fonte, status_validacao, rubrica_versao, criado_em
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ia', 'pendente', ?, ?)`,
+    [
+      id, patientId, registroId, origemTipo, tipoRegistro, dataSessao || null,
+      evidencia.trecho_literal, evidencia.posicao_inicio, evidencia.posicao_fim,
+      evidencia.nucleo, evidencia.indicador, evidencia.via,
+      evidencia.intensidade, evidencia.confianca, evidencia.justificativa,
+      evidencia.diferenciais_considerados, rubricaVersao, new Date().toISOString(),
+    ]
+  );
+  return { ...evidencia, id, patient_id: patientId, registro_id: registroId };
+}
+
+export function validarStatusEvidenciaNucleo(id, statusValidacao, validadoPor = 'terapeuta') {
+  db.runSync(
+    'UPDATE nucleos_evidencias SET status_validacao = ?, validado_por = ?, validado_em = ? WHERE id = ?',
+    [statusValidacao, validadoPor, new Date().toISOString(), id]
+  );
+}
+
+export function reclassificarEvidenciaNucleo(id, novoNucleo, novoIndicador) {
+  db.runSync(
+    `UPDATE nucleos_evidencias SET
+      nucleo = ?, indicador = ?, status_validacao = 'reclassificada',
+      validado_por = 'terapeuta', validado_em = ? WHERE id = ?`,
+    [novoNucleo, novoIndicador || null, new Date().toISOString(), id]
+  );
+}
+
+// ── TRANSIÇÕES · NÚCLEOS PSÍQUICOS ─────────────────────
+export function getTransicoesNucleos(patientId) {
+  return db.getAllSync(
+    'SELECT * FROM nucleos_transicoes WHERE patient_id = ? ORDER BY criado_em',
+    [patientId]
+  );
+}
+
+function inserirTransicaoNucleo(patientId, registroId, transicao) {
+  const id = gerarId();
+  db.runSync(
+    `INSERT INTO nucleos_transicoes (
+      id, patient_id, registro_id, de_nucleo, para_nucleo,
+      evidencia_origem_id, evidencia_destino_id, gatilho_trecho, gatilho_tipo,
+      asa_mediadora, diagonal_direta, status_validacao, criado_em
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pendente', ?)`,
+    [
+      id, patientId, registroId, transicao.de_nucleo, transicao.para_nucleo,
+      transicao.evidencia_origem_id, transicao.evidencia_destino_id,
+      transicao.gatilho_trecho, transicao.gatilho_tipo, transicao.asa_mediadora,
+      transicao.diagonal_direta ? 1 : 0, new Date().toISOString(),
+    ]
+  );
+}
+
+/**
+ * Roda o motor de análise dos núcleos psíquicos sobre um registro (sessão
+ * ou registro escrito) de um analisante que já deu consentimento. Idempotente:
+ * evidências já validadas pelo terapeuta são preservadas; só as pendentes de
+ * uma análise anterior são substituídas.
+ */
+export async function analisarRegistroNucleos(paciente, registro) {
+  const consentimento = getConsentimentoPerfil(paciente.id);
+  if (!consentimento.concedido) {
+    throw new Error('Este analisante ainda não deu consentimento para o Perfil Psicossomático.');
+  }
+
+  const conteudoOriginal = registro.conteudo || '';
+  const rubrica = carregarRubricaAtiva();
+  const conteudoPseudonimizado = pseudonimizar(conteudoOriginal, paciente);
+  const unidades = segmentarRegistro({ tipoRegistro: registro.tipoRegistro, conteudo: conteudoPseudonimizado });
+
+  if (unidades.length === 0) {
+    return { evidencias: [], transicoes: [] };
+  }
+
+  const { promptSistema, promptUsuario } = montarPromptAnalise(unidades, rubrica);
+  const resposta = await chamarGroqEstruturado(promptSistema, promptUsuario);
+  const evidenciasBrutas = Array.isArray(resposta?.evidencias) ? resposta.evidencias : [];
+
+  const evidenciasValidadas = evidenciasBrutas
+    .map((bruta) => {
+      const trechoRevertido = reverterPseudonimizacao(bruta.trecho_literal || '', paciente);
+      return validarEvidencia({ ...bruta, trecho_literal: trechoRevertido }, conteudoOriginal);
+    })
+    .filter(Boolean);
+
+  // Idempotência: mantém evidências já validadas, remove só as pendentes.
+  const existentes = getEvidenciasNucleosDoRegistro(registro.id, registro.origemTipo);
+  const mantidas = evidenciasParaManter(existentes);
+  db.runSync(
+    "DELETE FROM nucleos_evidencias WHERE registro_id = ? AND origem_tipo = ? AND status_validacao = 'pendente'",
+    [registro.id, registro.origemTipo]
+  );
+
+  const inseridas = evidenciasValidadas.map((ev) =>
+    inserirEvidenciaNucleo(
+      paciente.id, registro.id, registro.origemTipo, registro.tipoRegistro,
+      registro.data || null, rubrica.versao, ev
+    )
+  );
+
+  // Transições: sequência ordenada por posição, combinando evidências
+  // mantidas (já validadas) com as recém-inseridas deste registro.
+  const todasDoRegistro = [...mantidas, ...inseridas].sort(
+    (a, b) => (a.posicao_inicio ?? 0) - (b.posicao_inicio ?? 0)
+  );
+  const transicoes = detectarTransicoes(todasDoRegistro, rubrica);
+
+  db.runSync(
+    "DELETE FROM nucleos_transicoes WHERE registro_id = ? AND status_validacao = 'pendente'",
+    [registro.id]
+  );
+  transicoes.forEach((t) => inserirTransicaoNucleo(paciente.id, registro.id, t));
+
+  return { evidencias: inseridas, transicoes };
+}
+
+// ── EVIDÊNCIAS · PERFIL OBJETIVO (sono/alimentação/movimento/medicina) ─
+export function getEvidenciasObjetivo(patientId) {
+  return db.getAllSync(
+    'SELECT * FROM objetivo_evidencias WHERE patient_id = ? ORDER BY categoria, data_registro',
+    [patientId]
+  );
+}
+
+export function getEvidenciasObjetivoDoRegistro(registroId, origemTipo) {
+  return db.getAllSync(
+    'SELECT * FROM objetivo_evidencias WHERE registro_id = ? AND origem_tipo = ?',
+    [registroId, origemTipo]
+  );
+}
+
+function inserirEvidenciaObjetivo(patientId, registroId, origemTipo, tipoRegistro, dataRegistro, item) {
+  const id = gerarId();
+  db.runSync(
+    `INSERT INTO objetivo_evidencias (
+      id, patient_id, registro_id, origem_tipo, tipo_registro, categoria,
+      trecho_literal, data_registro, status_validacao, criado_em
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendente', ?)`,
+    [
+      id, patientId, registroId, origemTipo, tipoRegistro, item.categoria,
+      item.trecho_literal, dataRegistro || null, new Date().toISOString(),
+    ]
+  );
+  return { ...item, id, patient_id: patientId, registro_id: registroId };
+}
+
+export function validarStatusEvidenciaObjetivo(id, statusValidacao) {
+  db.runSync('UPDATE objetivo_evidencias SET status_validacao = ? WHERE id = ?', [statusValidacao, id]);
+}
+
+/**
+ * Roda o motor do Perfil Objetivo sobre um registro. Idempotente: só
+ * processa registros que ainda não têm nenhum item gravado.
+ */
+export async function analisarRegistroObjetivo(paciente, registro) {
+  const consentimento = getConsentimentoPerfil(paciente.id);
+  if (!consentimento.concedido) {
+    throw new Error('Este analisante ainda não deu consentimento para o Perfil Psicossomático.');
+  }
+
+  const conteudoOriginal = registro.conteudo || '';
+  if (!conteudoOriginal.trim()) return [];
+
+  const itensValidados = await analisarTextoObjetivo(conteudoOriginal, paciente);
+
+  return itensValidados.map((item) =>
+    inserirEvidenciaObjetivo(
+      paciente.id, registro.id, registro.origemTipo, registro.tipoRegistro,
+      registro.data || null, item
+    )
+  );
+}
+
+/**
+ * Lista os registros (sessões + registros escritos) de um analisante ainda
+ * não processados por um dos motores (núcleos ou objetivo), no formato
+ * comum usado pelos orquestradores acima ({ id, origemTipo, tipoRegistro,
+ * conteudo, data }).
+ */
+export function getRegistrosNaoAnalisados(patientId, motor) {
+  const sessoes = getSessions(patientId).filter((s) => (s.transcript || '').trim());
+  const registros = getRecords(patientId).filter((r) => (r.content || '').trim());
+
+  const jaTemEvidencia = (registroId, origemTipo) => {
+    const existentes = motor === 'nucleos'
+      ? getEvidenciasNucleosDoRegistro(registroId, origemTipo)
+      : getEvidenciasObjetivoDoRegistro(registroId, origemTipo);
+    return existentes.length > 0;
+  };
+
+  const doSessoes = sessoes
+    .filter((s) => !jaTemEvidencia(s.id, 'session'))
+    .map((s) => ({
+      id: s.id,
+      origemTipo: 'session',
+      tipoRegistro: 'transcricao',
+      conteudo: s.transcript,
+      data: s.date,
+    }));
+
+  const doRegistros = registros
+    .filter((r) => !jaTemEvidencia(r.id, 'record'))
+    .map((r) => ({
+      id: r.id,
+      origemTipo: 'record',
+      tipoRegistro: r.type === 'sessao' ? 'anotacao_sessao' : r.type === 'estudo' ? 'estudo_caso' : 'outro',
+      conteudo: r.content,
+      data: r.date,
+    }));
+
+  return [...doSessoes, ...doRegistros];
 }

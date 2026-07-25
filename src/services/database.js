@@ -1,7 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 import {
   pseudonimizar, reverterPseudonimizacao, segmentarRegistro, montarPromptAnalise,
-  chamarGroqEstruturado, validarEvidencia, detectarTransicoes, evidenciasParaManter,
+  chamarIAEstruturada, validarEvidencia, detectarTransicoes, evidenciasParaManter,
 } from './nucleos';
 import { carregarRubricaAtiva } from './rubricas';
 import { analisarTextoObjetivo } from './perfilObjetivo';
@@ -1141,7 +1141,7 @@ export async function analisarRegistroNucleos(paciente, registro) {
   }
 
   const { promptSistema, promptUsuario } = montarPromptAnalise(unidades, rubrica);
-  const resposta = await chamarGroqEstruturado(promptSistema, promptUsuario);
+  const resposta = await chamarIAEstruturada(promptSistema, promptUsuario);
   const evidenciasBrutas = Array.isArray(resposta?.evidencias) ? resposta.evidencias : [];
 
   const evidenciasValidadas = evidenciasBrutas

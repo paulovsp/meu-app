@@ -5,15 +5,21 @@
 // terapeuta confirma/rejeita/reclassifica.
 //
 // Funções puras (sem tocar rede/banco) ficam testáveis isoladamente.
-// Só `chamarGroqEstruturado` faz rede; nenhuma função aqui importa
+// Só `chamarIAEstruturada` faz rede; nenhuma função aqui importa
 // `database.js` no topo do arquivo — expo-sqlite não roda em Jest, então
 // qualquer import direto travaria os testes deste módulo.
+//
+// Provedor de IA para análise de texto (núcleos/objetivo/busca): DeepSeek,
+// não Groq — a Groq fica só com a transcrição de áudio (NovaSessaoScreen),
+// que é um limite de taxa completamente separado. Migrado porque o tier
+// gratuito da Groq para llama-3.3-70b (12K tokens/minuto) não aguenta o
+// volume dos prompts de análise, que embutem as rubricas completas.
 
 import { getRubricaSemente, nucleoDiagonalDe } from './rubricas';
 
-const GROQ_API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY || '';
-const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_MODEL = 'llama-3.3-70b-versatile';
+const DEEPSEEK_API_KEY = process.env.EXPO_PUBLIC_DEEPSEEK_API_KEY || '';
+const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions';
+const DEEPSEEK_MODEL = 'deepseek-v4-flash';
 
 const TOKEN_PACIENTE = '[ANALISANTE]';
 const NUCLEOS_VALIDOS = ['bem', 'mal', 'mau', 'bom', 'eu_nuclear'];
@@ -154,27 +160,27 @@ export function montarPromptAnalise(unidades, rubrica = getRubricaSemente()) {
   return { promptSistema, promptUsuario };
 }
 
-// ─── Chamada à IA (Groq) ────────────────────────────────────────────────
-// A Groq limita tokens por minuto (TPM) — com prompts grandes (rubricas
-// completas) e vários registros analisados em sequência, é fácil bater no
-// limite. A própria resposta 429 da Groq diz quanto tempo esperar ("Please
-// try again in 4.4s"); em vez de falhar de cara, esperamos esse tempo e
-// tentamos 1x de novo antes de desistir.
+// ─── Chamada à IA (DeepSeek) ────────────────────────────────────────────
+// Provedores de LLM costumam limitar tokens por minuto (TPM) — com prompts
+// grandes (rubricas completas) e vários registros analisados em sequência,
+// é fácil bater no limite. Quando a resposta 429 diz quanto tempo esperar
+// ("Please try again in 4.4s"), em vez de falhar de cara, esperamos esse
+// tempo e tentamos 1x de novo antes de desistir.
 function extrairEsperaRetryMs(corpoErro) {
   const match = /try again in ([\d.]+)s/i.exec(corpoErro || '');
   if (!match) return null;
   return Math.ceil(parseFloat(match[1]) * 1000) + 500;
 }
 
-async function requisicaoGroq(promptSistema, promptUsuario) {
-  return fetch(GROQ_URL, {
+async function requisicaoIA(promptSistema, promptUsuario) {
+  return fetch(DEEPSEEK_URL, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${GROQ_API_KEY}`,
+      Authorization: `Bearer ${DEEPSEEK_API_KEY}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: GROQ_MODEL,
+      model: DEEPSEEK_MODEL,
       temperature: 0,
       response_format: { type: 'json_object' },
       messages: [
@@ -185,29 +191,29 @@ async function requisicaoGroq(promptSistema, promptUsuario) {
   });
 }
 
-/** Chamada genérica à Groq com retentativa automática em caso de rate limit (429). */
-export async function chamarGroqJson(promptSistema, promptUsuario) {
-  if (!GROQ_API_KEY) {
-    throw new Error('Chave do Groq não configurada.\n\nDefina EXPO_PUBLIC_GROQ_API_KEY no .env.');
+/** Chamada genérica de análise estruturada à IA, com retentativa automática em caso de rate limit (429). */
+export async function chamarIAJson(promptSistema, promptUsuario) {
+  if (!DEEPSEEK_API_KEY) {
+    throw new Error('Chave do DeepSeek não configurada.\n\nDefina EXPO_PUBLIC_DEEPSEEK_API_KEY no .env.');
   }
 
-  let resp = await requisicaoGroq(promptSistema, promptUsuario);
+  let resp = await requisicaoIA(promptSistema, promptUsuario);
 
   if (resp.status === 429) {
     const raw = await resp.text().catch(() => '');
     const esperaMs = extrairEsperaRetryMs(raw);
     if (esperaMs && esperaMs < 30000) {
       await new Promise((resolve) => setTimeout(resolve, esperaMs));
-      resp = await requisicaoGroq(promptSistema, promptUsuario);
+      resp = await requisicaoIA(promptSistema, promptUsuario);
     }
   }
 
   if (!resp.ok) {
     if (resp.status === 429) {
-      throw new Error('Limite de uso da Groq atingido no momento. Aguarde cerca de 1 minuto e tente novamente.');
+      throw new Error('Limite de uso da IA atingido no momento. Aguarde cerca de 1 minuto e tente novamente.');
     }
     const raw = await resp.text().catch(() => '');
-    throw new Error(`Groq erro (${resp.status}): ${raw}`);
+    throw new Error(`Erro da IA (${resp.status}): ${raw}`);
   }
 
   const data = await resp.json();
@@ -219,8 +225,8 @@ export async function chamarGroqJson(promptSistema, promptUsuario) {
   }
 }
 
-export async function chamarGroqEstruturado(promptSistema, promptUsuario) {
-  return chamarGroqJson(promptSistema, promptUsuario);
+export async function chamarIAEstruturada(promptSistema, promptUsuario) {
+  return chamarIAJson(promptSistema, promptUsuario);
 }
 
 // ─── Validação de evidência ─────────────────────────────────────────────

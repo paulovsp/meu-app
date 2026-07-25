@@ -6,9 +6,12 @@ import {
 } from 'react-native';
 import { getRecords, getSessions, listarPacientes } from '../services/database';
 
-const GROQ_API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY || '';
-const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const MODEL = 'llama-3.3-70b-versatile';
+// Busca/chat usa DeepSeek (não Groq) — mesmo motivo da análise de núcleos:
+// o tier gratuito da Groq para modelos de texto tem TPM baixo demais pro
+// volume real de uso. A Groq fica só com a transcrição de áudio.
+const DEEPSEEK_API_KEY = process.env.EXPO_PUBLIC_DEEPSEEK_API_KEY || '';
+const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions';
+const MODEL = 'deepseek-v4-flash';
 
 function buildContext() {
   try {
@@ -57,7 +60,7 @@ function buildContext() {
   }
 }
 
-export default function SearchScreen() {
+export default function BuscaScreen() {
   const [messages, setMessages] = useState([
     {
       id: '0',
@@ -89,11 +92,11 @@ export default function SearchScreen() {
         .filter(m => m.id !== '0')
         .map(m => ({ role: m.role, content: m.text }));
 
-      const response = await fetch(GROQ_URL, {
+      const response = await fetch(DEEPSEEK_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${GROQ_API_KEY}`,
+          'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
         },
         body: JSON.stringify({
           model: MODEL,
@@ -117,7 +120,7 @@ ${contexto}`,
 
       if (!response.ok) {
         const err = await response.json();
-        throw new Error(err.error?.message || 'Erro na API Groq');
+        throw new Error(err.error?.message || 'Erro na API do DeepSeek');
       }
 
       const data = await response.json();

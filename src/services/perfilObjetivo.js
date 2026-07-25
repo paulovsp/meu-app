@@ -5,7 +5,7 @@
 // pseudonimização antes da IA, e trecho literal verificado contra o texto
 // de origem antes de aceitar qualquer item.
 
-import { pseudonimizar, reverterPseudonimizacao, chamarGroqJson } from './nucleos';
+import { pseudonimizar, reverterPseudonimizacao, chamarIAJson } from './nucleos';
 
 export const CATEGORIAS_OBJETIVO = [
   { chave: 'sono', label: 'Sono', icon: 'moon-outline' },
@@ -31,8 +31,8 @@ export function montarPromptObjetivo(textoRegistro) {
   return { promptSistema, promptUsuario: textoRegistro };
 }
 
-export async function chamarGroqObjetivo(promptSistema, promptUsuario) {
-  return chamarGroqJson(promptSistema, promptUsuario);
+export async function chamarIAObjetivo(promptSistema, promptUsuario) {
+  return chamarIAJson(promptSistema, promptUsuario);
 }
 
 /** Aceita o item só se o trecho citado existir literalmente no texto de origem. */
@@ -49,7 +49,7 @@ export function validarItemObjetivo(itemBruto, textoOriginal) {
 export async function analisarTextoObjetivo(conteudoOriginal, paciente) {
   const conteudoPseudonimizado = pseudonimizar(conteudoOriginal, paciente);
   const { promptSistema, promptUsuario } = montarPromptObjetivo(conteudoPseudonimizado);
-  const resposta = await chamarGroqObjetivo(promptSistema, promptUsuario);
+  const resposta = await chamarIAObjetivo(promptSistema, promptUsuario);
   const itensBrutos = Array.isArray(resposta?.itens) ? resposta.itens : [];
 
   return itensBrutos

@@ -155,11 +155,19 @@ export function montarPromptAnalise(unidades, rubrica = getRubricaSemente()) {
 }
 
 // ─── Chamada à IA (Groq) ────────────────────────────────────────────────
-export async function chamarGroqEstruturado(promptSistema, promptUsuario) {
-  if (!GROQ_API_KEY) {
-    throw new Error('Chave do Groq não configurada.\n\nDefina EXPO_PUBLIC_GROQ_API_KEY no .env.');
-  }
-  const resp = await fetch(GROQ_URL, {
+// A Groq limita tokens por minuto (TPM) — com prompts grandes (rubricas
+// completas) e vários registros analisados em sequência, é fácil bater no
+// limite. A própria resposta 429 da Groq diz quanto tempo esperar ("Please
+// try again in 4.4s"); em vez de falhar de cara, esperamos esse tempo e
+// tentamos 1x de novo antes de desistir.
+function extrairEsperaRetryMs(corpoErro) {
+  const match = /try again in ([\d.]+)s/i.exec(corpoErro || '');
+  if (!match) return null;
+  return Math.ceil(parseFloat(match[1]) * 1000) + 500;
+}
+
+async function requisicaoGroq(promptSistema, promptUsuario) {
+  return fetch(GROQ_URL, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${GROQ_API_KEY}`,
@@ -175,8 +183,29 @@ export async function chamarGroqEstruturado(promptSistema, promptUsuario) {
       ],
     }),
   });
+}
+
+/** Chamada genérica à Groq com retentativa automática em caso de rate limit (429). */
+export async function chamarGroqJson(promptSistema, promptUsuario) {
+  if (!GROQ_API_KEY) {
+    throw new Error('Chave do Groq não configurada.\n\nDefina EXPO_PUBLIC_GROQ_API_KEY no .env.');
+  }
+
+  let resp = await requisicaoGroq(promptSistema, promptUsuario);
+
+  if (resp.status === 429) {
+    const raw = await resp.text().catch(() => '');
+    const esperaMs = extrairEsperaRetryMs(raw);
+    if (esperaMs && esperaMs < 30000) {
+      await new Promise((resolve) => setTimeout(resolve, esperaMs));
+      resp = await requisicaoGroq(promptSistema, promptUsuario);
+    }
+  }
 
   if (!resp.ok) {
+    if (resp.status === 429) {
+      throw new Error('Limite de uso da Groq atingido no momento. Aguarde cerca de 1 minuto e tente novamente.');
+    }
     const raw = await resp.text().catch(() => '');
     throw new Error(`Groq erro (${resp.status}): ${raw}`);
   }
@@ -188,6 +217,10 @@ export async function chamarGroqEstruturado(promptSistema, promptUsuario) {
   } catch {
     throw new Error('Resposta da IA não é um JSON válido.');
   }
+}
+
+export async function chamarGroqEstruturado(promptSistema, promptUsuario) {
+  return chamarGroqJson(promptSistema, promptUsuario);
 }
 
 // ─── Validação de evidência ─────────────────────────────────────────────

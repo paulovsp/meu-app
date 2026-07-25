@@ -106,6 +106,12 @@ export default function PerfilPsicossomaticoScreen() {
         } else {
           await analisarRegistroNucleos(paciente, registros[i]);
         }
+        // Pausa entre chamadas: os prompts embutem as rubricas completas e a
+        // Groq limita tokens por minuto — analisar vários registros seguidos
+        // sem pausa estoura o limite rapidamente.
+        if (i < registros.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+        }
       }
       carregar();
     } catch (e) {

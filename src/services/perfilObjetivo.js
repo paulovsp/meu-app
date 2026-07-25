@@ -5,11 +5,7 @@
 // pseudonimização antes da IA, e trecho literal verificado contra o texto
 // de origem antes de aceitar qualquer item.
 
-import { pseudonimizar, reverterPseudonimizacao } from './nucleos';
-
-const GROQ_API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY || '';
-const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_MODEL = 'llama-3.3-70b-versatile';
+import { pseudonimizar, reverterPseudonimizacao, chamarGroqJson } from './nucleos';
 
 export const CATEGORIAS_OBJETIVO = [
   { chave: 'sono', label: 'Sono', icon: 'moon-outline' },
@@ -36,38 +32,7 @@ export function montarPromptObjetivo(textoRegistro) {
 }
 
 export async function chamarGroqObjetivo(promptSistema, promptUsuario) {
-  if (!GROQ_API_KEY) {
-    throw new Error('Chave do Groq não configurada.\n\nDefina EXPO_PUBLIC_GROQ_API_KEY no .env.');
-  }
-  const resp = await fetch(GROQ_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${GROQ_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: GROQ_MODEL,
-      temperature: 0,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: promptSistema },
-        { role: 'user', content: promptUsuario },
-      ],
-    }),
-  });
-
-  if (!resp.ok) {
-    const raw = await resp.text().catch(() => '');
-    throw new Error(`Groq erro (${resp.status}): ${raw}`);
-  }
-
-  const data = await resp.json();
-  const conteudo = data?.choices?.[0]?.message?.content || '{}';
-  try {
-    return JSON.parse(conteudo);
-  } catch {
-    throw new Error('Resposta da IA não é um JSON válido.');
-  }
+  return chamarGroqJson(promptSistema, promptUsuario);
 }
 
 /** Aceita o item só se o trecho citado existir literalmente no texto de origem. */

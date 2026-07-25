@@ -5,6 +5,10 @@ import {
 } from './nucleos';
 import { carregarRubricaAtiva } from './rubricas';
 import { analisarTextoObjetivo } from './perfilObjetivo';
+import {
+  calcularDensidadePorNucleo, calcularDefesasPorAsa, calcularIndiceRetorno,
+  calcularMobilidade, rankearGatilhos, detectarAusencias,
+} from './metricas';
 
 const db = SQLite.openDatabaseSync('psicanalise.db');
 
@@ -1265,4 +1269,104 @@ export function getRegistrosNaoAnalisados(patientId, motor) {
     }));
 
   return [...doSessoes, ...doRegistros];
+}
+
+// ── SNAPSHOTS · NÚCLEOS PSÍQUICOS ──────────────────────
+export function getSnapshots(patientId) {
+  return db.getAllSync(
+    'SELECT * FROM nucleos_snapshots WHERE patient_id = ? ORDER BY criado_em',
+    [patientId]
+  ).map((row) => ({ ...row, metricas: JSON.parse(row.metricas) }));
+}
+
+/**
+ * Calcula todas as métricas atuais do analisante e grava como um novo
+ * snapshot (instantâneo). Nesta fase é sempre manual — o gatilho
+ * automático a cada N sessões fica pra depois.
+ */
+export function criarSnapshot(patientId) {
+  const evidencias = getEvidenciasNucleos(patientId, { apenasValidadas: false });
+  const transicoes = getTransicoesNucleos(patientId);
+  const sessoes = getSessions(patientId);
+
+  const metricas = {
+    densidade: calcularDensidadePorNucleo(evidencias),
+    asas: calcularDefesasPorAsa(transicoes),
+    indiceRetorno: calcularIndiceRetorno(transicoes),
+    mobilidade: calcularMobilidade(transicoes.length, sessoes.length),
+    gatilhos: rankearGatilhos(transicoes).slice(0, 10),
+    totalEvidencias: evidencias.length,
+    totalIndizíveis: evidencias.filter((e) => e.nucleo === 'eu_nuclear').length,
+  };
+
+  db.runSync(
+    'INSERT INTO nucleos_snapshots (patient_id, criado_em, sessoes_incluidas, metricas) VALUES (?, ?, ?, ?)',
+    [patientId, new Date().toISOString(), sessoes.length, JSON.stringify(metricas)]
+  );
+
+  return metricas;
+}
+
+// ── PERGUNTAS DO APP · NÚCLEOS PSÍQUICOS ───────────────
+export function getPerguntasPendentes(patientId) {
+  return db.getAllSync(
+    "SELECT * FROM nucleos_perguntas WHERE patient_id = ? AND status = 'pendente' ORDER BY criado_em DESC",
+    [patientId]
+  );
+}
+
+/**
+ * Gera perguntas "por ausência": núcleo sem nenhuma evidência nas K
+ * sessões mais recentes. Regra local, sem custo de IA. Evita duplicar
+ * pergunta pendente já existente para o mesmo núcleo.
+ */
+export function gerarPerguntasPorAusencia(patientId, k = 5) {
+  const sessoes = getSessions(patientId).slice(0, k);
+  const datasRecentes = sessoes.map((s) => s.date);
+  if (datasRecentes.length < k) return []; // histórico curto demais pra concluir ausência
+
+  const evidencias = getEvidenciasNucleos(patientId, { apenasValidadas: false });
+  const ausencias = detectarAusencias(evidencias, datasRecentes);
+  if (ausencias.length === 0) return [];
+
+  const rubrica = carregarRubricaAtiva();
+  const jaPendentes = getPerguntasPendentes(patientId);
+
+  const criadas = [];
+  ausencias.forEach((nucleo) => {
+    const nomeNucleo = rubrica.nucleos[nucleo]?.nome || nucleo;
+    const jaExiste = jaPendentes.some((p) => p.tipo === 'ausencia' && p.pergunta.includes(nomeNucleo));
+    if (jaExiste) return;
+
+    const pergunta =
+      `Não há nenhuma referência ao núcleo ${nomeNucleo} nas últimas ${k} sessões. ` +
+      'Isso confere com sua escuta, ou pode ser um ponto cego do registro?';
+    const opcoes = JSON.stringify(['Confere com minha escuta', 'Pode ser ponto cego do registro']);
+
+    db.runSync(
+      `INSERT INTO nucleos_perguntas (patient_id, pergunta, opcoes, tipo, status, criado_em)
+       VALUES (?, ?, ?, 'ausencia', 'pendente', ?)`,
+      [patientId, pergunta, opcoes, new Date().toISOString()]
+    );
+    criadas.push(pergunta);
+  });
+
+  return criadas;
+}
+
+/**
+ * Registra a resposta do terapeuta a uma pergunta do app. Perguntas por
+ * ausência não têm um trecho literal associado (não há "citação" — é uma
+ * lacuna), então a resposta fica só como anotação, sem gerar uma
+ * evidência fabricada (regra: nenhuma marcação sem trecho literal real).
+ */
+export function responderPergunta(perguntaId, resposta) {
+  db.runSync(
+    "UPDATE nucleos_perguntas SET resposta = ?, status = 'respondida', respondido_em = ? WHERE id = ?",
+    [resposta, new Date().toISOString(), perguntaId]
+  );
+}
+
+export function descartarPergunta(perguntaId) {
+  db.runSync("UPDATE nucleos_perguntas SET status = 'descartada' WHERE id = ?", [perguntaId]);
 }

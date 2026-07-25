@@ -1,0 +1,127 @@
+{
+  "versao": "v1",
+  "atualizado_em": "2026-07-25",
+  "escala": {
+    "0": "ausente",
+    "1": "alusão",
+    "2": "presença clara",
+    "3": "predominância"
+  },
+  "regras_prudencia": [
+    "Nenhuma marcação sem trecho literal + posição no registro de origem.",
+    "Na dúvida, o modelo não marca (prudência > cobertura).",
+    "Neurótico pontua por CONTEÚDO (N1–N3), nunca pela mera coerência formal do discurso.",
+    "Perverso × Psicótico: consciência do que está em jogo no ato (registro, premeditação, memória, 'faria de novo') aponta para Mau; lacuna, estranhamento, 'não era eu' aponta para Mal.",
+    "Núcleos diagonais (Bem⇄Bom, Mal⇄Mau) não se comunicam diretamente — só pelo Eu nuclear. Transição diagonal direta é evento anômalo e deve ser destacada, não descartada.",
+    "Trechos que ressoam forte mas não fecham com núcleo algum vão para 'eu_nuclear' (indizível), não devem ser forçados em outro núcleo."
+  ],
+  "nucleos": {
+    "bem": {
+      "numero": 1,
+      "nome": "Neurótico",
+      "moral": "Bem",
+      "cor": "#2a78d6",
+      "definicao": "Conflitos cotidianos nas relações em busca de realizar desejos; \"da pele para fora\": objeto, trama, endereçamento. Frustrações do desejo são as chaves de disparo das defesas dos outros núcleos.",
+      "forma_tipica": "Discurso organizado, explicativo, racionalizado.",
+      "regra_pontuacao": "Pontua por conteúdo N1–N3, nunca pela mera coerência formal do discurso.",
+      "indicadores": [
+        { "codigo": "N1", "descricao": "Conflito de desejo nas relações" },
+        { "codigo": "N2", "descricao": "Grau de consciência do próprio desejo" },
+        { "codigo": "N3", "descricao": "Projeção como recalque" },
+        { "codigo": "N4", "descricao": "Defesas clássicas (psicossomática/histeria; racionalização/obsessiva)" },
+        { "codigo": "N5", "descricao": "Saídas saudáveis = satisfação parcial e sublimação", "via": "elaborativa" }
+      ],
+      "diferenciais": [
+        "Angústia sem objeto/trama → considerar Mal·P3.",
+        "Racionalização com gozo sobre dano a outro → verificar Mau."
+      ],
+      "ancoras": [
+        { "tipo": "positiva", "texto": "Sei que quero sair desse casamento, mas penso na minha mãe e travo. Fico doente — toda briga, minha gastrite volta." },
+        { "tipo": "negativa", "aponta_para": "mal", "texto": "Sem isso eu vazo. Não tem palavra." }
+      ]
+    },
+    "mal": {
+      "numero": 2,
+      "nome": "Psicótico",
+      "moral": "Mal",
+      "cor": "#008300",
+      "definicao": "O que extrapola os limites do sentido compartilhado e da coerência discursiva; angústias de existência e consistência do ser, \"da pele para dentro\", indizíveis, sem associações aparentes.",
+      "forma_tipica": "Quebras sem retomada, neologismos, certezas irretificáveis.",
+      "regra_pontuacao": "",
+      "indicadores": [
+        { "codigo": "P1", "descricao": "Ruptura da coerência (forma): quebras sem retomada, neologismos, certezas irretificáveis" },
+        { "codigo": "P2", "descricao": "Fenômenos elementares: delírios, alucinações, imposição de pensamento" },
+        { "codigo": "P3", "descricao": "Angústias de dissolução e desamparo radical: \"estou me desmanchando\", \"vou sumir de dentro de mim\", dor sem origem, o indizível" }
+      ],
+      "diferenciais": [
+        "Angústia com objeto → considerar Bem.",
+        "Atuação sem registro do ato (\"quando vi já tinha acontecido\", \"não parecia eu\") → Mal; com registro → Mau.",
+        "Inefável em paz/completude → considerar Bom.",
+        "Despersonalização transitória com distância crítica → intensidade máxima 1."
+      ],
+      "ancoras": [
+        { "tipo": "positiva", "texto": "Amanhã eu posso não estar mais dentro de mim. Não é morrer, é pior, é vazar." }
+      ]
+    },
+    "mau": {
+      "numero": 3,
+      "nome": "Perverso",
+      "moral": "Mau",
+      "cor": "#e87ba4",
+      "definicao": "Destrutividade, violência, autoritarismo, delinquência, mentira; corrupção de si; devoramento do outro (canibalismo subjetivo). Eixo = como lida com o poder nas duas posições.",
+      "forma_tipica": "",
+      "regra_pontuacao": "",
+      "indicadores": [
+        { "codigo": "V1", "descricao": "Destrutividade COM registro (premeditação, memória, justificativa, \"faria de novo\", justiça com as próprias mãos, raiva saboreada)" },
+        { "codigo": "V2", "descricao": "Instrumentalização do outro" },
+        { "codigo": "V3", "descricao": "Mentira e corrupção de si (\"todo mundo faz\")" },
+        { "codigo": "V4", "descricao": "Relação com poder e lei (autoritarismo por cima, desafio calculado por baixo)" }
+      ],
+      "diferenciais": [
+        "Diferencial decisivo: consciência do que está em jogo no ato → Mau; ausência de registro/estranhamento → Mal."
+      ],
+      "ancoras": [
+        { "tipo": "positiva", "texto": "Quebrei o telefone dele de propósito. Pensei: vai aprender. Não me arrependo." },
+        { "tipo": "negativa", "aponta_para": "mal", "texto": "Quando eu vi, já tinha quebrado tudo. Não lembro. Não parecia eu." }
+      ]
+    },
+    "bom": {
+      "numero": 4,
+      "nome": "Autístico",
+      "moral": "Bom",
+      "cor": "#eda100",
+      "definicao": "Nirvana, sagrado, mistério; o sem-sentido e o inusitado como morada; recolhimento/enconchamento; e a face luminosa: intuição, eurekas, quase-completude, experiências transcendentais, altas capacidades.",
+      "forma_tipica": "",
+      "regra_pontuacao": "",
+      "indicadores": [
+        { "codigo": "A1", "descricao": "Recolhimento/enconchamento (retirada sem angústia)" },
+        { "codigo": "A2", "descricao": "Nirvana/sagrado/mistério (completude serena, inefável com paz)" },
+        { "codigo": "A3", "descricao": "Intuição e eurekas (\"do nada entendi tudo\")", "via": "elaborativa" },
+        { "codigo": "A4", "descricao": "Crenças e fixações de quase-completude (totalizantes, serenas, sem tom persecutório)" }
+      ],
+      "diferenciais": [
+        "Inefável em terror/dissolução → considerar Mal.",
+        "Eureka serena → A3; revelação imposta/persecutória → Mal·P2.",
+        "Isolamento por culpa/medo do julgamento (com trama) → considerar Bem."
+      ],
+      "ancoras": [
+        { "tipo": "positiva", "texto": "Passei o fim de semana sozinho no sítio. Não aconteceu nada e foi a coisa mais inteira que senti em meses. Não sei explicar — nem quero." },
+        { "tipo": "negativa", "aponta_para": "mal", "texto": "Fiquei sozinho e começou o pavor de sumir de dentro de mim." }
+      ]
+    }
+  },
+  "diagonais": [
+    ["bem", "bom"],
+    ["mal", "mau"]
+  ],
+  "instancias": {
+    "ego":      { "nome": "EGO",       "nucleos": ["bem", "mal", "mau"], "endereco": "CS·Vida",   "fantasma_exclui": "bom" },
+    "id":       { "nome": "ID",        "nucleos": ["bem", "mal", "bom"], "endereco": "ICS·Vida",  "fantasma_exclui": "mau" },
+    "superego": { "nome": "SUPER-EGO", "nucleos": ["bem", "mau", "bom"], "endereco": "CS·Morte",  "fantasma_exclui": "mal" },
+    "superid":  { "nome": "SUPER-ID",  "nucleos": ["mal", "mau", "bom"], "endereco": "ICS·Morte", "fantasma_exclui": "bem", "status": "pendente", "descricao": "" }
+  },
+  "eu_nuclear": {
+    "nome": "Eu Nuclear",
+    "descricao": "Tudo/nada, vazio — onde ficam os trechos indizíveis/inclassificáveis."
+  }
+}

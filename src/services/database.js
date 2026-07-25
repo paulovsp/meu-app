@@ -990,3 +990,32 @@ db.execSync(`
     FOREIGN KEY (patient_id) REFERENCES patients(id)
   );
 `);
+
+// ── RUBRICAS (config clínica editável sem rebuild) ─────
+export function getRubricaConfigAtiva() {
+  return db.getFirstSync('SELECT * FROM rubricas_config WHERE ativa = 1 ORDER BY id DESC LIMIT 1');
+}
+
+export function salvarRubricaConfig(versao, conteudoJson) {
+  db.runSync('UPDATE rubricas_config SET ativa = 0 WHERE ativa = 1');
+  db.runSync(
+    'INSERT INTO rubricas_config (versao, conteudo, atualizado_em, ativa) VALUES (?, ?, ?, 1)',
+    [versao, conteudoJson, new Date().toISOString()]
+  );
+}
+
+// ── CONSENTIMENTO (Perfil Psicossomático) ──────────────
+export function getConsentimentoPerfil(patientId) {
+  const row = db.getFirstSync(
+    'SELECT consentimento_perfil, consentimento_perfil_em FROM patients WHERE id = ?',
+    [patientId]
+  );
+  return { concedido: !!row?.consentimento_perfil, em: row?.consentimento_perfil_em || null };
+}
+
+export function setConsentimentoPerfil(patientId, concedido) {
+  db.runSync(
+    'UPDATE patients SET consentimento_perfil = ?, consentimento_perfil_em = ? WHERE id = ?',
+    [concedido ? 1 : 0, concedido ? new Date().toISOString() : null, patientId]
+  );
+}

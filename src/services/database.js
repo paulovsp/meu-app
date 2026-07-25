@@ -239,6 +239,10 @@ export function getSessions(patientId) {
   );
 }
 
+export function getSessionById(id) {
+  return db.getFirstSync('SELECT * FROM sessions WHERE id = ?', [id]);
+}
+
 export function getSessionsToday() {
   const hoje = new Date().toISOString().slice(0, 10);
   const result = db.getFirstSync(
@@ -318,6 +322,10 @@ export function getRecords(patientId) {
     'SELECT * FROM records WHERE patient_id = ? ORDER BY date DESC',
     [patientId]
   );
+}
+
+export function getRecordById(id) {
+  return db.getFirstSync('SELECT * FROM records WHERE id = ?', [id]);
 }
 
 export function addRecord(patientId, type, title, content, fileUri, sessionId, category, author) {

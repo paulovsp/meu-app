@@ -125,11 +125,11 @@ export default function PerfilPsicossomaticoScreen() {
         } else {
           await analisarRegistroNucleos(paciente, registros[i]);
         }
-        // Pausa entre chamadas: os prompts embutem as rubricas completas e a
-        // Groq limita tokens por minuto — analisar vários registros seguidos
-        // sem pausa estoura o limite rapidamente.
+        // Pausa entre chamadas: o tier gratuito do Gemini limita 15
+        // requisições/minuto (1 a cada 4s) — analisar vários registros
+        // seguidos sem pausa estoura o limite rapidamente.
         if (i < registros.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 3000));
+          await new Promise((resolve) => setTimeout(resolve, 4500));
         }
       }
       carregar();

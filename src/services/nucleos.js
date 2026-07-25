@@ -9,17 +9,22 @@
 // `database.js` no topo do arquivo — expo-sqlite não roda em Jest, então
 // qualquer import direto travaria os testes deste módulo.
 //
-// Provedor de IA para análise de texto (núcleos/objetivo/busca): DeepSeek,
-// não Groq — a Groq fica só com a transcrição de áudio (NovaSessaoScreen),
-// que é um limite de taxa completamente separado. Migrado porque o tier
-// gratuito da Groq para llama-3.3-70b (12K tokens/minuto) não aguenta o
-// volume dos prompts de análise, que embutem as rubricas completas.
+// Provedor de IA para análise de texto (núcleos/objetivo/busca): Gemini
+// (via endpoint compatível com OpenAI), não Groq — a Groq fica só com a
+// transcrição de áudio (NovaSessaoScreen), que é um limite de taxa
+// completamente separado. Migrado porque o tier gratuito da Groq pra
+// llama-3.3-70b (12K tokens/minuto) não aguenta o volume dos prompts de
+// análise. Tentamos DeepSeek antes, mas a API deles não tem tier gratuito
+// de verdade (exige saldo pago). O Gemini Flash-Lite tem tier gratuito
+// real (15 req/min, 1000 req/dia, sem cartão) — ver EXPO_PUBLIC_GEMINI_API_KEY
+// no .env. Importante: NÃO ativar faturamento no projeto do Google AI
+// Studio usado pra gerar a chave, isso desativa o tier gratuito.
 
 import { getRubricaSemente, nucleoDiagonalDe } from './rubricas';
 
-const DEEPSEEK_API_KEY = process.env.EXPO_PUBLIC_DEEPSEEK_API_KEY || '';
-const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions';
-const DEEPSEEK_MODEL = 'deepseek-v4-flash';
+const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
+const GEMINI_MODEL = 'gemini-2.5-flash-lite';
 
 const TOKEN_PACIENTE = '[ANALISANTE]';
 const NUCLEOS_VALIDOS = ['bem', 'mal', 'mau', 'bom', 'eu_nuclear'];
@@ -160,7 +165,7 @@ export function montarPromptAnalise(unidades, rubrica = getRubricaSemente()) {
   return { promptSistema, promptUsuario };
 }
 
-// ─── Chamada à IA (DeepSeek) ────────────────────────────────────────────
+// ─── Chamada à IA (Gemini) ──────────────────────────────────────────────
 // Provedores de LLM costumam limitar tokens por minuto (TPM) — com prompts
 // grandes (rubricas completas) e vários registros analisados em sequência,
 // é fácil bater no limite. Quando a resposta 429 diz quanto tempo esperar
@@ -173,14 +178,14 @@ function extrairEsperaRetryMs(corpoErro) {
 }
 
 async function requisicaoIA(promptSistema, promptUsuario) {
-  return fetch(DEEPSEEK_URL, {
+  return fetch(GEMINI_URL, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${DEEPSEEK_API_KEY}`,
+      Authorization: `Bearer ${GEMINI_API_KEY}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: DEEPSEEK_MODEL,
+      model: GEMINI_MODEL,
       temperature: 0,
       response_format: { type: 'json_object' },
       messages: [
@@ -193,8 +198,8 @@ async function requisicaoIA(promptSistema, promptUsuario) {
 
 /** Chamada genérica de análise estruturada à IA, com retentativa automática em caso de rate limit (429). */
 export async function chamarIAJson(promptSistema, promptUsuario) {
-  if (!DEEPSEEK_API_KEY) {
-    throw new Error('Chave do DeepSeek não configurada.\n\nDefina EXPO_PUBLIC_DEEPSEEK_API_KEY no .env.');
+  if (!GEMINI_API_KEY) {
+    throw new Error('Chave do Gemini não configurada.\n\nDefina EXPO_PUBLIC_GEMINI_API_KEY no .env.');
   }
 
   let resp = await requisicaoIA(promptSistema, promptUsuario);

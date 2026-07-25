@@ -6,12 +6,13 @@ import {
 } from 'react-native';
 import { getRecords, getSessions, listarPacientes } from '../services/database';
 
-// Busca/chat usa DeepSeek (não Groq) — mesmo motivo da análise de núcleos:
+// Busca/chat usa Gemini (não Groq) — mesmo motivo da análise de núcleos:
 // o tier gratuito da Groq para modelos de texto tem TPM baixo demais pro
-// volume real de uso. A Groq fica só com a transcrição de áudio.
-const DEEPSEEK_API_KEY = process.env.EXPO_PUBLIC_DEEPSEEK_API_KEY || '';
-const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions';
-const MODEL = 'deepseek-v4-flash';
+// volume real de uso, e a DeepSeek não tem tier gratuito de verdade na
+// API (exige saldo pago). A Groq fica só com a transcrição de áudio.
+const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
+const MODEL = 'gemini-2.5-flash-lite';
 
 function buildContext() {
   try {
@@ -92,11 +93,11 @@ export default function BuscaScreen() {
         .filter(m => m.id !== '0')
         .map(m => ({ role: m.role, content: m.text }));
 
-      const response = await fetch(DEEPSEEK_URL, {
+      const response = await fetch(GEMINI_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
+          'Authorization': `Bearer ${GEMINI_API_KEY}`,
         },
         body: JSON.stringify({
           model: MODEL,
@@ -120,7 +121,7 @@ ${contexto}`,
 
       if (!response.ok) {
         const err = await response.json();
-        throw new Error(err.error?.message || 'Erro na API do DeepSeek');
+        throw new Error(err.error?.message || 'Erro na API do Gemini');
       }
 
       const data = await response.json();

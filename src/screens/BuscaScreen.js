@@ -1,198 +1,151 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, FlatList,
-  StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator,
-  SafeAreaView, Alert
+  View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
 } from 'react-native';
-import { getRecords, getSessions, listarPacientes } from '../services/database';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import {
+  identificarPacienteNaPergunta, montarContextoPaciente, estimarCustoResposta,
+  chamarBuscaChat, CreditosInsuficientesError,
+} from '../services/buscaChat';
+import { formatarSaldoBRL } from '../services/creditosIA';
+import { mensagemDeErro } from '../services/erros';
 
-// Busca/chat usa Gemini (não Groq) — mesmo motivo da análise de núcleos:
-// o tier gratuito da Groq para modelos de texto tem TPM baixo demais pro
-// volume real de uso, e a DeepSeek não tem tier gratuito de verdade na
-// API (exige saldo pago). A Groq fica só com a transcrição de áudio.
-const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
-const MODEL = 'gemini-2.5-flash-lite';
+const MENSAGEM_INICIAL = {
+  id: 'seed',
+  role: 'assistant',
+  text: 'Olá! Sou o Busca Dr.Sig. Pergunte sobre um analisante (mencione o nome dele) — antes de responder, mostro uma estimativa de custo pra você confirmar.',
+};
 
-function buildContext() {
-  try {
-    const pacientes = listarPacientes();
-    let contexto = '=== DADOS DO ARQUIVO CLÍNICO ===\n\n';
-
-    for (const p of pacientes) {
-      contexto += `PACIENTE: ${p.nome}\n`;
-      if (p.codinome)    contexto += `  Codinome: ${p.codinome}\n`;
-      if (p.nascimento)  contexto += `  Nascimento: ${p.nascimento}\n`;
-      if (p.telefone)    contexto += `  Telefone: ${p.telefone}\n`;
-      if (p.data_inicio) contexto += `  Início análise: ${p.data_inicio}\n`;
-
-      const sessoes = getSessions(p.id);
-      if (sessoes.length > 0) {
-        contexto += `  SESSÕES (${sessoes.length} total):\n`;
-        for (const s of sessoes) {
-          contexto += `    [${s.date}] Tipo: ${s.type}`;
-          if (s.online_platform) contexto += ` | Plataforma: ${s.online_platform}`;
-          if (s.transcript && s.transcript.trim()) {
-            contexto += `\n    Transcrição: ${s.transcript.substring(0, 500)}`;
-            if (s.transcript.length > 500) contexto += '... [truncado]';
-          }
-          contexto += '\n';
-        }
-      }
-
-      const registros = getRecords(p.id);
-      if (registros.length > 0) {
-        contexto += `  REGISTROS (${registros.length} total):\n`;
-        for (const r of registros) {
-          contexto += `    [${r.date}] ${r.title || 'Sem título'} (${r.type})`;
-          if (r.content && r.content.trim()) {
-            contexto += `\n    Conteúdo: ${r.content.substring(0, 300)}`;
-            if (r.content.length > 300) contexto += '... [truncado]';
-          }
-          contexto += '\n';
-        }
-      }
-      contexto += '\n';
-    }
-    return contexto;
-  } catch (e) {
-    console.error('Erro buildContext:', e);
-    return 'Não foi possível carregar os dados clínicos.';
-  }
+function Bolha({ mensagem }) {
+  const doUsuario = mensagem.role === 'user';
+  return (
+    <View style={[s.bolhaLinha, doUsuario && s.bolhaLinhaUsuario]}>
+      <View style={[s.bolha, doUsuario ? s.bolhaUsuario : s.bolhaAssistente]}>
+        <Text style={[s.bolhaTexto, doUsuario && s.bolhaTextoUsuario]}>{mensagem.text}</Text>
+        {mensagem.custo != null && (
+          <Text style={s.bolhaCusto}>Custo: {formatarSaldoBRL(mensagem.custo)}</Text>
+        )}
+      </View>
+    </View>
+  );
 }
 
 export default function BuscaScreen() {
-  const [messages, setMessages] = useState([
-    {
-      id: '0',
-      role: 'assistant',
-      text: 'Olá! Sou seu assistente clínico. Posso buscar e analisar sessões, registros e informações dos seus analisantes. Como posso ajudar?',
-    },
-  ]);
-  const [input, setInput]     = useState('');
-  const [loading, setLoading] = useState(false);
-  const [contexto, setContexto] = useState('');
-  const flatListRef = useRef(null);
+  const [mensagens, setMensagens] = useState([MENSAGEM_INICIAL]);
+  const [texto, setTexto] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const listRef = useRef(null);
 
-  useEffect(() => {
-    setContexto(buildContext());
-  }, []);
+  // "Assunto" atual da conversa: uma vez identificado um analisante pelo
+  // nome, perguntas de acompanhamento continuam nele até outro nome ser
+  // mencionado — sem precisar repetir o nome a cada mensagem.
+  const pacienteAtivoRef = useRef(null);
+  const contextoAtivoRef = useRef(null);
 
-  async function enviarMensagem() {
-    const texto = input.trim();
-    if (!texto || loading) return;
+  async function resolverContexto(pergunta) {
+    const pacienteMencionado = await identificarPacienteNaPergunta(pergunta);
+    const paciente = pacienteMencionado || pacienteAtivoRef.current;
 
-    const novaMsgUsuario = { id: Date.now().toString(), role: 'user', text: texto };
-    const novasMensagens = [...messages, novaMsgUsuario];
-    setMessages(novasMensagens);
-    setInput('');
-    setLoading(true);
-
-    try {
-      const historico = novasMensagens
-        .filter(m => m.id !== '0')
-        .map(m => ({ role: m.role, content: m.text }));
-
-      const response = await fetch(GEMINI_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${GEMINI_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: MODEL,
-          messages: [
-            {
-              role: 'system',
-              content: `Você é um assistente clínico especializado em psicanálise.
-Seu papel é ajudar o psicanalista a buscar e analisar informações do arquivo clínico.
-Responda SEMPRE em português brasileiro.
-Seja preciso, clínico e respeitoso com a privacidade dos dados.
-Use os dados abaixo como fonte de verdade para responder às perguntas.
-
-${contexto}`,
-            },
-            ...historico,
-          ],
-          temperature: 0.4,
-          max_tokens: 1024,
-        }),
-      });
-
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error?.message || 'Erro na API do Gemini');
-      }
-
-      const data = await response.json();
-      const resposta = data.choices[0].message.content;
-
-      setMessages(prev => [
-        ...prev,
-        { id: Date.now().toString() + '_r', role: 'assistant', text: resposta },
-      ]);
-    } catch (e) {
-      Alert.alert('Erro', `Não foi possível conectar ao assistente: ${e.message}`);
-    } finally {
-      setLoading(false);
+    if (!paciente) {
+      return { paciente: null, contexto: null };
     }
+    if (pacienteAtivoRef.current?.id === paciente.id && contextoAtivoRef.current) {
+      return { paciente, contexto: contextoAtivoRef.current };
+    }
+    const contexto = await montarContextoPaciente(paciente);
+    pacienteAtivoRef.current = paciente;
+    contextoAtivoRef.current = contexto;
+    return { paciente, contexto };
   }
 
-  function renderItem({ item }) {
-    const isUser = item.role === 'user';
-    return (
-      <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAssistant]}>
-        <Text style={[styles.bubbleText, isUser ? styles.textUser : styles.textAssistant]}>
-          {item.text}
-        </Text>
-      </View>
+  async function enviar() {
+    const pergunta = texto.trim();
+    if (!pergunta || enviando) return;
+
+    let paciente, contexto;
+    try {
+      ({ paciente, contexto } = await resolverContexto(pergunta));
+    } catch (e) {
+      Alert.alert('Erro ao identificar analisante', mensagemDeErro(e));
+      return;
+    }
+
+    const historicoAnterior = mensagens
+      .filter((m) => m.id !== 'seed')
+      .map((m) => ({ role: m.role, content: m.text }));
+    const historicoCompleto = [...historicoAnterior, { role: 'user', content: pergunta }];
+
+    const custoEstimado = estimarCustoResposta({ contexto, pergunta, historico: historicoAnterior });
+    const assunto = paciente ? `Assunto: ${paciente.nome}.` : 'Nenhum analisante identificado — resposta geral.';
+
+    Alert.alert(
+      'Confirmar pergunta',
+      `${assunto}\n\nCusto estimado (no pior caso): até ${formatarSaldoBRL(custoEstimado)}.\n\nEnviar mesmo assim?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Enviar', onPress: () => processarEnvio(pergunta, contexto, historicoCompleto, paciente) },
+      ]
     );
   }
 
-  return (
-    <SafeAreaView style={styles.safe}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>🧠 Assistente Clínico</Text>
-        <Text style={styles.headerSub}>Pergunte sobre sessões, registros e analisantes</Text>
-      </View>
+  async function processarEnvio(pergunta, contexto, historicoCompleto, paciente) {
+    setMensagens((prev) => [...prev, { id: `u-${Date.now()}`, role: 'user', text: pergunta }]);
+    setTexto('');
+    setEnviando(true);
+    try {
+      const { texto: resposta, custo } = await chamarBuscaChat(contexto, historicoCompleto, paciente);
+      setMensagens((prev) => [...prev, { id: `a-${Date.now()}`, role: 'assistant', text: resposta, custo }]);
+    } catch (e) {
+      if (e instanceof CreditosInsuficientesError) {
+        Alert.alert('Créditos de IA insuficientes', 'Fale com o administrador da conta pra recarregar.');
+      } else {
+        Alert.alert('Erro ao responder', mensagemDeErro(e, 'Tente novamente.'));
+      }
+    } finally {
+      setEnviando(false);
+    }
+  }
 
+  return (
+    <SafeAreaView style={s.container} edges={['bottom']}>
       <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={90}
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         <FlatList
-          ref={flatListRef}
-          data={messages}
-          keyExtractor={item => item.id}
-          renderItem={renderItem}
-          contentContainerStyle={styles.list}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          ref={listRef}
+          data={mensagens}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => <Bolha mensagem={item} />}
+          contentContainerStyle={s.lista}
+          onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
         />
 
-        {loading && (
-          <View style={styles.loadingRow}>
-            <ActivityIndicator size="small" color="#6C63FF" />
-            <Text style={styles.loadingText}>Analisando dados clínicos...</Text>
+        {enviando && (
+          <View style={s.digitando}>
+            <ActivityIndicator size="small" color="#3D5A80" />
+            <Text style={s.digitandoTexto}>Consultando...</Text>
           </View>
         )}
 
-        <View style={styles.inputRow}>
+        <View style={s.inputRow}>
           <TextInput
-            style={styles.input}
-            value={input}
-            onChangeText={setInput}
-            placeholder="Ex: Resuma as últimas sessões..."
+            style={s.input}
+            placeholder="Pergunte sobre um analisante..."
             placeholderTextColor="#999"
+            value={texto}
+            onChangeText={setTexto}
             multiline
-            maxLength={500}
           />
           <TouchableOpacity
-            style={[styles.sendBtn, (!input.trim() || loading) && styles.sendBtnDisabled]}
-            onPress={enviarMensagem}
-            disabled={!input.trim() || loading}
+            style={[s.enviarBtn, (!texto.trim() || enviando) && s.enviarBtnDesabilitado]}
+            onPress={enviar}
+            disabled={!texto.trim() || enviando}
           >
-            <Text style={styles.sendIcon}>➤</Text>
+            <Ionicons name="send" size={18} color="#fff" />
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -200,36 +153,63 @@ ${contexto}`,
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F5F5F5' },
-  flex: { flex: 1 },
-  header: { backgroundColor: '#6C63FF', paddingVertical: 14, paddingHorizontal: 20 },
-  headerTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-  headerSub: { color: '#E0DCFF', fontSize: 12, marginTop: 2 },
-  list: { padding: 16, paddingBottom: 8 },
-  bubble: { maxWidth: '82%', borderRadius: 16, padding: 12, marginBottom: 10 },
-  bubbleUser: { backgroundColor: '#6C63FF', alignSelf: 'flex-end', borderBottomRightRadius: 4 },
-  bubbleAssistant: {
-    backgroundColor: '#fff', alignSelf: 'flex-start', borderBottomLeftRadius: 4,
-    shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#F5F7FA' },
+
+  lista: { padding: 16, gap: 10, flexGrow: 1 },
+  bolhaLinha: { flexDirection: 'row', justifyContent: 'flex-start' },
+  bolhaLinhaUsuario: { justifyContent: 'flex-end' },
+  bolha: {
+    maxWidth: '82%',
+    borderRadius: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
   },
-  bubbleText: { fontSize: 15, lineHeight: 22 },
-  textUser: { color: '#fff' },
-  textAssistant: { color: '#222' },
-  loadingRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 8, gap: 8 },
-  loadingText: { color: '#6C63FF', fontSize: 13 },
+  bolhaAssistente: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#E0E4EA',
+    borderBottomLeftRadius: 4,
+  },
+  bolhaUsuario: {
+    backgroundColor: '#3D5A80',
+    borderBottomRightRadius: 4,
+  },
+  bolhaTexto: { fontSize: 14, color: '#1A1A2E', lineHeight: 20 },
+  bolhaTextoUsuario: { color: '#fff' },
+  bolhaCusto: { fontSize: 11, color: '#999', marginTop: 6 },
+
+  digitando: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 16, paddingBottom: 6,
+  },
+  digitandoTexto: { fontSize: 12, color: '#888' },
+
   inputRow: {
-    flexDirection: 'row', alignItems: 'flex-end', padding: 12,
-    backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#EEE', gap: 8,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+    padding: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E0E4EA',
+    backgroundColor: '#fff',
   },
   input: {
-    flex: 1, backgroundColor: '#F5F5F5', borderRadius: 20,
-    paddingHorizontal: 16, paddingVertical: 10, fontSize: 15, maxHeight: 100, color: '#222',
+    flex: 1,
+    maxHeight: 100,
+    backgroundColor: '#F5F7FA',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: '#1A1A2E',
+    borderWidth: 1,
+    borderColor: '#E0E4EA',
   },
-  sendBtn: {
-    backgroundColor: '#6C63FF', borderRadius: 22,
-    width: 44, height: 44, alignItems: 'center', justifyContent: 'center',
+  enviarBtn: {
+    width: 42, height: 42, borderRadius: 21,
+    backgroundColor: '#3D5A80',
+    alignItems: 'center', justifyContent: 'center',
   },
-  sendBtnDisabled: { backgroundColor: '#C5C2F0' },
-  sendIcon: { color: '#fff', fontSize: 18 },
+  enviarBtnDesabilitado: { backgroundColor: '#C7CDD6' },
 });

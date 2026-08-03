@@ -1,40 +1,79 @@
-// src/screens/HomeScreen.js
-import { useState, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet,
-  StatusBar, Dimensions,
+  View, Text, TouchableOpacity, StyleSheet, Image,
+  StatusBar, Dimensions, ScrollView, Animated, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
-import { getSessionsToday } from '../services/database';
+import { Ionicons } from '@expo/vector-icons';
+import { getResumoAgendaHoje } from '../services/database';
+import { processarEnviosFiscaisAutomaticos } from '../services/fiscalAutomatico';
+import { obterRecebimentosAtrasados, verificarEEnviarAlertaAtraso } from '../services/alertaAtraso';
+import { useSwipeHorizontal } from '../hooks/useSwipeHorizontal';
+import { registrarPushToken } from '../services/pushToken';
+import { supabase } from '../services/supabase';
+import { useAuth } from '../contexts/AuthContext';
+import MenuLateral from '../components/MenuLateral';
+import BannerAssinaturaInativa from '../components/BannerAssinaturaInativa';
 
 const { width: SW } = Dimensions.get('window');
 
+import FreudImage from '../../assets/freud.png';
+
 const COLORS = {
-  bg:         '#F7F6F3',
-  surface:    '#FFFFFF',
-  border:     '#E8E4DD',
-  textDark:   '#1C1C1E',
-  textMid:    '#6B6860',
-  textLight:  '#A5A19A',
-  accent:     '#2C4A6E',
-  accentMid:  '#3D5A80',
-  accentSoft: '#5B7FA6',
-  accentPale: '#8AAEC8',
-  accentGhost:'#B8D4E8',
+  bg:          '#F7F6F3',
+  surface:     '#FFFFFF',
+  border:      '#E8E4DD',
+  textDark:    '#1C1C1E',
+  textMid:     '#6B6860',
+  textLight:   '#A5A19A',
+
+  accent:      '#6B9E8A',
+  accentMid:   '#8FBFA8',
+  accentSoft:  '#B5D4C4',
+  accentPale:  '#C8DDD1',
+  accentGhost: '#D4E8DC',
+
+  btnBlue:     '#3D5A80',
+  btnLight:    '#5B7FA6',
+  btnShadow:   '#1A2D45',
 };
 
-const BUTTONS = [
-  { id: 'session',  icon: '🎙️', label: 'Nova Sessão',     desc: 'Gravar e transcrever',           screen: 'NewSession' },
-  { id: 'record',   icon: '📋', label: 'Novo Registro',    desc: 'Importar, digitar ou fotografar', screen: 'AddRecord'  },
-  { id: 'patients', icon: '👤', label: 'Analisantes',      desc: 'Gerenciar e consultar',           screen: 'Patients'   },
-  { id: 'search',   icon: '🔍', label: 'Buscador Dr.Sig',  desc: 'Pesquisa clínica inteligente',    screen: 'Search'     },
+const CLINICA_BUTTONS = [
+  { id: 'session',  icon: 'mic-outline',       label: 'Nova Sessão',    screen: 'NewSession' },
+  { id: 'record',   icon: 'clipboard-outline', label: 'Novo Registro',  screen: 'AddRecord'  },
+  { id: 'patients', icon: 'person-outline',    label: 'Analisantes',    screen: 'Patients'   },
+  { id: 'search',   icon: 'chatbubbles-outline', label: 'Busca Dr.Sig', screen: 'Busca' },
 ];
 
-const HEADER_H       = 200;
-const FREUD_SIZE     = 119;
-const FREUD_OVERFLOW = 26;
+const ADMIN_BUTTONS = [
+  { id: 'agenda',     icon: 'calendar-outline',     label: 'Agenda',      screen: 'Agenda'     },
+  { id: 'financeiro', icon: 'cash-outline',         label: 'Financeiro',  screen: 'Financeiro' },
+  { id: 'cobranca',   icon: 'notifications-outline',label: 'Recebíveis',  screen: 'Cobranca'   },
+  { id: 'fiscal',     icon: 'receipt-outline',       label: 'Fiscal',      screen: 'Fiscal'     },
+];
+
+// ⚠️ Reduzidos para caber tudo na tela sem precisar rolar na maioria dos aparelhos
+const HEADER_H       = 172;
+const FREUD_SIZE     = 108;
+const FREUD_OVERFLOW = 22;
+
+// Quanto o toggle "sobe" para sobrepor a faixa mais clara do fundo do header
+const TOGGLE_OVERLAP = 34;
+
+// Grade principal — a largura da caixa é calculada a partir da tela para
+// caber exatamente 2 por linha sem sobra de pixel (antes usava '47%', que
+// deixava um resto assimétrico de alguns pixels de um dos lados). O gap
+// vertical é maior que o horizontal para ocupar o espaço que sobrava
+// embaixo da tela, mantendo a largura/altura da caixa como está hoje.
+const GRID_PADDING = 20;
+const GRID_COL_GAP = 14;
+const GRID_ROW_GAP = 26;
+const CELL_W = (SW - GRID_PADDING * 2 - GRID_COL_GAP) / 2;
+
+// Distância mínima de arraste horizontal para trocar de modo
+const SWIPE_THRESHOLD = 45;
 
 function HeaderWaves() {
   const W = SW;
@@ -52,7 +91,7 @@ function HeaderWaves() {
         </LinearGradient>
         <LinearGradient id="grad3" x1="0" y1="0" x2="1" y2="0">
           <Stop offset="0"  stopColor={COLORS.accentSoft} stopOpacity="1" />
-          <Stop offset="1"  stopColor={COLORS.accentPale} stopOpacity="1" />
+          <Stop offset="1"  stopColor={COLORS.accentPale}  stopOpacity="1" />
         </LinearGradient>
         <LinearGradient id="grad4" x1="0" y1="0" x2="1" y2="0">
           <Stop offset="0"  stopColor={COLORS.accentPale}  stopOpacity="1" />
@@ -68,7 +107,8 @@ function HeaderWaves() {
 }
 
 function DividerWave() {
-  const W = SW; const H = 38;
+  const W = SW;
+  const H = 34;
   return (
     <Svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ display: 'block' }}>
       <Path
@@ -79,173 +119,478 @@ function DividerWave() {
   );
 }
 
-// Avatar substituto enquanto a imagem não está disponível
 function FreudAvatar() {
   return (
-    <View style={s.freudAvatarInner}>
-      <Text style={s.freudAvatarInitials}>FS</Text>
-      <Text style={s.freudAvatarSub}>1856–1939</Text>
-    </View>
+    <Image
+      source={FreudImage}
+      style={s.freudImage}
+      resizeMode="cover"
+    />
   );
 }
 
-export default function HomeScreen({ navigation }) {
-  const [sessoesHoje, setSessoesHoje] = useState(0);
+export default function InicioScreen({ navigation }) {
+  const { session } = useAuth();
+  const [resumoAgenda, setResumoAgenda] = useState({ total: 0, concluidas: 0 });
+  const [user, setUser] = useState(null);
+  const [modo, setModo] = useState('clinica'); // 'clinica' | 'administrativa'
+  const [menuAberto, setMenuAberto] = useState(false);
+
+  // Registra o token de push uma vez por sessão de app (não a cada vez que
+  // a tela ganha foco de novo — ver useFocusEffect abaixo, que roda toda
+  // hora que se volta pra Início).
+  useEffect(() => {
+    registrarPushToken();
+  }, [session.user.id]);
+
+  // ─── Deslize de verdade entre Clínica ⇄ Administrativa ────────────────
+  // Acompanha o dedo ao vivo durante o arraste (não só anima na soltura) —
+  // ver src/hooks/useSwipeHorizontal.js. Toque nos botões de cima usa a
+  // mesma transição de entrada, só sem o arraste.
+  const { panHandlers, animatedStyle: gridAnimatedStyle, entrarDe } = useSwipeHorizontal({
+    onSwipeLeft: () => setModo('administrativa'),
+    onSwipeRight: () => setModo('clinica'),
+    limiar: SWIPE_THRESHOLD,
+  });
+
+  function trocarModo(novoModo) {
+    if (modo === novoModo) return;
+    setModo(novoModo);
+    entrarDe(novoModo === 'administrativa' ? 46 : -46);
+  }
+
+  // Mostra no máximo 1x por sessão do app (não a cada vez que a tela ganha
+  // foco de novo, senão vira um popup irritante toda hora que se volta
+  // pra Início vindo de outra tela).
+  const avisoAtrasoMostradoRef = useRef(false);
+
+  async function avisarRecebimentosAtrasados() {
+    if (avisoAtrasoMostradoRef.current) return;
+    try {
+      const atrasados = await obterRecebimentosAtrasados();
+      if (atrasados.length === 0) return;
+      avisoAtrasoMostradoRef.current = true;
+      Alert.alert(
+        atrasados.length === 1 ? 'Recebimento em atraso' : `${atrasados.length} recebimentos em atraso`,
+        atrasados.map((a) => `${a.nome} — ${a.diasAtraso} dia${a.diasAtraso === 1 ? '' : 's'} de atraso`).join('\n'),
+        [
+          { text: 'Depois' },
+          { text: 'Ver Recebíveis', onPress: () => navigation.navigate('Cobranca') },
+        ]
+      );
+    } catch (e) {
+      console.error('Falha ao verificar recebimentos atrasados:', e?.message || e);
+    }
+  }
 
   useFocusEffect(
     useCallback(() => {
-      try { setSessoesHoje(getSessionsToday()); }
-      catch { setSessoesHoje(0); }
-    }, [])
+      (async () => {
+        try {
+          setResumoAgenda(await getResumoAgendaHoje());
+        } catch {
+          setResumoAgenda({ total: 0, concluidas: 0 });
+        }
+      })();
+      processarEnviosFiscaisAutomaticos().catch((e) => console.error('Falha no catch-up fiscal automático:', e?.message || e));
+      verificarEEnviarAlertaAtraso().catch((e) => console.error('Falha no alerta de atraso:', e?.message || e));
+      avisarRecebimentosAtrasados();
+      let cancelado = false;
+      supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .single()
+        .then(({ data, error }) => {
+          if (cancelado) return;
+          if (error) console.error('Erro ao carregar profile (Home):', error.message, error);
+          setUser(data || null);
+        });
+      return () => { cancelado = true; };
+    }, [session.user.id])
   );
 
   const sessaoLabel =
-    sessoesHoje === 0 ? 'Nenhuma sessão hoje'
-    : sessoesHoje === 1 ? '1 sessão hoje'
-    : `${sessoesHoje} sessões hoje`;
+    resumoAgenda.total === 0
+      ? 'Nenhuma sessão hoje'
+      : `${resumoAgenda.concluidas}/${resumoAgenda.total} sessões hoje`;
+
+  const botoesAtivos = modo === 'clinica' ? CLINICA_BUTTONS : ADMIN_BUTTONS;
 
   return (
-    <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.accent} />
+    <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.accent} />
 
       <View style={s.headerWrapper}>
         <HeaderWaves />
+
         <View style={s.headerContent}>
           <View style={s.identity}>
-
-            {/* ── TÍTULO PRINCIPAL ── */}
             <Text style={s.appName}>Dr.Sig</Text>
 
-            {/* ── SUBTÍTULO em duas linhas ── */}
-            <Text style={s.appSub}>O seu{'\n'}Assistente Clínico</Text>
+            <Text style={s.appSub}>
+              O seu{'\n'}Assistente Clínico
+            </Text>
 
-            <View style={[s.sessionPill, { marginTop: 14 }]}>
-              <View style={[s.sessionDot, sessoesHoje > 0 && s.sessionDotActive]} />
-              <Text style={[s.sessionText, sessoesHoje > 0 && s.sessionTextActive]}>
+            <View style={[s.sessionPill, { marginTop: 10 }]}>
+              <View
+                style={[
+                  s.sessionDot,
+                  resumoAgenda.total > 0 && s.sessionDotActive,
+                ]}
+              />
+              <Text style={s.sessionText}>
                 {sessaoLabel}
               </Text>
             </View>
           </View>
 
-          {/* ── AVATAR substituto (sem imagem) ── */}
           <View style={s.freudWrap}>
             <FreudAvatar />
           </View>
         </View>
-        <View style={s.dividerWave}><DividerWave /></View>
+
+        <View style={s.dividerWave}>
+          <DividerWave />
+        </View>
+
+        {/* Renderizado por último (não dentro de headerContent) pra garantir
+            que fique por cima do "Dr.Sig" no Android — dois irmãos absolutos
+            sem elevation/zIndex explícito empilham por ordem de pintura, e
+            headerContent vinha depois, cobrindo o botão. */}
+        <TouchableOpacity
+          style={s.menuBtn}
+          activeOpacity={0.7}
+          onPress={() => setMenuAberto(true)}
+        >
+          <Ionicons name="menu-outline" size={24} color={COLORS.btnBlue} />
+        </TouchableOpacity>
       </View>
 
-      <View style={s.grid}>
-        {BUTTONS.map((btn) => (
-          <TouchableOpacity
-            key={btn.id}
-            style={s.cell}
-            activeOpacity={0.75}
-            onPress={() => navigation.navigate(btn.screen)}
-          >
-            <Text style={s.cellIcon}>{btn.icon}</Text>
-            <Text style={s.cellLabel}>{btn.label}</Text>
-            <Text style={s.cellDesc}>{btn.desc}</Text>
-          </TouchableOpacity>
-        ))}
+      {/* 🔀 Toggle Clínica / Administrativa — sobrepõe a faixa mais clara do header */}
+      <View style={s.toggleWrap}>
+        <TouchableOpacity
+          style={[s.toggleBtn, modo === 'clinica' && s.toggleBtnActive]}
+          activeOpacity={0.8}
+          onPress={() => trocarModo('clinica')}
+        >
+          <Text style={[s.toggleText, modo === 'clinica' && s.toggleTextActive]}>
+            Clínica
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[s.toggleBtn, modo === 'administrativa' && s.toggleBtnActive]}
+          activeOpacity={0.8}
+          onPress={() => trocarModo('administrativa')}
+        >
+          <Text style={[s.toggleText, modo === 'administrativa' && s.toggleTextActive]}>
+            Administrativo
+          </Text>
+        </TouchableOpacity>
       </View>
+
+      <BannerAssinaturaInativa />
+
+      {/* Área com gesto de arraste — troca de modo ao arrastar para os lados */}
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={s.scrollContent}
+        showsVerticalScrollIndicator={false}
+        {...panHandlers}
+      >
+        {/* Banner do usuário */}
+        {user ? (
+          <TouchableOpacity
+            style={s.userBanner}
+            activeOpacity={0.7}
+            onPress={() => navigation.navigate('UserProfile')}
+          >
+            <View style={s.userBannerLeft}>
+              <View style={s.userBannerAvatar}>
+                <Text style={s.userBannerAvatarText}>
+                  {user.nome
+                    .split(' ')
+                    .map(p => p[0])
+                    .join('')
+                    .slice(0, 2)
+                    .toUpperCase()}
+                </Text>
+              </View>
+              <View style={s.userBannerInfo}>
+                <Text style={s.userBannerLabel}>Usuário</Text>
+                <Text style={s.userBannerName}>{user.nome}</Text>
+              </View>
+            </View>
+            <Text style={s.userBannerArrow}>›</Text>
+          </TouchableOpacity>
+        ) : null}
+
+        <Animated.View style={[s.grid, gridAnimatedStyle]}>
+          {botoesAtivos.map((btn) => (
+            <TouchableOpacity
+              key={btn.id}
+              style={s.cell}
+              activeOpacity={0.75}
+              onPress={() => navigation.navigate(btn.screen)}
+            >
+              <View style={s.cellIconBadge}>
+                <Ionicons name={btn.icon} size={26} color="#FFFFFF" />
+              </View>
+              <Text style={s.cellLabel} numberOfLines={2}>{btn.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </Animated.View>
+      </ScrollView>
+
+      <MenuLateral
+        visible={menuAberto}
+        onClose={() => setMenuAberto(false)}
+        navigation={navigation}
+        clinicaButtons={CLINICA_BUTTONS}
+        adminButtons={ADMIN_BUTTONS}
+      />
     </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
-  safe:          { flex: 1, backgroundColor: COLORS.bg },
-  headerWrapper: { height: HEADER_H + FREUD_OVERFLOW, marginBottom: 8 },
-  headerContent: {
-    position: 'absolute', top: 0, left: 0, right: 0, height: HEADER_H,
-    flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between',
-    paddingHorizontal: 28, paddingTop: 28,
-  },
-  dividerWave: { position: 'absolute', bottom: 0, left: 0, right: 0 },
-  identity:    { flex: 1, paddingRight: FREUD_SIZE * 0.55, justifyContent: 'flex-start' },
-
-  // ── Dr.Sig ──
-  appName: {
-    fontSize: 40,
-    fontWeight: '700',
-    fontStyle: 'italic',
-    color: '#8B5E3C',
-    letterSpacing: 1.5,
-    lineHeight: 48,
-    textShadowColor: 'rgba(0,0,0,0.40)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 8,
-  },
-
-  // ── Subtítulo ──
-  appSub: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#A8734A',
-    letterSpacing: 2.2,
-    textTransform: 'uppercase',
-    lineHeight: 18,
-    marginTop: 6,
-    textShadowColor: 'rgba(0,0,0,0.35)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-  },
-
-  sessionPill: {
-    flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start',
-    backgroundColor: 'rgba(0,0,0,0.25)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.40)',
-    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, gap: 7,
-  },
-  sessionDot:        { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.60)' },
-  sessionDotActive:  { backgroundColor: '#7EEFC0' },
-  sessionText:       { fontSize: 11, color: 'rgba(255,255,255,0.85)', fontWeight: '500' },
-  sessionTextActive: { color: '#FFFFFF', fontWeight: '700' },
-
-  // ── Avatar (substituto da foto) ──
-  freudWrap: {
-    position: 'absolute', right: 0, top: 10,
-    width: FREUD_SIZE, height: FREUD_SIZE + FREUD_OVERFLOW,
-    borderRadius: FREUD_SIZE / 2, overflow: 'hidden',
-    borderWidth: 2.5, borderColor: 'rgba(255,255,255,0.30)',
-    backgroundColor: COLORS.accentMid,
-    shadowColor: COLORS.accent, shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.28, shadowRadius: 14, elevation: 12, zIndex: 10,
-  },
-  freudAvatarInner: {
+  safe: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
+    backgroundColor: COLORS.bg,
   },
-  freudAvatarInitials: {
+
+  headerWrapper: {
+    height: HEADER_H + FREUD_OVERFLOW,
+  },
+  menuBtn: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    zIndex: 20,
+    elevation: 20,
+    padding: 10,
+  },
+  headerContent: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: HEADER_H,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    paddingHorizontal: 28,
+    paddingTop: 24,
+  },
+  dividerWave: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+  },
+
+  identity: {
+    flex: 1,
+    paddingRight: FREUD_SIZE * 0.55,
+    justifyContent: 'flex-start',
+  },
+  appName: {
     fontSize: 34,
     fontWeight: '700',
     fontStyle: 'italic',
-    color: '#FFFFFF',
-    letterSpacing: 2,
-    textShadowColor: 'rgba(0,0,0,0.30)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 6,
+    color: COLORS.btnBlue,
+    letterSpacing: 1.2,
+    lineHeight: 40,
   },
-  freudAvatarSub: {
-    fontSize: 9,
-    color: 'rgba(255,255,255,0.70)',
+  appSub: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.btnLight,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    lineHeight: 16,
+    marginTop: 4,
+  },
+
+  sessionPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: COLORS.btnBlue,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    gap: 7,
+  },
+  sessionDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.50)',
+  },
+  sessionDotActive: {
+    backgroundColor: COLORS.accentSoft,
+  },
+  sessionText: {
+    fontSize: 11,
+    color: '#FFFFFF',
     fontWeight: '500',
+  },
+
+  freudWrap: {
+    position: 'absolute',
+    right: 0,
+    top: 6,
+    width: FREUD_SIZE,
+    height: FREUD_SIZE + FREUD_OVERFLOW,
+    borderRadius: FREUD_SIZE / 2,
+    overflow: 'hidden',
+    zIndex: 10,
+  },
+  freudImage: {
+    width: '100%',
+    height: '100%',
+  },
+
+  // ⚠️ NOVO: fora do ScrollView, com margem negativa para sobrepor a faixa
+  // mais clara do fundo do header. elevation garante que fique por cima
+  // no Android; sombra própria para "descolar" visualmente do header.
+  toggleWrap: {
+    flexDirection: 'row',
+    marginHorizontal: 20,
+    marginTop: -TOGGLE_OVERLAP,
+    backgroundColor: COLORS.surface,
+    borderRadius: 14,
+    padding: 4,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    zIndex: 5,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+  },
+  toggleBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  toggleBtnActive: {
+    backgroundColor: COLORS.btnBlue,
+  },
+  toggleText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.textMid,
+  },
+  toggleTextActive: {
+    color: '#FFFFFF',
+  },
+
+  scrollContent: {
+    paddingTop: 14,
+    paddingBottom: 20,
+  },
+
+  userBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: COLORS.surface,
+    marginHorizontal: 20,
+    marginBottom: 10,
+    borderRadius: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  userBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  userBannerAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: COLORS.btnBlue,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  userBannerAvatarText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  userBannerInfo: {
+    gap: 0,
+  },
+  userBannerLabel: {
+    fontSize: 10,
+    color: COLORS.textLight,
+    fontWeight: '500',
+    textTransform: 'uppercase',
     letterSpacing: 1,
+  },
+  userBannerName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.textDark,
+  },
+  userBannerArrow: {
+    fontSize: 22,
+    color: COLORS.textLight,
+    fontWeight: '300',
   },
 
   grid: {
-    flex: 1, flexDirection: 'row', flexWrap: 'wrap',
-    paddingHorizontal: 20, paddingTop: FREUD_OVERFLOW + 4, gap: 14,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'flex-start',
+    paddingHorizontal: GRID_PADDING,
+    columnGap: GRID_COL_GAP,
+    rowGap: GRID_ROW_GAP,
   },
   cell: {
-    width: '47%', backgroundColor: COLORS.accentMid,
-    borderRadius: 20, padding: 22, justifyContent: 'flex-end', minHeight: 150,
-    shadowColor: COLORS.accent, shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25, shadowRadius: 10, elevation: 6,
+    width: CELL_W,
+    aspectRatio: 0.92,
+    backgroundColor: COLORS.btnBlue,
+    borderRadius: 20,
+    paddingVertical: 20,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: COLORS.btnShadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    elevation: 6,
   },
-  cellIcon:  { fontSize: 28, marginBottom: 12 },
-  cellLabel: { fontSize: 15, fontWeight: '700', color: '#FFFFFF', marginBottom: 4 },
-  cellDesc:  { fontSize: 11, color: 'rgba(255,255,255,0.75)', lineHeight: 16 },
+  // Selo de tamanho fixo para o ícone — usar @expo/vector-icons (em vez de
+  // emoji) garante que cada glifo tenha exatamente o mesmo bounding box,
+  // eliminando a inconsistência de alinhamento entre ícones diferentes.
+  cellIconBadge: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  cellLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    lineHeight: 19,
+    textAlign: 'center',
+  },
 });

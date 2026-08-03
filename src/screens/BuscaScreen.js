@@ -7,10 +7,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
   identificarPacienteNaPergunta, montarContextoPaciente, estimarCustoResposta,
-  chamarBuscaChat, CreditosInsuficientesError,
+  chamarBuscaChat, CreditosInsuficientesError, AssinaturaInativaError,
 } from '../services/buscaChat';
 import { formatarSaldoBRL } from '../services/creditosIA';
 import { mensagemDeErro } from '../services/erros';
+import { MENSAGEM_ASSINATURA_INATIVA } from '../services/assinatura';
 
 const MENSAGEM_INICIAL = {
   id: 'seed',
@@ -98,7 +99,9 @@ export default function BuscaScreen() {
       const { texto: resposta, custo } = await chamarBuscaChat(contexto, historicoCompleto, paciente);
       setMensagens((prev) => [...prev, { id: `a-${Date.now()}`, role: 'assistant', text: resposta, custo }]);
     } catch (e) {
-      if (e instanceof CreditosInsuficientesError) {
+      if (e instanceof AssinaturaInativaError) {
+        Alert.alert('Assinatura inativa', MENSAGEM_ASSINATURA_INATIVA);
+      } else if (e instanceof CreditosInsuficientesError) {
         Alert.alert('Créditos de IA insuficientes', 'Fale com o administrador da conta pra recarregar.');
       } else {
         Alert.alert('Erro ao responder', mensagemDeErro(e, 'Tente novamente.'));

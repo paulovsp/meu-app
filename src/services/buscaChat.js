@@ -9,6 +9,7 @@ import { calcularAnosEMeses } from './validacao';
 import { criarPseudonimizador } from './pseudonimizacao';
 
 export class CreditosInsuficientesError extends Error {}
+export class AssinaturaInativaError extends Error {}
 
 const MAX_ITENS_POR_PACIENTE = 30;
 const TRUNCAR_SESSAO = 600;
@@ -156,11 +157,14 @@ export async function chamarBuscaChat(contexto, historico, paciente) {
   if (error) {
     let mensagem = error.message;
     let creditosInsuficientes = false;
+    let assinaturaInativa = false;
     try {
       const corpo = await error.context?.json();
       if (corpo?.error) mensagem = corpo.error;
       creditosInsuficientes = !!corpo?.creditosInsuficientes;
+      assinaturaInativa = !!corpo?.assinaturaInativa;
     } catch (_) {}
+    if (assinaturaInativa) throw new AssinaturaInativaError(mensagem);
     if (creditosInsuficientes) throw new CreditosInsuficientesError(mensagem);
     throw new Error(mensagem);
   }

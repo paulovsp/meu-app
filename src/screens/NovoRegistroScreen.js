@@ -18,6 +18,7 @@ import {
   listarPacientes, addRecord,
 } from '../services/database';
 import { mensagemDeErro } from '../services/erros';
+import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
 
 const MEDIA_IMAGES = ['images'];
 
@@ -83,6 +84,8 @@ const TAMANHOS = [
 
 export default function NovoRegistroScreen() {
   const navigation = useNavigation();
+
+  useBloqueioAssinatura(navigation);
 
   const [step, setStep] = useState('SELECT_PATIENT');
   const [pacientes, setPacientes] = useState([]);

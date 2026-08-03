@@ -1,8 +1,15 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { View, ActivityIndicator } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useAuth } from '../contexts/AuthContext';
 
 // Autenticação
 import LoginScreen from '../screens/LoginScreen';
+import CadastroScreen from '../screens/CadastroScreen';
+import AvisoPrivacidadeScreen from '../screens/AvisoPrivacidadeScreen';
+
+const CHAVE_POLITICA_ACEITA = '@drsig_politica_privacidade_aceita_v1';
 
 // Principal
 import InicioScreen from '../screens/InicioScreen';
@@ -12,7 +19,6 @@ import AnalisantesScreen from '../screens/AnalisantesScreen';
 import BuscaScreen from '../screens/BuscaScreen';
 import FormularioAnalisanteScreen from '../screens/FormularioAnalisanteScreen';
 import DetalheAnalisanteScreen from '../screens/DetalheAnalisanteScreen';
-import PerfilPsicossomaticoScreen from '../screens/PerfilPsicossomaticoScreen';
 
 // Sessões
 import DetalheSessaoScreen from '../screens/DetalheSessaoScreen';
@@ -23,43 +29,41 @@ import NovoRegistroScreen from '../screens/NovoRegistroScreen';
 import DetalheRegistroScreen from '../screens/DetalheRegistroScreen';
 
 // Imagens
-import RecorteImagemScreen from '../screens/RecorteImagemScreen';
 
 // Perfil
 import PerfilScreen from '../screens/PerfilScreen';
+import AssinaturaScreen from '../screens/AssinaturaScreen';
 
 // Administrativo
 import AgendaScreen from '../screens/AgendaScreen';
 import FinanceiroScreen from '../screens/FinanceiroScreen';
 import CobrancaScreen from '../screens/CobrancaScreen';
 import FiscalScreen from '../screens/FiscalScreen';
+import ConfiguracaoFiscalAutomaticaScreen from '../screens/ConfiguracaoFiscalAutomaticaScreen';
 import EditarHorarioScreen from '../screens/DisponibilidadeScreen';
 import DetalheCompromissoScreen from '../screens/DetalheCompromissoScreen';
 
 const Stack = createNativeStackNavigator();
 
-export default function AppNavigator() {
-  return (
-    <Stack.Navigator
-      initialRouteName="Login"
-      screenOptions={{
-        headerStyle: {
-          backgroundColor: '#fff',
-        },
-        headerTintColor: '#1a202c',
-        headerTitleStyle: {
-          fontWeight: '700',
-        },
-        headerShadowVisible: false,
-      }}
-    >
-      {/* Login */}
-      <Stack.Screen
-        name="Login"
-        component={LoginScreen}
-        options={{ headerShown: false }}
-      />
+const screenOptions = {
+  headerStyle: { backgroundColor: '#fff' },
+  headerTintColor: '#1a202c',
+  headerTitleStyle: { fontWeight: '700' },
+  headerShadowVisible: false,
+};
 
+function AuthStackNavigator() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Login" component={LoginScreen} />
+      <Stack.Screen name="Cadastro" component={CadastroScreen} />
+    </Stack.Navigator>
+  );
+}
+
+function AppStackNavigator() {
+  return (
+    <Stack.Navigator initialRouteName="Home" screenOptions={screenOptions}>
       {/* Home */}
       <Stack.Screen
         name="Home"
@@ -75,9 +79,9 @@ export default function AppNavigator() {
       />
 
       <Stack.Screen
-        name="Search"
+        name="Busca"
         component={BuscaScreen}
-        options={{ title: 'Buscar' }}
+        options={{ title: 'Busca Dr.Sig' }}
       />
 
       <Stack.Screen
@@ -90,12 +94,6 @@ export default function AppNavigator() {
         name="PatientDetail"
         component={DetalheAnalisanteScreen}
         options={{ headerShown: false }}
-      />
-
-      <Stack.Screen
-        name="PerfilPsicossomatico"
-        component={PerfilPsicossomaticoScreen}
-        options={{ title: 'Perfil Psicossomático' }}
       />
 
       {/* Sessões */}
@@ -124,21 +122,17 @@ export default function AppNavigator() {
         options={{ title: 'Registro' }}
       />
 
-      {/* Imagem */}
-      <Stack.Screen
-        name="ImageCropper"
-        component={RecorteImagemScreen}
-        options={{
-          headerShown: false,
-          presentation: 'modal',
-        }}
-      />
-
       {/* Perfil */}
       <Stack.Screen
         name="UserProfile"
         component={PerfilScreen}
         options={{ title: 'Meu Perfil' }}
+      />
+
+      <Stack.Screen
+        name="Assinatura"
+        component={AssinaturaScreen}
+        options={{ title: 'Assinatura' }}
       />
 
       {/* Administrativo */}
@@ -157,13 +151,19 @@ export default function AppNavigator() {
       <Stack.Screen
         name="Cobranca"
         component={CobrancaScreen}
-        options={{ title: 'Recebimentos' }}
+        options={{ title: 'Recebíveis' }}
       />
 
       <Stack.Screen
         name="Fiscal"
         component={FiscalScreen}
         options={{ title: 'Fiscal' }}
+      />
+
+      <Stack.Screen
+        name="ConfiguracaoFiscalAutomatica"
+        component={ConfiguracaoFiscalAutomaticaScreen}
+        options={{ title: 'Envio automático' }}
       />
 
       <Stack.Screen
@@ -179,4 +179,34 @@ export default function AppNavigator() {
       />
     </Stack.Navigator>
   );
+}
+
+export default function AppNavigator() {
+  const { session, loading } = useAuth();
+  const [politicaAceita, setPoliticaAceita] = useState(null);
+
+  useEffect(() => {
+    AsyncStorage.getItem(CHAVE_POLITICA_ACEITA).then((valor) => {
+      setPoliticaAceita(valor === 'true');
+    });
+  }, []);
+
+  function aceitarPolitica() {
+    AsyncStorage.setItem(CHAVE_POLITICA_ACEITA, 'true');
+    setPoliticaAceita(true);
+  }
+
+  if (loading || politicaAceita === null) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#4A90D9" />
+      </View>
+    );
+  }
+
+  if (!session && !politicaAceita) {
+    return <AvisoPrivacidadeScreen onAceitar={aceitarPolitica} />;
+  }
+
+  return session ? <AppStackNavigator /> : <AuthStackNavigator />;
 }

@@ -1,6 +1,6 @@
 // ─── Créditos de IA ─────────────────────────────────────────────────────
 // Saldo (em US$, internamente) que as Edge Functions de IA (ia-transcrever,
-// ia-analisar-texto, ia-busca) checam e deduzem a cada chamada.
+// ia-busca) checam e deduzem a cada chamada.
 // Exibido em R$ no app (mais familiar) usando a mesma cotação de
 // referência fixa da Edge Function `renovar-creditos` — aproximada, só
 // pra exibição, não busca cotação ao vivo.

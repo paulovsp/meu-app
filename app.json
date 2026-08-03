@@ -1,29 +1,31 @@
 {
   "expo": {
-    "name": "meu-app",
+    "name": "Dr.Sig",
     "slug": "meu-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "audio"
+        ],
+        "NSFaceIDUsageDescription": "Usado pra entrar no Dr.Sig com Face ID, sem precisar digitar e-mail e senha."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true,
       "permissions": [
         "android.permission.RECORD_AUDIO",
-        "android.permission.MODIFY_AUDIO_SETTINGS"
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MICROPHONE",
+        "android.permission.POST_NOTIFICATIONS"
       ],
       "package": "com.paulovsp.meuapp"
     },
@@ -31,8 +33,23 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-sqlite",
-      "expo-audio"
+      "expo-audio",
+      "expo-asset",
+      [
+        "expo-notifications",
+        {
+          "color": "#3D5A80"
+        }
+      ],
+      "expo-secure-store",
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Usado pra selecionar uma foto da galeria e ler o texto dela.",
+          "cameraPermission": "Usado pra fotografar um documento e ler o texto dele."
+        }
+      ]
     ],
     "extra": {
       "eas": {

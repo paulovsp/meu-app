@@ -12,10 +12,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import * as ImagePicker from 'expo-image-picker';
+import { isSupported as ocrSuportado, extractTextFromImage } from 'expo-text-extractor';
 import {
   listarPacientes, addRecord,
 } from '../services/database';
 import { mensagemDeErro } from '../services/erros';
+
+const MEDIA_IMAGES = ['images'];
 
 // ─── tipos de registro ────────────────────────────────────────────────────
 const TIPOS_REGISTRO = [
@@ -88,6 +92,7 @@ export default function NovoRegistroScreen() {
   const [tipo, setTipo] = useState('sessao');
 
   const [salvando, setSalvando] = useState(false);
+  const [processando, setProcessando] = useState('');
 
   // ─── editor de texto livre ───
   const [conteudo, setConteudo] = useState('');
@@ -123,6 +128,75 @@ export default function NovoRegistroScreen() {
     const depois = conteudo.slice(end);
     const novoTexto = `${antes}${marcadorEsq}${meio}${marcadorDir}${depois}`;
     setConteudo(novoTexto);
+  }
+
+  // ─── importar texto de imagem — OCR no próprio aparelho (Google ML Kit
+  // no Android, Apple Vision no iOS via expo-text-extractor), sem enviar a
+  // imagem pra lugar nenhum: sem custo, sem provedor, funciona offline. ───
+  function anexarTexto(linhas) {
+    const texto = (linhas || []).join('\n').trim();
+    if (!texto) {
+      Alert.alert('Sem texto', 'Não encontrei texto útil nessa imagem.');
+      return;
+    }
+    setConteudo(prev => (prev.trim() ? `${prev}\n\n${texto}` : texto));
+  }
+
+  async function processarImagem(uri) {
+    try {
+      setProcessando('Lendo texto da imagem...');
+      const linhas = await extractTextFromImage(uri);
+      anexarTexto(linhas);
+    } catch (err) {
+      console.error('[processarImagem]', err);
+      Alert.alert('Erro ao ler imagem', err?.message || 'Falha ao processar imagem.');
+    } finally {
+      setProcessando('');
+    }
+  }
+
+  async function tirarFoto() {
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (perm.status !== 'granted') {
+        Alert.alert('Permissão negada', 'Precisamos de acesso à câmera.');
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: MEDIA_IMAGES,
+        quality: 1,
+        allowsEditing: false,
+      });
+      if (result.canceled) return;
+      const uri = result.assets?.[0]?.uri;
+      if (!uri) throw new Error('URI da foto não encontrado.');
+      await processarImagem(uri);
+    } catch (err) {
+      console.error('[tirarFoto]', err);
+      Alert.alert('Erro na câmera', err?.message || 'Não foi possível tirar foto.');
+    }
+  }
+
+  async function selecionarDaGaleria() {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (perm.status !== 'granted') {
+        Alert.alert('Permissão negada', 'Precisamos de acesso à galeria.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: MEDIA_IMAGES,
+        quality: 1,
+        allowsEditing: false,
+      });
+      if (result.canceled) return;
+      const uri = result.assets?.[0]?.uri;
+      if (!uri) throw new Error('URI da imagem não encontrado.');
+      await processarImagem(uri);
+    } catch (err) {
+      console.error('[selecionarDaGaleria]', err);
+      Alert.alert('Erro na galeria', err?.message || 'Não foi possível abrir galeria.');
+    }
   }
 
   async function salvar() {
@@ -239,6 +313,33 @@ export default function NovoRegistroScreen() {
             onChangeText={setTitulo}
           />
         </View>
+
+        {ocrSuportado && (
+          <View style={s.fieldGroup}>
+            <Text style={s.label}>Importar texto via imagem</Text>
+            <Text style={s.importHint}>
+              O texto é lido no próprio aparelho (sem enviar a imagem pra lugar nenhum) e
+              adicionado ao final do conteúdo.
+            </Text>
+            <View style={s.importRow}>
+              <TouchableOpacity style={s.importBtn} onPress={tirarFoto} disabled={!!processando}>
+                <Text style={s.importBtnIcon}>📷</Text>
+                <Text style={s.importBtnText}>Fotografar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.importBtn} onPress={selecionarDaGaleria} disabled={!!processando}>
+                <Text style={s.importBtnIcon}>🖼️</Text>
+                <Text style={s.importBtnText}>Galeria</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {!!processando && (
+          <View style={s.processandoBox}>
+            <ActivityIndicator color="#3D5A80" />
+            <Text style={s.processandoText}>{processando}</Text>
+          </View>
+        )}
 
         <View style={s.fieldGroup}>
           <Text style={s.label}>Conteúdo</Text>
@@ -392,6 +493,41 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E0E4EA',
   },
+  importHint: {
+    fontSize: 12,
+    color: '#7a6000',
+    fontStyle: 'italic',
+    backgroundColor: '#FFF8E7',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#F5A623',
+  },
+  importRow: { flexDirection: 'row', gap: 12 },
+  importBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#EBF3FB',
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#8AAEC8',
+  },
+  importBtnIcon: { fontSize: 20 },
+  importBtnText: { fontSize: 14, color: '#3D5A80', fontWeight: '600' },
+  processandoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#EBF3FB',
+    borderRadius: 10,
+    padding: 14,
+  },
+  processandoText: { fontSize: 14, color: '#3D5A80' },
   editorHintBox: {
     backgroundColor: '#F0F4F8',
     borderRadius: 8,

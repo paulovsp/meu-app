@@ -8,6 +8,7 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "br.com.drsig.app",
       "infoPlist": {
         "UIBackgroundModes": [
           "audio"
@@ -27,7 +28,7 @@
         "android.permission.FOREGROUND_SERVICE_MICROPHONE",
         "android.permission.POST_NOTIFICATIONS"
       ],
-      "package": "com.paulovsp.meuapp"
+      "package": "br.com.drsig.app"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -49,7 +50,9 @@
           "photosPermission": "Usado pra selecionar uma foto da galeria e ler o texto dela.",
           "cameraPermission": "Usado pra fotografar um documento e ler o texto dele."
         }
-      ]
+      ],
+      "./plugins/withForegroundServiceMicrophone",
+      "./plugins/withoutForegroundServiceMediaPlayback"
     ],
     "extra": {
       "eas": {

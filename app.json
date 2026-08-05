@@ -29,7 +29,7 @@
         "android.permission.POST_NOTIFICATIONS"
       ],
       "package": "br.com.drsig.app",
-      "versionCode": 2
+      "versionCode": 3
     },
     "web": {
       "favicon": "./assets/favicon.png"

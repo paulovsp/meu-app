@@ -28,7 +28,8 @@
         "android.permission.FOREGROUND_SERVICE_MICROPHONE",
         "android.permission.POST_NOTIFICATIONS"
       ],
-      "package": "br.com.drsig.app"
+      "package": "br.com.drsig.app",
+      "versionCode": 2
     },
     "web": {
       "favicon": "./assets/favicon.png"

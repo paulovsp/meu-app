@@ -73,6 +73,12 @@ async function enviarEmail(to: string, subject: string, html: string) {
   }
 }
 
+// Confirmação de cadastro sempre volta pra essa página estática (branded,
+// hospedada junto com privacidade.html/termos.html) — não pro deep link
+// direto no app, que não tem `scheme` configurado no app.json e por isso
+// sempre caía em página de erro no navegador (item B.4).
+const CONFIRMACAO_SIGNUP_URL = 'https://app.drsig.com.br/confirmado.html';
+
 function montarLinkVerificacao(tokenHash: string, tipo: string, redirectTo: string) {
   const url = new URL(`${SUPABASE_URL}/auth/v1/verify`);
   url.searchParams.set('token', tokenHash);
@@ -107,6 +113,7 @@ Deno.serve(async (req) => {
   try {
     const { user, email_data: emailData } = JSON.parse(payload);
     const email = user?.email;
+    const nome = user?.user_metadata?.nome || '';
     const tipo = emailData?.email_action_type;
     const link = montarLinkVerificacao(emailData?.token_hash, tipo, emailData?.redirect_to);
 
@@ -114,16 +121,24 @@ Deno.serve(async (req) => {
     let html: string;
 
     if (tipo === 'signup') {
-      subject = 'Bem-vindo(a) ao Dr.Sig!';
+      // Texto e link definidos pelo Paulo (item B.4) — o botão agora volta
+      // pra uma página web de marca (CONFIRMACAO_SIGNUP_URL), não pro app
+      // direto, porque não há `scheme` de deep link configurado.
+      const linkSignup = montarLinkVerificacao(emailData?.token_hash, tipo, CONFIRMACAO_SIGNUP_URL);
+      const saudacao = nome ? `Olá, ${nome}!` : 'Olá!';
+      subject = 'Bem-vindo(a) ao Dr.Sig — confirme seu cadastro';
       html = envelope(
         'Bem-vindo(a) ao Dr.Sig',
         `
-          <p>Obrigado por se cadastrar!</p>
-          <p>O Dr.Sig é o seu assistente pra organizar a prática clínica: agenda, financeiro, fiscal e o acompanhamento dos seus analisantes, tudo em um só lugar.</p>
-          <p>Falta só confirmar seu cadastro clicando no botão abaixo:</p>
-          <p><a href="${link}" style="background:#3D5A80;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;display:inline-block;">Confirmar cadastro</a></p>
-          <p style="margin-top:24px;">Pra usar o Dr.Sig, é só escolher um plano de assinatura — os próximos passos estão aqui:</p>
-          <p><a href="https://drsig.com.br" style="color:#3D5A80;">drsig.com.br</a></p>
+          <p>${saudacao}</p>
+          <p>Seja bem-vindo(a) ao Dr.Sig — prontuário e agenda para quem exerce psicoterapia. O Dr.Sig te ajuda a organizar o acompanhamento dos seus analisantes: sessões, prontuário, agenda e cobrança, tudo num só lugar.</p>
+          <p>Para começar, confirme seu cadastro:</p>
+          <p><a href="${linkSignup}" style="background:#3D5A80;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;display:inline-block;">Confirmar minha conta</a></p>
+          <p style="color:#888;font-size:13px;">Esse link expira em algumas horas. Se você não criou essa conta, ignore este e-mail.</p>
+          <p>Depois de confirmar, é só abrir o app Dr.Sig no seu celular e fazer login com o e-mail e senha que você cadastrou.</p>
+          <p>Qualquer dúvida, fale com a gente: <a href="mailto:drsig@drsig.com.br" style="color:#3D5A80;">drsig@drsig.com.br</a><br/>
+          Saiba mais em: <a href="https://app.drsig.com.br" style="color:#3D5A80;">app.drsig.com.br</a></p>
+          <p style="margin-top:24px;font-style:italic;color:#6B6860;">— Equipe Dr.Sig<br/>O consultório e a escuta, no mesmo lugar.</p>
         `
       );
     } else if (tipo === 'email_change') {

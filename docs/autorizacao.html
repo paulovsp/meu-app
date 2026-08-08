@@ -9,14 +9,16 @@
   .card { max-width: 420px; margin: 0 auto; background: #fff; border-radius: 16px; padding: 28px; box-shadow: 0 2px 10px rgba(0,0,0,0.06); }
   h2 { margin-top: 0; }
   label { display: block; font-size: 13px; font-weight: 600; margin: 16px 0 6px; }
-  input { width: 100%; box-sizing: border-box; padding: 12px; border-radius: 10px; border: 1px solid #E0E4EA; font-size: 15px; }
-  button { width: 100%; padding: 14px; border-radius: 12px; border: none; font-size: 15px; font-weight: 700; margin-top: 20px; cursor: pointer; }
+  input[type="file"] { width: 100%; box-sizing: border-box; padding: 12px; border-radius: 10px; border: 1px dashed #B8C2D0; font-size: 14px; background: #FAFBFC; }
+  button { width: 100%; padding: 14px; border-radius: 12px; border: none; font-size: 15px; font-weight: 700; margin-top: 14px; cursor: pointer; }
   button:disabled { opacity: 0.6; }
   .btn-autorizar { background: #3D5A80; color: #fff; }
   .btn-negar { background: #F0F0F0; color: #6B6860; margin-top: 10px; }
   .erro { background: #FCEBEA; color: #C0392B; padding: 12px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; }
   .aviso { color: #6B6860; font-size: 12px; margin-top: 20px; line-height: 1.5; }
+  .privacidade { background: #F5F7FA; border-left: 3px solid #3D5A80; padding: 10px 14px; border-radius: 4px; font-size: 12.5px; color: #33333d; margin-top: 16px; line-height: 1.5; }
   .carregando { text-align: center; color: #6B6860; padding: 40px 0; }
+  .preview { width: 100%; border-radius: 10px; margin-top: 10px; display: none; }
 </style>
 </head>
 <body>
@@ -27,6 +29,13 @@
   <script>
     const SUPABASE_URL = 'https://iahtyvqjgukdgrftpyxm.supabase.co';
     const API_URL = SUPABASE_URL + '/functions/v1/confirmar-autorizacao';
+
+    // Limite de lado maior + qualidade JPEG usados no redimensionamento no
+    // navegador antes do envio — mantém a foto do documento legível pro OCR
+    // sem mandar um arquivo gigante (fotos de câmera de celular passam
+    // facilmente de 5-10MB).
+    const LADO_MAXIMO_PX = 1600;
+    const QUALIDADE_JPEG = 0.82;
 
     const params = new URLSearchParams(window.location.search);
     const token = params.get('token');
@@ -40,45 +49,109 @@
       render('<h2>' + titulo + '</h2><p>' + texto + '</p>');
     }
 
-    function renderFormulario(erro) {
+    function redimensionarImagem(file) {
+      return new Promise(function (resolve, reject) {
+        const img = new Image();
+        const leitor = new FileReader();
+        leitor.onerror = function () { reject(new Error('Não foi possível ler o arquivo.')); };
+        leitor.onload = function () {
+          img.onerror = function () { reject(new Error('Arquivo não é uma imagem válida.')); };
+          img.onload = function () {
+            let largura = img.width;
+            let altura = img.height;
+            if (largura > LADO_MAXIMO_PX || altura > LADO_MAXIMO_PX) {
+              if (largura >= altura) {
+                altura = Math.round((altura * LADO_MAXIMO_PX) / largura);
+                largura = LADO_MAXIMO_PX;
+              } else {
+                largura = Math.round((largura * LADO_MAXIMO_PX) / altura);
+                altura = LADO_MAXIMO_PX;
+              }
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = largura;
+            canvas.height = altura;
+            canvas.getContext('2d').drawImage(img, 0, 0, largura, altura);
+            const dataUrl = canvas.toDataURL('image/jpeg', QUALIDADE_JPEG);
+            resolve(dataUrl.split(',')[1]);
+          };
+          img.src = leitor.result;
+        };
+        leitor.readAsDataURL(file);
+      });
+    }
+
+    function renderUpload(erro) {
       render(
         (erro ? '<div class="erro">' + erro + '</div>' : '') +
         '<h2>Autorização de gravação e transcrição</h2>' +
-        '<p>Para confirmar que é você, digite seus dados exatamente como estão no seu cadastro:</p>' +
+        '<p>Para confirmar que é você, envie uma foto de um documento com foto (RG, CNH ou passaporte). É só pra essa conferência automática — a foto não fica guardada.</p>' +
         '<form id="form">' +
-        '  <label>Nome completo</label>' +
-        '  <input type="text" name="nome" required />' +
-        '  <label>CPF</label>' +
-        '  <input type="text" name="cpf" required placeholder="000.000.000-00" />' +
-        '  <label>Data de nascimento</label>' +
-        '  <input type="date" name="nascimento" required />' +
-        '  <button type="submit" data-acao="autorizar" class="btn-autorizar">Autorizo a gravação e transcrição</button>' +
+        '  <label>Foto do documento</label>' +
+        '  <input type="file" name="documento" accept="image/*" capture="environment" required />' +
+        '  <img class="preview" id="preview" />' +
+        '  <button type="submit" data-acao="autorizar" class="btn-autorizar">Enviar documento e autorizar</button>' +
         '  <button type="submit" data-acao="negar" class="btn-negar">Não autorizo</button>' +
         '</form>' +
-        '<p class="aviso">Ao autorizar, você concorda que suas sessões podem ser gravadas em áudio e transcritas para uso no seu acompanhamento clínico. Você pode revogar essa autorização a qualquer momento, conversando diretamente com sua psicanalista.</p>'
+        '<p class="aviso">Ao autorizar, você concorda que suas sessões podem ser gravadas em áudio e transcritas para uso no seu acompanhamento clínico. Você pode revogar essa autorização a qualquer momento, conversando diretamente com sua psicanalista.</p>' +
+        '<p class="privacidade">A foto do documento é usada só para conferir seus dados automaticamente e é descartada logo em seguida — não fica armazenada em nenhum momento. Detalhes na <a href="https://app.drsig.com.br/privacidade.html" target="_blank" rel="noopener">Política de Privacidade</a>.</p>'
       );
+
+      const input = document.getElementById('form').querySelector('input[type="file"]');
+      const preview = document.getElementById('preview');
+      input.addEventListener('change', function () {
+        const file = input.files && input.files[0];
+        if (!file) { preview.style.display = 'none'; return; }
+        const leitor = new FileReader();
+        leitor.onload = function () {
+          preview.src = leitor.result;
+          preview.style.display = 'block';
+        };
+        leitor.readAsDataURL(file);
+      });
 
       document.getElementById('form').addEventListener('submit', function (ev) {
         ev.preventDefault();
         const acao = ev.submitter ? ev.submitter.dataset.acao : 'autorizar';
-        enviarResposta(acao, new FormData(ev.target));
+        if (acao === 'negar') {
+          enviarNegacao();
+          return;
+        }
+        const file = input.files && input.files[0];
+        if (!file) {
+          renderUpload('Selecione a foto do documento antes de enviar.');
+          return;
+        }
+        enviarDocumento(file);
       });
     }
 
-    async function enviarResposta(acao, formData) {
+    async function enviarNegacao() {
       const botoes = card.querySelectorAll('button');
       botoes.forEach(function (b) { b.disabled = true; });
-
       try {
         const resp = await fetch(API_URL + '?token=' + encodeURIComponent(token), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            acao: acao,
-            nome: formData.get('nome'),
-            cpf: formData.get('cpf'),
-            nascimento: formData.get('nascimento'),
-          }),
+          body: JSON.stringify({ acao: 'negar' }),
+        });
+        mostrarEstado(await resp.json());
+      } catch (e) {
+        mensagemSimples('Erro de conexão', 'Não conseguimos falar com o servidor. Verifique sua internet e tente de novo.');
+      }
+    }
+
+    async function enviarDocumento(file) {
+      const botoes = card.querySelectorAll('button');
+      botoes.forEach(function (b) { b.disabled = true; });
+      render('<div class="carregando">Enviando e conferindo seu documento…</div>');
+
+      try {
+        const imagemBase64 = await redimensionarImagem(file);
+        const resp = await fetch(API_URL + '?token=' + encodeURIComponent(token), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ acao: 'autorizar', imagemBase64: imagemBase64, mimeType: 'image/jpeg' }),
         });
         const data = await resp.json();
         mostrarEstado(data);
@@ -90,7 +163,7 @@
     function mostrarEstado(data) {
       switch (data.state) {
         case 'form':
-          renderFormulario();
+          renderUpload();
           break;
         case 'authorized':
           mensagemSimples('Autorizado com sucesso', 'Obrigado! Sua autorização foi registrada.');
@@ -108,10 +181,10 @@
           mensagemSimples('Link expirado', 'Peça para sua psicanalista enviar uma nova solicitação.');
           break;
         case 'locked':
-          mensagemSimples('Muitas tentativas incorretas', 'Por segurança, este link foi bloqueado. Peça uma nova solicitação.');
+          mensagemSimples('Muitas tentativas', 'Por segurança, este link foi bloqueado. Peça uma nova solicitação.');
           break;
         case 'mismatch':
-          renderFormulario('Os dados digitados não coincidem com o que está cadastrado. Confira e tente de novo.');
+          renderUpload(data.erro || 'Não conseguimos confirmar sua identidade pelo documento enviado. Tente novamente com uma foto mais nítida.');
           break;
         case 'invalid':
         default:

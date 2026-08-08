@@ -158,6 +158,11 @@
         <td>Envio dos e-mails do app (autorização de gravação, recibos, acesso à conta)</td>
         <td>Estados Unidos</td>
       </tr>
+      <tr>
+        <td>OCR.space</td>
+        <td>Leitura automática do documento na autorização de gravação (a imagem não é armazenada por nós nem, segundo o fornecedor, por ele)</td>
+        <td style="color:#B0691F;">A confirmar — pendente de validação jurídica</td>
+      </tr>
     </table>
     <p style="font-size:13.5px;color:#6B6860;">
       Como nenhum desses países tem decisão de adequação reconhecida pela ANPD, a transferência se
@@ -177,9 +182,31 @@
     <h2>Autorização de gravação</h2>
     <p>
       Gravar e transcrever uma sessão depende de autorização prévia do analisante, solicitada por
-      e-mail e confirmada com dados de identificação (nome, CPF, data de nascimento). O app
-      registra a resposta e não permite a gravação sem ela. A autorização pode ser revogada a
-      qualquer momento, diretamente com a terapeuta responsável.
+      e-mail, através de um link exclusivo enviado diretamente ao contato do analisante cadastrado
+      pela profissional — só quem recebe esse e-mail consegue responder à solicitação; a
+      profissional não tem acesso a essa etapa nem pode concluí-la em nome do analisante.
+    </p>
+    <p>
+      Para confirmar a identidade de quem está respondendo, pedimos uma <strong>foto de um
+      documento oficial com foto</strong> (RG, CNH ou passaporte). O CPF é extraído
+      automaticamente da imagem, por um serviço de reconhecimento de texto (OCR), e comparado ao
+      CPF do analisante já cadastrado — e também ao CPF da própria profissional, para impedir que
+      ela use o próprio documento em nome do analisante.
+    </p>
+    <div class="destaque" style="border-left-color:#F09B4A;background:#FFF3E8;">
+      <strong>A foto do documento não é armazenada em nenhum momento.</strong> Ela trafega apenas
+      durante essa conferência automática — é enviada, processada pelo serviço de OCR e descartada
+      logo em seguida. Nós guardamos apenas o <strong>resultado</strong> da conferência: se foi
+      aprovada ou não, a data e hora, e o método usado — nunca a imagem em si. Isso segue o
+      princípio de minimização de dados da LGPD (art. 6º, VI): só tratamos o que é necessário para
+      a finalidade, pelo tempo necessário para ela, e não mais que isso.
+      <br/><br/>
+      <em>Esta cláusula descreve o funcionamento técnico do recurso; a formulação jurídica
+      definitiva ainda está pendente de validação por advogado antes do uso em produção.</em>
+    </div>
+    <p>
+      O app registra a resposta e não permite a gravação sem autorização confirmada. A autorização
+      pode ser revogada a qualquer momento, diretamente com a terapeuta responsável.
     </p>
 
     <h2>Por quanto tempo guardamos os dados</h2>

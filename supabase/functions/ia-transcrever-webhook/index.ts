@@ -162,9 +162,10 @@ async function enviarPush(
   try {
     const { data: perfil } = await supabaseAdmin
       .from('profiles')
-      .select('expo_push_token')
+      .select('expo_push_token, notif_transcricao_push')
       .eq('id', userId)
       .single();
+    if (perfil?.notif_transcricao_push === false) return;
     const token = perfil?.expo_push_token;
     if (!token) return;
     await fetch(EXPO_PUSH_URL, {

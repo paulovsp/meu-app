@@ -1,9 +1,10 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList,
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import {
   identificarPacienteNaPergunta, montarContextoPaciente, estimarCustoResposta,
@@ -17,6 +18,16 @@ const MENSAGEM_INICIAL = {
   id: 'seed',
   role: 'assistant',
   text: 'Olá! Sou o Busca Dr.Sig. Pergunte sobre um analisante (mencione o nome dele) — antes de responder, mostro uma estimativa de custo pra você confirmar.',
+};
+
+// Estado do chat sobrevive fora do componente — a tela é remontada sempre
+// que sai da pilha de navegação (ex: Início → Analisantes → Busca de novo),
+// então um useState local sozinho perderia a conversa. Só reseta quando a
+// própria pessoa aperta "limpar conversa" (item C.5).
+const estadoPersistente = {
+  mensagens: [MENSAGEM_INICIAL],
+  texto: '',
+  pacienteAtivo: null,
 };
 
 function Bolha({ mensagem }) {
@@ -34,16 +45,36 @@ function Bolha({ mensagem }) {
 }
 
 export default function BuscaScreen() {
-  const [mensagens, setMensagens] = useState([MENSAGEM_INICIAL]);
-  const [texto, setTexto] = useState('');
+  const navigation = useNavigation();
+  const [mensagens, setMensagens] = useState(estadoPersistente.mensagens);
+  const [texto, setTexto] = useState(estadoPersistente.texto);
   const [enviando, setEnviando] = useState(false);
   const listRef = useRef(null);
 
   // "Assunto" atual da conversa: uma vez identificado um analisante pelo
   // nome, perguntas de acompanhamento continuam nele até outro nome ser
   // mencionado — sem precisar repetir o nome a cada mensagem.
-  const pacienteAtivoRef = useRef(null);
-  const contextoAtivoRef = useRef(null);
+  const pacienteAtivoRef = useRef(estadoPersistente.pacienteAtivo);
+
+  useEffect(() => { estadoPersistente.mensagens = mensagens; }, [mensagens]);
+  useEffect(() => { estadoPersistente.texto = texto; }, [texto]);
+
+  function limparConversa() {
+    setMensagens([MENSAGEM_INICIAL]);
+    setTexto('');
+    pacienteAtivoRef.current = null;
+    estadoPersistente.pacienteAtivo = null;
+  }
+
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity onPress={limparConversa} style={{ padding: 6 }}>
+          <Ionicons name="trash-outline" size={20} color="#3D5A80" />
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation]);
 
   async function resolverContexto(pergunta) {
     const pacienteMencionado = await identificarPacienteNaPergunta(pergunta);
@@ -52,12 +83,13 @@ export default function BuscaScreen() {
     if (!paciente) {
       return { paciente: null, contexto: null };
     }
-    if (pacienteAtivoRef.current?.id === paciente.id && contextoAtivoRef.current) {
-      return { paciente, contexto: contextoAtivoRef.current };
-    }
-    const contexto = await montarContextoPaciente(paciente);
+    // Recalcula a cada pergunta (não reaproveita o contexto da pergunta
+    // anterior sobre o mesmo paciente) — a seleção de itens relevantes
+    // depende da pergunta atual; reaproveitar prendia perguntas de
+    // acompanhamento ao recorte da primeira pergunta da conversa (item C.6).
+    const contexto = await montarContextoPaciente(paciente, pergunta);
     pacienteAtivoRef.current = paciente;
-    contextoAtivoRef.current = contexto;
+    estadoPersistente.pacienteAtivo = paciente;
     return { paciente, contexto };
   }
 

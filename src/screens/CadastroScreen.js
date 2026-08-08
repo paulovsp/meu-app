@@ -2,13 +2,13 @@ import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ScrollView, Alert,
-  StatusBar, ActivityIndicator,
+  StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../services/supabase';
-import { validarCPF, buscarEnderecoPorCep, dataBRParaISO } from '../services/validacao';
+import { validarCPF, dataBRParaISO } from '../services/validacao';
 
 const COLORS = {
   bg: '#F7F6F3',
@@ -44,15 +44,8 @@ export default function CadastroScreen({ navigation }) {
   const [cpf, setCpf] = useState('');
   const [dataNascimento, setDataNascimento] = useState('');
 
-  const [cep, setCep] = useState('');
-  const [logradouro, setLogradouro] = useState('');
-  const [numero, setNumero] = useState('');
-  const [complemento, setComplemento] = useState('');
-  const [bairro, setBairro] = useState('');
   const [cidade, setCidade] = useState('');
   const [uf, setUf] = useState('');
-  const [cepTravado, setCepTravado] = useState(false);
-  const [buscandoCep, setBuscandoCep] = useState(false);
 
   const [crp, setCrp] = useState('');
   const [email, setEmail] = useState('');
@@ -85,37 +78,6 @@ export default function CadastroScreen({ navigation }) {
     setDataNascimento(formatado);
   }
 
-  async function formatarCep(texto) {
-    const numeros = texto.replace(/\D/g, '').slice(0, 8);
-    let formatado = numeros;
-    if (numeros.length > 5) formatado = `${numeros.slice(0, 5)}-${numeros.slice(5)}`;
-    setCep(formatado);
-
-    if (numeros.length === 8) {
-      setBuscandoCep(true);
-      const resultado = await buscarEnderecoPorCep(numeros);
-      setBuscandoCep(false);
-      if (!resultado) {
-        Alert.alert('CEP não encontrado', 'Confira o CEP ou toque em "preencher manualmente" abaixo.');
-        return;
-      }
-      setLogradouro(resultado.logradouro);
-      setBairro(resultado.bairro);
-      setCidade(resultado.cidade);
-      setUf(resultado.uf);
-      setCepTravado(true);
-    }
-  }
-
-  function refazerCep() {
-    setCepTravado(false);
-    setCep('');
-    setLogradouro('');
-    setBairro('');
-    setCidade('');
-    setUf('');
-  }
-
   async function handleCriarConta() {
     const nomeTrim = nome.trim();
     const emailTrim = email.trim();
@@ -133,12 +95,8 @@ export default function CadastroScreen({ navigation }) {
       Alert.alert('Campo obrigatório', 'Informe sua data de nascimento completa.');
       return;
     }
-    if (!logradouro.trim() || !bairro.trim() || !cidade.trim() || !uf.trim()) {
-      Alert.alert('Campo obrigatório', 'Informe seu endereço (CEP ou preenchimento manual).');
-      return;
-    }
-    if (!numero.trim()) {
-      Alert.alert('Campo obrigatório', 'Informe o número do seu endereço.');
+    if (!cidade.trim() || !uf.trim()) {
+      Alert.alert('Campo obrigatório', 'Informe sua cidade e UF.');
       return;
     }
     if (!emailTrim) {
@@ -172,11 +130,6 @@ export default function CadastroScreen({ navigation }) {
             crp: crp.trim() || null,
             cpf: cpfLimpo,
             data_nascimento: dataNascimentoISO,
-            cep: cep.trim() || null,
-            logradouro: logradouro.trim(),
-            numero: numero.trim(),
-            complemento: complemento.trim() || null,
-            bairro: bairro.trim(),
             cidade: cidade.trim(),
             uf: uf.trim(),
           },
@@ -268,94 +221,25 @@ export default function CadastroScreen({ navigation }) {
             maxLength={10}
           />
 
-          <Text style={s.label}>CEP *</Text>
-          <View style={s.cepRow}>
-            <TextInput
-              style={[s.input, { flex: 1 }, cepTravado && s.inputTravado]}
-              value={cep}
-              onChangeText={formatarCep}
-              keyboardType="numeric"
-              placeholder="00000-000"
-              placeholderTextColor="#B0ADA6"
-              maxLength={9}
-              editable={!cepTravado}
-            />
-            {buscandoCep && <ActivityIndicator style={s.cepLoading} color={COLORS.btnBlue} />}
-          </View>
-          {cepTravado ? (
-            <TouchableOpacity onPress={refazerCep}>
-              <Text style={s.linkRefazer}>Endereço errado? Buscar outro CEP</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity onPress={() => setCepTravado(false)}>
-              <Text style={s.linkRefazer}>Não encontrou seu CEP? Preencher manualmente</Text>
-            </TouchableOpacity>
-          )}
-
-          <Text style={s.label}>Logradouro *</Text>
-          <TextInput
-            style={[s.input, cepTravado && s.inputTravado]}
-            value={logradouro}
-            onChangeText={setLogradouro}
-            placeholder="Rua, avenida..."
-            placeholderTextColor="#B0ADA6"
-            editable={!cepTravado}
-          />
-
-          <View style={s.linhaDupla}>
-            <View style={{ flex: 1 }}>
-              <Text style={s.label}>Número *</Text>
-              <TextInput
-                style={s.input}
-                value={numero}
-                onChangeText={setNumero}
-                keyboardType="numeric"
-                placeholder="Ex: 123"
-                placeholderTextColor="#B0ADA6"
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={s.label}>Complemento</Text>
-              <TextInput
-                style={s.input}
-                value={complemento}
-                onChangeText={setComplemento}
-                placeholder="Apto, bloco..."
-                placeholderTextColor="#B0ADA6"
-              />
-            </View>
-          </View>
-
-          <Text style={s.label}>Bairro *</Text>
-          <TextInput
-            style={[s.input, cepTravado && s.inputTravado]}
-            value={bairro}
-            onChangeText={setBairro}
-            placeholderTextColor="#B0ADA6"
-            editable={!cepTravado}
-          />
-
           <View style={s.linhaDupla}>
             <View style={{ flex: 2 }}>
               <Text style={s.label}>Cidade *</Text>
               <TextInput
-                style={[s.input, cepTravado && s.inputTravado]}
+                style={s.input}
                 value={cidade}
                 onChangeText={setCidade}
                 placeholderTextColor="#B0ADA6"
-                editable={!cepTravado}
               />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={s.label}>UF *</Text>
               <TextInput
-                style={[s.input, cepTravado && s.inputTravado]}
+                style={s.input}
                 value={uf}
                 onChangeText={(t) => setUf(t.toUpperCase().slice(0, 2))}
                 placeholderTextColor="#B0ADA6"
                 autoCapitalize="characters"
                 maxLength={2}
-                editable={!cepTravado}
               />
             </View>
           </View>
@@ -465,15 +349,8 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E8E4DD',
   },
-  inputTravado: {
-    backgroundColor: '#F0EFEC',
-    color: COLORS.textMid,
-  },
-  cepRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  cepLoading: { width: 24 },
   senhaRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   olhoBtn: { padding: 4 },
-  linkRefazer: { color: COLORS.btnLight, fontSize: 12.5, fontWeight: '600', marginTop: 8 },
   linhaDupla: { flexDirection: 'row', gap: 12 },
   btn: {
     backgroundColor: COLORS.btnBlue,

@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Notifications from 'expo-notifications';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useAuth } from '../contexts/AuthContext';
+import { navigationRef } from './navigationRef';
 
 // Autenticação
 import LoginScreen from '../screens/LoginScreen';
@@ -33,6 +35,7 @@ import DetalheRegistroScreen from '../screens/DetalheRegistroScreen';
 // Perfil
 import PerfilScreen from '../screens/PerfilScreen';
 import AssinaturaScreen from '../screens/AssinaturaScreen';
+import MensagensPersonalizadasScreen from '../screens/MensagensPersonalizadasScreen';
 
 // Administrativo
 import AgendaScreen from '../screens/AgendaScreen';
@@ -62,6 +65,19 @@ function AuthStackNavigator() {
 }
 
 function AppStackNavigator() {
+  // Toque numa notificação push de transcrição pronta abre a sessão certa —
+  // navigationRef (não useNavigation) porque este componente é o próprio
+  // navegador raiz, não uma tela dentro dele.
+  useEffect(() => {
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      const sessionId = response.notification.request.content.data?.sessionId;
+      if (sessionId && navigationRef.isReady()) {
+        navigationRef.navigate('SessionDetail', { sessionId });
+      }
+    });
+    return () => subscription.remove();
+  }, []);
+
   return (
     <Stack.Navigator initialRouteName="Home" screenOptions={screenOptions}>
       {/* Home */}
@@ -87,7 +103,7 @@ function AppStackNavigator() {
       <Stack.Screen
         name="PatientForm"
         component={FormularioAnalisanteScreen}
-        options={{ title: 'Paciente' }}
+        options={{ headerShown: false }}
       />
 
       <Stack.Screen
@@ -133,6 +149,12 @@ function AppStackNavigator() {
         name="Assinatura"
         component={AssinaturaScreen}
         options={{ title: 'Assinatura' }}
+      />
+
+      <Stack.Screen
+        name="MensagensPersonalizadas"
+        component={MensagensPersonalizadasScreen}
+        options={{ title: 'Mensagens personalizadas' }}
       />
 
       {/* Administrativo */}

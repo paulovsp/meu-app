@@ -1,13 +1,19 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  FlatList, Alert
+  FlatList, Alert, ActivityIndicator
 } from 'react-native';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { getSessions, getRecords, deleteSession, deleteRecord, parsePreco } from '../services/database';
+import {
+  getSessions, getRecords, deleteSession, deleteRecord, parsePreco, getPatientById, getModalidadeDerivada,
+  getHistoricoParalizacoes, marcarParalizacao, marcarRetorno,
+} from '../services/database';
 import { formatarValorMoeda, getCotacaoCacheada } from '../services/currency';
+import { solicitarAutorizacao, getStatusAutorizacao } from '../services/autorizacaoGravacao';
+import { mensagemDeErro } from '../services/erros';
+import { dataISOParaBR, calcularAnosEMeses, formatarAnosEMeses } from '../services/validacao';
 
 // ─── Helper: remove tags HTML ──────────────────────────
 function stripHtml(html) {
@@ -28,48 +34,16 @@ function stripHtml(html) {
     .trim();
 }
 
-// ─── Idade e tempo de análise ──────────────────────────
-function calcularAnosEMeses(dataStr) {
-  if (!dataStr) return null;
-  const hoje = new Date();
-  let data;
-  if (dataStr.includes('/')) {
-    const [d, m, a] = dataStr.split('/').map(Number);
-    if (!a || !m || !d) return null;
-    data = new Date(a, m - 1, d);
-  } else {
-    data = new Date(dataStr);
-  }
-  if (isNaN(data.getTime())) return null;
-
-  let anos = hoje.getFullYear() - data.getFullYear();
-  let meses = hoje.getMonth() - data.getMonth();
-  if (hoje.getDate() < data.getDate()) meses--;
-  if (meses < 0) { anos--; meses += 12; }
-  return { anos, meses };
-}
-
-function formatarAnosEMeses(obj) {
-  if (!obj) return null;
-  const { anos, meses } = obj;
-  if (!anos && !meses) return '0 meses';
-  const partes = [];
-  if (anos > 0) partes.push(`${anos} ${anos === 1 ? 'ano' : 'anos'}`);
-  if (meses > 0) partes.push(`${meses} ${meses === 1 ? 'mês' : 'meses'}`);
-  return partes.join(' e ');
-}
-
 // ─── Preço da sessão (com conversão para Reais, se moeda estrangeira) ──
-function getPrecoLabel(paciente) {
+function getPrecoLabel(paciente, cotacaoCache) {
   const valor = parsePreco(paciente.preco_sessao);
   if (!valor) return null;
   const moeda = paciente.preco_moeda || 'BRL';
   const formatado = formatarValorMoeda(valor, moeda);
   if (moeda === 'BRL') return formatado;
 
-  const cotacao = getCotacaoCacheada(moeda);
-  if (!cotacao?.valor_brl) return formatado;
-  return `${formatado}  (≈ ${formatarValorMoeda(valor * cotacao.valor_brl, 'BRL')})`;
+  if (!cotacaoCache?.valor_brl) return formatado;
+  return `${formatado}  (≈ ${formatarValorMoeda(valor * cotacaoCache.valor_brl, 'BRL')})`;
 }
 
 // ─── Labels ────────────────────────────────────────────
@@ -80,6 +54,23 @@ function getModalidadeLabel(modalidade) {
     case 'hibrido':    return 'Híbrido';
     default:           return null;
   }
+}
+
+// ─── Status da autorização de gravação/transcrição ────
+function getAutorizacaoInfo(autorizacao) {
+  if (!autorizacao) {
+    return { texto: 'Ainda não solicitada', cor: '#888', botao: 'Solicitar autorização' };
+  }
+  if (autorizacao.status === 'pendente') {
+    return { texto: 'Aguardando confirmação do analisante', cor: '#F09B4A', botao: 'Reenviar e-mail' };
+  }
+  if (autorizacao.status === 'autorizada') {
+    const data = autorizacao.respondido_em
+      ? new Date(autorizacao.respondido_em).toLocaleDateString('pt-BR')
+      : '';
+    return { texto: `Autorizada${data ? ` em ${data}` : ''}`, cor: '#2E8B57', botao: 'Solicitar novamente' };
+  }
+  return { texto: 'Não autorizada pelo analisante', cor: '#C0392B', botao: 'Solicitar novamente' };
 }
 
 // ⚠️ NOVO: Badge de autor para registros
@@ -124,21 +115,97 @@ function InfoRow({ label, value, icon }) {
 export default function DetalheAnalisanteScreen() {
   const navigation = useNavigation();
   const route = useRoute();
-  const { paciente } = route.params;
+  const { paciente: pacienteInicial } = route.params;
 
+  // `route.params.paciente` é só a foto de quando se navegou pra cá — se a
+  // psicanalista editar o cadastro (CPF/nascimento/e-mail) e voltar, esse
+  // valor NÃO se atualiza sozinho. Por isso `paciente` vira estado local,
+  // recarregado do Supabase toda vez que a tela ganha foco.
+  const [paciente, setPaciente] = useState(pacienteInicial);
   const [sessoes, setSessoes] = useState([]);
   const [registros, setRegistros] = useState([]);
+  const [autorizacao, setAutorizacao] = useState(null);
+  const [enviandoAutorizacao, setEnviandoAutorizacao] = useState(false);
+  const [cotacaoCache, setCotacaoCache] = useState(null);
+  const [modalidadeDerivada, setModalidadeDerivada] = useState(null);
+  const [removendoItemId, setRemovendoItemId] = useState(null);
+  const [historicoParalizacoes, setHistoricoParalizacoes] = useState([]);
+  const [mostrarHistorico, setMostrarHistorico] = useState(false);
+  const [alternandoParalizacao, setAlternandoParalizacao] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
-      setSessoes(getSessions(paciente.id));
-      setRegistros(getRecords(paciente.id));
-    }, [paciente.id])
+      (async () => {
+        try {
+          const atualizado = await getPatientById(pacienteInicial.id);
+          const pacienteAtual = atualizado || pacienteInicial;
+          setPaciente(pacienteAtual);
+          setSessoes(await getSessions(pacienteInicial.id));
+          setRegistros(await getRecords(pacienteInicial.id));
+          if (pacienteAtual.preco_moeda && pacienteAtual.preco_moeda !== 'BRL') {
+            getCotacaoCacheada(pacienteAtual.preco_moeda).then(setCotacaoCache);
+          }
+        } catch (e) {
+          Alert.alert('Erro ao carregar', mensagemDeErro(e));
+        }
+      })();
+      getStatusAutorizacao(pacienteInicial.id).then(setAutorizacao);
+      getModalidadeDerivada(pacienteInicial.id).then(setModalidadeDerivada);
+      getHistoricoParalizacoes(pacienteInicial.id).then(setHistoricoParalizacoes).catch(() => {});
+    }, [pacienteInicial.id])
   );
+
+  async function alternarParalizacao() {
+    setAlternandoParalizacao(true);
+    try {
+      if (paciente.data_paralizacao) {
+        await marcarRetorno(paciente.id);
+      } else {
+        await marcarParalizacao(paciente.id);
+      }
+      const [atualizado, historico] = await Promise.all([
+        getPatientById(paciente.id),
+        getHistoricoParalizacoes(paciente.id),
+      ]);
+      setPaciente(atualizado);
+      setHistoricoParalizacoes(historico);
+    } catch (e) {
+      Alert.alert('Erro', mensagemDeErro(e));
+    } finally {
+      setAlternandoParalizacao(false);
+    }
+  }
+
+  // ─── Autorização de gravação/transcrição ─────────────
+  async function handleSolicitarAutorizacao() {
+    if (!paciente.email || !paciente.cpf || !paciente.nascimento) {
+      Alert.alert(
+        'Dados incompletos',
+        'Para solicitar autorização, o cadastro do analisante precisa ter e-mail, CPF e data de nascimento preenchidos.',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Editar cadastro', onPress: () => navigation.navigate('PatientForm', { paciente }) },
+        ]
+      );
+      return;
+    }
+
+    setEnviandoAutorizacao(true);
+    const resultado = await solicitarAutorizacao(paciente);
+    setEnviandoAutorizacao(false);
+
+    if (!resultado.ok) {
+      Alert.alert('Erro', resultado.error || 'Não foi possível enviar a solicitação.');
+      return;
+    }
+    Alert.alert('E-mail enviado', `Enviamos um e-mail para ${paciente.email} pedindo a confirmação do analisante.`);
+    getStatusAutorizacao(paciente.id).then(setAutorizacao);
+  }
 
   // ─── Datas formatadas ──────────────────────────────────
   const idadeText = formatarAnosEMeses(calcularAnosEMeses(paciente.nascimento));
   const tempoAnaliseText = formatarAnosEMeses(calcularAnosEMeses(paciente.data_inicio));
+  const tempoParadoText = formatarAnosEMeses(calcularAnosEMeses(paciente.data_paralizacao));
 
   // ─── Lista unificada ─────────────────────────────────
   const todosItens = [
@@ -166,13 +233,20 @@ export default function DetalheAnalisanteScreen() {
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Remover', style: 'destructive',
-        onPress: () => {
-          if (item._itemType === 'session') {
-            deleteSession(item.id);
-            setSessoes(getSessions(paciente.id));
-          } else {
-            deleteRecord(item.id);
-            setRegistros(getRecords(paciente.id));
+        onPress: async () => {
+          setRemovendoItemId(item.id);
+          try {
+            if (item._itemType === 'session') {
+              await deleteSession(item.id);
+              setSessoes(await getSessions(paciente.id));
+            } else {
+              await deleteRecord(item.id);
+              setRegistros(await getRecords(paciente.id));
+            }
+          } catch (e) {
+            Alert.alert('Erro ao remover', mensagemDeErro(e));
+          } finally {
+            setRemovendoItemId(null);
           }
         }
       }
@@ -259,11 +333,21 @@ export default function DetalheAnalisanteScreen() {
 
         <View style={styles.itemActions}>
           {/* ✅ ✏️ → EDITAR */}
-          <TouchableOpacity style={styles.actionBtn} onPress={() => editarItem(item)}>
+          <TouchableOpacity
+            style={styles.actionBtn}
+            onPress={() => editarItem(item)}
+            disabled={removendoItemId === item.id}
+          >
             <Text style={styles.actionBtnText}>✏️</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionBtn} onPress={() => confirmarExclusao(item)}>
-            <Text style={styles.actionBtnText}>🗑️</Text>
+          <TouchableOpacity
+            style={styles.actionBtn}
+            onPress={() => confirmarExclusao(item)}
+            disabled={removendoItemId === item.id}
+          >
+            {removendoItemId === item.id
+              ? <ActivityIndicator size="small" color="#c0392b" />
+              : <Text style={styles.actionBtnText}>🗑️</Text>}
           </TouchableOpacity>
         </View>
       </View>
@@ -272,6 +356,7 @@ export default function DetalheAnalisanteScreen() {
 
   // ─── Header do FlatList (info do paciente) ───────────
   function ListHeader() {
+    const autorizacaoInfo = getAutorizacaoInfo(autorizacao);
     return (
       <View>
         {/* Card principal — toque para editar os dados do analisante */}
@@ -295,46 +380,99 @@ export default function DetalheAnalisanteScreen() {
             ) : null}
             {paciente.nascimento ? (
               <Text style={styles.infoSub}>
-                🎂 {paciente.nascimento}
+                🎂 {dataISOParaBR(paciente.nascimento) || paciente.nascimento}
                 {idadeText ? ` • ${idadeText}` : ''}
               </Text>
             ) : null}
             {paciente.data_inicio ? (
               <Text style={styles.infoSub}>
-                🗓 Início: {paciente.data_inicio}
+                🗓 Início: {dataISOParaBR(paciente.data_inicio) || paciente.data_inicio}
                 {tempoAnaliseText ? ` • ${tempoAnaliseText}` : ''}
+              </Text>
+            ) : null}
+            {paciente.data_paralizacao ? (
+              <Text style={styles.infoSub}>
+                ⏸ Paralização: {dataISOParaBR(paciente.data_paralizacao) || paciente.data_paralizacao}
+                {tempoParadoText ? ` • ${tempoParadoText}` : ''}
               </Text>
             ) : null}
           </View>
           <Text style={styles.infoCardEditHint}>✏️</Text>
         </TouchableOpacity>
 
+        {/* Paralisação ⇄ Retorno da análise (item G.20) */}
         <TouchableOpacity
-          style={styles.btnPerfilPsicossomatico}
-          activeOpacity={0.8}
-          onPress={() => navigation.navigate('PerfilPsicossomatico', { paciente })}
+          style={[styles.btnParalizacao, paciente.data_paralizacao && styles.btnRetorno]}
+          onPress={alternarParalizacao}
+          disabled={alternandoParalizacao}
         >
-          <Ionicons name="analytics-outline" size={18} color="#3D5A80" />
-          <Text style={styles.btnPerfilPsicossomaticoTexto}>Perfil Psicossomático</Text>
-          <Ionicons name="chevron-forward" size={16} color="#3D5A80" />
+          {alternandoParalizacao ? (
+            <ActivityIndicator color={paciente.data_paralizacao ? '#1e9e63' : '#c0392b'} />
+          ) : (
+            <Text style={[styles.btnParalizacaoTexto, paciente.data_paralizacao && styles.btnRetornoTexto]}>
+              {paciente.data_paralizacao ? '▶ Retorno à análise' : '⏸ Paralisação da análise'}
+            </Text>
+          )}
         </TouchableOpacity>
+
+        {historicoParalizacoes.length > 0 && (
+          <TouchableOpacity onPress={() => setMostrarHistorico((v) => !v)}>
+            <Text style={styles.historicoLink}>
+              {mostrarHistorico ? '▲ Esconder histórico de paralisações' : `▼ Ver histórico de paralisações (${historicoParalizacoes.length})`}
+            </Text>
+          </TouchableOpacity>
+        )}
+        {mostrarHistorico && historicoParalizacoes.map((p) => (
+          <View key={p.id} style={styles.historicoItem}>
+            <Text style={styles.historicoItemTexto}>
+              ⏸ {dataISOParaBR(p.data_inicio) || p.data_inicio}
+              {' → '}
+              {p.data_fim ? `▶ ${dataISOParaBR(p.data_fim) || p.data_fim}` : 'em aberto'}
+            </Text>
+          </View>
+        ))}
+
+        {/* Autorização de gravação/transcrição pelo analisante */}
+        <View style={styles.cardAutorizacao}>
+          <View style={styles.autorizacaoTopo}>
+            <Ionicons name="shield-checkmark-outline" size={18} color="#3D5A80" />
+            <Text style={styles.autorizacaoTitulo}>Autorização de gravação</Text>
+          </View>
+          <Text style={[styles.autorizacaoStatus, { color: autorizacaoInfo.cor }]}>
+            {autorizacaoInfo.texto}
+          </Text>
+          <TouchableOpacity
+            style={[styles.btnAutorizacao, enviandoAutorizacao && { opacity: 0.6 }]}
+            activeOpacity={0.8}
+            disabled={enviandoAutorizacao}
+            onPress={handleSolicitarAutorizacao}
+          >
+            <Text style={styles.btnAutorizacaoTexto}>
+              {enviandoAutorizacao ? 'Enviando...' : autorizacaoInfo.botao}
+            </Text>
+          </TouchableOpacity>
+        </View>
         <View style={styles.divisoria} />
 
-        {/* Dados do acompanhamento (sem título) */}
+        {/* Acompanhamento */}
         <View style={styles.dadosCard}>
+          <InfoRow label="Modalidade" value={getModalidadeLabel(modalidadeDerivada)} icon="🖥️" />
           <InfoRow label="Horário" value={paciente.horario} icon="🕐" />
-          <InfoRow label="CPF" value={paciente.cpf} icon="🪪" />
-          <InfoRow label="Preço da sessão" value={getPrecoLabel(paciente)} icon="💰" />
+          <InfoRow label="Preço da sessão" value={getPrecoLabel(paciente, cotacaoCache)} icon="💰" />
           <InfoRow
             label="Dia de pagamento"
             value={paciente.dia_pagamento ? `Todo dia ${paciente.dia_pagamento}` : null}
             icon="💳"
           />
-          <InfoRow label="Modalidade" value={getModalidadeLabel(paciente.modalidade)} icon="🖥️" />
+          <InfoRow label="Indicação" value={paciente.como_chegou} icon="👋" />
+          <InfoRow label="Informações importantes" value={paciente.info_relevantes} icon="📌" />
+        </View>
+
+        {/* Dados administrativos */}
+        <View style={styles.dadosCard}>
+          <InfoRow label="CPF" value={paciente.cpf} icon="🪪" />
           <InfoRow label="Endereço" value={paciente.endereco} icon="📍" />
-          <InfoRow label="Contato de emergência" value={paciente.contato_emergencia} icon="🚨" />
-          <InfoRow label="Como chegou" value={paciente.como_chegou} icon="👋" />
-          <InfoRow label="Informações relevantes" value={paciente.info_relevantes} icon="📌" />
+          <InfoRow label="Telefone de emergência" value={paciente.contato_emergencia} icon="🚨" />
         </View>
 
         {/* Separador da lista */}
@@ -412,17 +550,39 @@ const styles = StyleSheet.create({
   infoSub: { fontSize: 13, color: '#888', marginTop: 2 },
   infoCardEditHint: { fontSize: 16, opacity: 0.5, marginLeft: 8 },
 
-  // Botão do Perfil Psicossomático + barra divisória
-  btnPerfilPsicossomatico: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: '#EBF3FB', marginHorizontal: 16, marginTop: 12,
-    borderRadius: 12, paddingVertical: 12,
-    borderWidth: 1, borderColor: '#C7D9EC',
-  },
-  btnPerfilPsicossomaticoTexto: { fontSize: 14, fontWeight: '700', color: '#3D5A80' },
   divisoria: {
     height: 1, backgroundColor: '#E0E4EA', marginHorizontal: 16, marginTop: 16,
   },
+
+  // Paralisação ⇄ Retorno
+  btnParalizacao: {
+    marginHorizontal: 16, marginTop: 12,
+    backgroundColor: '#FCEBEA', borderRadius: 12, paddingVertical: 12,
+    alignItems: 'center', borderWidth: 1, borderColor: '#E5A19B',
+  },
+  btnParalizacaoTexto: { color: '#c0392b', fontWeight: '700', fontSize: 14 },
+  btnRetorno: { backgroundColor: '#E6F5EE', borderColor: '#9ED9BE' },
+  btnRetornoTexto: { color: '#1e9e63' },
+  historicoLink: {
+    fontSize: 12.5, color: '#3D5A80', fontWeight: '600',
+    marginHorizontal: 16, marginTop: 8,
+  },
+  historicoItem: { marginHorizontal: 16, marginTop: 4 },
+  historicoItemTexto: { fontSize: 12.5, color: '#6B6860' },
+
+  // Card de autorização de gravação/transcrição
+  cardAutorizacao: {
+    backgroundColor: '#fff', marginHorizontal: 16, marginTop: 12,
+    borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#E0E4EA',
+  },
+  autorizacaoTopo: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  autorizacaoTitulo: { fontSize: 14, fontWeight: '700', color: '#1A1A2E' },
+  autorizacaoStatus: { fontSize: 13, marginBottom: 10 },
+  btnAutorizacao: {
+    backgroundColor: '#EBF3FB', borderRadius: 10, paddingVertical: 10,
+    alignItems: 'center', borderWidth: 1, borderColor: '#C7D9EC',
+  },
+  btnAutorizacaoTexto: { fontSize: 13, fontWeight: '700', color: '#3D5A80' },
 
   // Dados do acompanhamento
   dadosCard: {

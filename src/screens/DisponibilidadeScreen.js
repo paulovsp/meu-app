@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import {
   Alert,
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -23,6 +24,7 @@ import {
 } from '../services/database';
 import { mensagemDeErro } from '../services/erros';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
+import { TIPOS_EVENTO, infoTipoEvento, corTipoEvento, ehTipoGrupo, tipoTemPacienteUnico } from '../services/tiposEvento';
 
 const DIAS = [
   { value: 0, label: 'Domingo' },
@@ -84,11 +86,16 @@ export default function DisponibilidadeScreen() {
   const [horarioFim, setHorarioFim] = useState('');
   const [modalidade, setModalidade] = useState('ambos');
   const [slotEditandoId, setSlotEditandoId] = useState(null);
+  const [tipoEvento, setTipoEvento] = useState('sessao_individual');
+  const [titulo, setTitulo] = useState('');
+  const [participantesIds, setParticipantesIds] = useState([]);
 
   const [analisanteId, setAnalisanteId] = useState(null);
   const [analisanteNome, setAnalisanteNome] = useState('');
   const [mostrarNovoAnalisante, setMostrarNovoAnalisante] = useState(false);
   const [novoAnalisanteNome, setNovoAnalisanteNome] = useState('');
+  const [salvando, setSalvando] = useState(false);
+  const [excluindoId, setExcluindoId] = useState(null);
 
   /**
    * Atualiza a tela sempre que ela ganha foco, e trata os parâmetros
@@ -161,10 +168,19 @@ export default function DisponibilidadeScreen() {
     setHorarioInicio('');
     setHorarioFim('');
     setModalidade('ambos');
+    setTipoEvento('sessao_individual');
+    setTitulo('');
+    setParticipantesIds([]);
     setAnalisanteId(null);
     setAnalisanteNome('');
     setMostrarNovoAnalisante(false);
     setNovoAnalisanteNome('');
+  }
+
+  function alternarParticipante(patientId) {
+    setParticipantesIds((atual) =>
+      atual.includes(patientId) ? atual.filter((id) => id !== patientId) : [...atual, patientId]
+    );
   }
 
   function selecionarAnalisante(paciente) {
@@ -231,6 +247,16 @@ export default function DisponibilidadeScreen() {
       return;
     }
 
+    if (ehTipoGrupo(tipoEvento) && participantesIds.length === 0) {
+      Alert.alert('Participantes obrigatórios', 'Selecione ao menos um analisante pro evento em grupo.');
+      return;
+    }
+    if (tipoEvento === 'outros' && !titulo.trim()) {
+      Alert.alert('Título obrigatório', 'Dê um título pro evento.');
+      return;
+    }
+
+    setSalvando(true);
     let ocupado, livres, modalidadeNormalizada;
     try {
       ({ ocupado, livres, modalidadeNormalizada } = await verificarConflitoSlot({
@@ -241,11 +267,13 @@ export default function DisponibilidadeScreen() {
         modality: modalidade,
       }));
     } catch (e) {
+      setSalvando(false);
       Alert.alert('Erro ao verificar conflito', mensagemDeErro(e));
       return;
     }
 
     if (ocupado) {
+      setSalvando(false);
       Alert.alert(
         'Conflito de horário',
         `Já existe um horário ocupado por ${ocupado.patient_name || 'outro analisante'} das ${ocupado.start_time} às ${ocupado.end_time} (${modalidadeLabel(ocupado.modality)}), com modalidade compatível com a que você escolheu (${modalidadeLabel(modalidadeNormalizada)}).`
@@ -261,13 +289,18 @@ export default function DisponibilidadeScreen() {
           start_time: inicio,
           end_time: fim,
           modality: modalidadeNormalizada,
-          patient_id: analisanteId,
+          patient_id: tipoTemPacienteUnico(tipoEvento) ? analisanteId : null,
           livresParaRemover: livres,
+          tipo: tipoEvento,
+          titulo: tipoEvento === 'outros' ? titulo.trim() : null,
+          participantes: ehTipoGrupo(tipoEvento) ? participantesIds : [],
         });
         await carregarSlots();
         limparFormulario();
       } catch (e) {
         Alert.alert('Erro ao salvar', mensagemDeErro(e));
+      } finally {
+        setSalvando(false);
       }
     }
 
@@ -280,7 +313,7 @@ export default function DisponibilidadeScreen() {
         'Substituir horário(s) livre(s)?',
         `Este novo horário (${modalidadeLabel(modalidadeNormalizada)}) coincide com ${livres.length === 1 ? 'este horário livre' : 'estes horários livres'}, com modalidade compatível:\n\n${listaTexto}\n\nEle${livres.length === 1 ? '' : 's'} será${livres.length === 1 ? '' : 'ão'} removido${livres.length === 1 ? '' : 's'} e substituído${livres.length === 1 ? '' : 's'} por este. Deseja continuar?`,
         [
-          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Cancelar', style: 'cancel', onPress: () => setSalvando(false) },
           { text: 'Confirmar', onPress: efetivarSalvamento },
         ]
       );
@@ -297,6 +330,9 @@ export default function DisponibilidadeScreen() {
     setHorarioInicio(slot.start_time);
     setHorarioFim(slot.end_time);
     setModalidade(slot.modality);
+    setTipoEvento(slot.tipo || 'sessao_individual');
+    setTitulo(slot.titulo || '');
+    setParticipantesIds((slot.participantes || []).map((p) => p.id));
     setAnalisanteId(slot.patient_id || null);
     setAnalisanteNome(slot.patient_name || '');
     setMostrarNovoAnalisante(false);
@@ -315,6 +351,7 @@ export default function DisponibilidadeScreen() {
           text: 'Excluir',
           style: 'destructive',
           onPress: async () => {
+            setExcluindoId(slot.id);
             try {
               await deleteAvailabilitySlot(slot.id);
               await carregarSlots();
@@ -324,6 +361,8 @@ export default function DisponibilidadeScreen() {
               }
             } catch (e) {
               Alert.alert('Erro ao excluir', mensagemDeErro(e));
+            } finally {
+              setExcluindoId(null);
             }
           },
         },
@@ -345,12 +384,15 @@ export default function DisponibilidadeScreen() {
           text: 'Excluir',
           style: 'destructive',
           onPress: async () => {
+            setExcluindoId(slotEditandoId);
             try {
               await deleteAvailabilitySlot(slotEditandoId);
               await carregarSlots();
               limparFormulario();
             } catch (e) {
               Alert.alert('Erro ao excluir', mensagemDeErro(e));
+            } finally {
+              setExcluindoId(null);
             }
           },
         },
@@ -436,6 +478,25 @@ export default function DisponibilidadeScreen() {
             </View>
           </View>
 
+          <Text style={styles.label}>Tipo de evento</Text>
+          <View style={styles.tipoEventoContainer}>
+            {TIPOS_EVENTO.map((item) => (
+              <TouchableOpacity
+                key={`tipo-${item.valor}`}
+                style={[
+                  styles.tipoEventoBtn,
+                  { borderColor: item.cor },
+                  tipoEvento === item.valor && { backgroundColor: item.cor },
+                ]}
+                onPress={() => setTipoEvento(item.valor)}
+              >
+                <Text style={[styles.tipoEventoBtnTxt, tipoEvento === item.valor && styles.tipoEventoBtnTxtAtivo]}>
+                  {item.labelCurto}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
           <Text style={styles.label}>Modalidade</Text>
 
           <View style={styles.modalidadeRow}>
@@ -465,74 +526,123 @@ export default function DisponibilidadeScreen() {
             ))}
           </View>
 
-          <Text style={styles.label}>Analisante (opcional)</Text>
-
-          {analisanteNome ? (
-            <View style={styles.analisanteSelecionado}>
-              <Text style={styles.analisanteSelecionadoTxt}>
-                {analisanteNome}
-              </Text>
-              <TouchableOpacity onPress={limparAnalisante}>
-                <Text style={styles.analisanteRemover}>Remover ✕</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
+          {tipoTemPacienteUnico(tipoEvento) && (
             <>
-              <View style={styles.analisantesLista}>
-                {pacientes.map((paciente) => (
-                  <TouchableOpacity
-                    key={`patient-${paciente.id}`}
-                    style={styles.analisanteBtn}
-                    onPress={() => selecionarAnalisante(paciente)}
-                  >
-                    <Text style={styles.analisanteBtnTxt}>
-                      {paciente.name || paciente.nome}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+              <Text style={styles.label}>Analisante (opcional)</Text>
 
-                <TouchableOpacity
-                  style={[styles.analisanteBtn, styles.analisanteBtnNovo]}
-                  onPress={() => setMostrarNovoAnalisante((v) => !v)}
-                >
-                  <Text style={styles.analisanteBtnNovoTxt}>
-                    + Novo analisante
+              {analisanteNome ? (
+                <View style={styles.analisanteSelecionado}>
+                  <Text style={styles.analisanteSelecionadoTxt}>
+                    {analisanteNome}
                   </Text>
-                </TouchableOpacity>
-              </View>
-
-              {mostrarNovoAnalisante && (
-                <View style={styles.novoAnalisanteBox}>
-                  <TextInput
-                    value={novoAnalisanteNome}
-                    onChangeText={setNovoAnalisanteNome}
-                    placeholder="Nome do novo analisante"
-                    style={styles.input}
-                  />
-                  <TouchableOpacity
-                    style={styles.btnConfirmarAnalisante}
-                    onPress={confirmarNovoAnalisante}
-                  >
-                    <Text style={styles.btnSalvarTxt}>Adicionar</Text>
+                  <TouchableOpacity onPress={limparAnalisante}>
+                    <Text style={styles.analisanteRemover}>Remover ✕</Text>
                   </TouchableOpacity>
                 </View>
+              ) : (
+                <>
+                  <View style={styles.analisantesLista}>
+                    {pacientes.map((paciente) => (
+                      <TouchableOpacity
+                        key={`patient-${paciente.id}`}
+                        style={styles.analisanteBtn}
+                        onPress={() => selecionarAnalisante(paciente)}
+                      >
+                        <Text style={styles.analisanteBtnTxt}>
+                          {paciente.name || paciente.nome}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+
+                    <TouchableOpacity
+                      style={[styles.analisanteBtn, styles.analisanteBtnNovo]}
+                      onPress={() => setMostrarNovoAnalisante((v) => !v)}
+                    >
+                      <Text style={styles.analisanteBtnNovoTxt}>
+                        + Novo analisante
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {mostrarNovoAnalisante && (
+                    <View style={styles.novoAnalisanteBox}>
+                      <TextInput
+                        value={novoAnalisanteNome}
+                        onChangeText={setNovoAnalisanteNome}
+                        placeholder="Nome do novo analisante"
+                        style={styles.input}
+                      />
+                      <TouchableOpacity
+                        style={styles.btnConfirmarAnalisante}
+                        onPress={confirmarNovoAnalisante}
+                      >
+                        <Text style={styles.btnSalvarTxt}>Adicionar</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </>
               )}
             </>
           )}
 
-          <TouchableOpacity style={styles.btnSalvar} onPress={salvarSlot}>
-            <Text style={styles.btnSalvarTxt}>
-              {slotEditandoId ? 'Salvar alterações' : 'Adicionar horário'}
-            </Text>
+          {ehTipoGrupo(tipoEvento) && (
+            <>
+              <Text style={styles.label}>Participantes *</Text>
+              <View style={styles.analisantesLista}>
+                {pacientes.map((paciente) => {
+                  const selecionado = participantesIds.includes(paciente.id);
+                  return (
+                    <TouchableOpacity
+                      key={`participante-${paciente.id}`}
+                      style={[styles.analisanteBtn, selecionado && styles.analisanteBtnSelecionado]}
+                      onPress={() => alternarParticipante(paciente.id)}
+                    >
+                      <Text style={[styles.analisanteBtnTxt, selecionado && styles.analisanteBtnTxtSelecionado]}>
+                        {selecionado ? '✓ ' : ''}{paciente.name || paciente.nome}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </>
+          )}
+
+          {tipoEvento === 'outros' && (
+            <>
+              <Text style={styles.label}>Título *</Text>
+              <TextInput
+                value={titulo}
+                onChangeText={setTitulo}
+                placeholder="Ex: Supervisão institucional"
+                style={styles.input}
+              />
+            </>
+          )}
+
+          <TouchableOpacity
+            style={[styles.btnSalvar, salvando && { opacity: 0.7 }]}
+            onPress={salvarSlot}
+            disabled={salvando || excluindoId != null}
+          >
+            {salvando
+              ? <ActivityIndicator color="#fff" />
+              : (
+                <Text style={styles.btnSalvarTxt}>
+                  {slotEditandoId ? 'Salvar alterações' : 'Adicionar horário'}
+                </Text>
+              )}
           </TouchableOpacity>
 
           {/* item 5: excluir horário direto no formulário de edição */}
           {slotEditandoId && (
             <TouchableOpacity
-              style={styles.btnExcluirForm}
+              style={[styles.btnExcluirForm, excluindoId === slotEditandoId && { opacity: 0.7 }]}
               onPress={excluirSlotEmEdicao}
+              disabled={salvando || excluindoId != null}
             >
-              <Text style={styles.btnExcluirFormTxt}>🗑️ Excluir horário</Text>
+              {excluindoId === slotEditandoId
+                ? <ActivityIndicator color="#c62828" />
+                : <Text style={styles.btnExcluirFormTxt}>🗑️ Excluir horário</Text>}
             </TouchableOpacity>
           )}
 
@@ -565,7 +675,7 @@ export default function DisponibilidadeScreen() {
             key={`availability-${slot.id}`}
             style={[
               styles.slotItem,
-              { borderLeftColor: corDaModalidade(slot.modality) },
+              { borderLeftColor: corTipoEvento(slot.tipo) },
             ]}
           >
             <View style={styles.slotInfo}>
@@ -577,6 +687,10 @@ export default function DisponibilidadeScreen() {
                 {slot.start_time} — {slot.end_time}
               </Text>
 
+              <Text style={[styles.slotTipo, { color: corTipoEvento(slot.tipo) }]}>
+                {infoTipoEvento(slot.tipo).labelCurto}
+              </Text>
+
               <Text style={styles.slotModalidade}>
                 {modalidadeLabel(slot.modality)}
               </Text>
@@ -586,12 +700,21 @@ export default function DisponibilidadeScreen() {
                   👤 {slot.patient_name}
                 </Text>
               )}
+              {slot.participantes?.length > 0 && (
+                <Text style={styles.slotAnalisante}>
+                  👥 {slot.participantes.map((p) => p.nome).join(', ')}
+                </Text>
+              )}
+              {slot.titulo && (
+                <Text style={styles.slotAnalisante}>📌 {slot.titulo}</Text>
+              )}
             </View>
 
             <View style={styles.slotAcoes}>
               <TouchableOpacity
                 style={styles.btnAcao}
                 onPress={() => editarSlot(slot)}
+                disabled={excluindoId === slot.id}
               >
                 <Text style={styles.btnAcaoTexto}>✏️</Text>
               </TouchableOpacity>
@@ -599,8 +722,11 @@ export default function DisponibilidadeScreen() {
               <TouchableOpacity
                 style={styles.btnAcao}
                 onPress={() => confirmarExclusao(slot)}
+                disabled={excluindoId === slot.id}
               >
-                <Text style={styles.btnAcaoTexto}>🗑️</Text>
+                {excluindoId === slot.id
+                  ? <ActivityIndicator size="small" color="#c62828" />
+                  : <Text style={styles.btnAcaoTexto}>🗑️</Text>}
               </TouchableOpacity>
             </View>
           </View>
@@ -673,6 +799,20 @@ const styles = StyleSheet.create({
     color: '#1A1A2E',
     backgroundColor: '#FFFFFF',
   },
+  tipoEventoContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 18,
+  },
+  tipoEventoBtn: {
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1.5,
+  },
+  tipoEventoBtnTxt: { fontSize: 12, color: '#333333', fontWeight: '600' },
+  tipoEventoBtnTxtAtivo: { color: '#FFFFFF', fontWeight: 'bold' },
   modalidadeRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -705,6 +845,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#EEEEEE',
   },
   analisanteBtnTxt: { fontSize: 12, color: '#333333' },
+  analisanteBtnSelecionado: { backgroundColor: '#3D5A80' },
+  analisanteBtnTxtSelecionado: { color: '#FFFFFF', fontWeight: '700' },
   analisanteBtnNovo: { backgroundColor: '#E3F2FD' },
   analisanteBtnNovoTxt: { fontSize: 12, color: '#1976D2', fontWeight: '700' },
   novoAnalisanteBox: { marginBottom: 16, gap: 8 },
@@ -766,6 +908,7 @@ const styles = StyleSheet.create({
   slotInfo: { flex: 1 },
   slotDia: { fontSize: 12, color: '#777777', marginBottom: 3 },
   slotHorario: { fontSize: 16, fontWeight: 'bold', color: '#1A1A2E' },
+  slotTipo: { fontSize: 12, fontWeight: '700', marginTop: 4 },
   slotModalidade: { fontSize: 12, color: '#555555', marginTop: 4 },
   slotAnalisante: { fontSize: 12, color: '#B71C1C', marginTop: 4, fontWeight: '600' },
   slotAcoes: { flexDirection: 'row', gap: 6 },

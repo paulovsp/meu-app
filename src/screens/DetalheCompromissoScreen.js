@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import {
@@ -16,6 +16,19 @@ import { dispararFiscalPorSessao } from '../services/fiscalAutomatico';
 import { horarioJaPassou, getEstadoCompromisso, ESTADO_LABEL } from '../services/compromissoStatus';
 import { mensagemDeErro } from '../services/erros';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
+import { infoTipoEvento, ehTipoGrupo } from '../services/tiposEvento';
+
+// Nome a exibir — paciente único (individual), lista de participantes (em
+// grupo) ou o título livre ("Outros"), item J.23.
+function nomeExibicaoCompromisso(compromisso) {
+  const tipo = compromisso.tipo || 'sessao_individual';
+  if (tipo === 'outros') return compromisso.titulo || 'Outros';
+  if (ehTipoGrupo(tipo)) {
+    const nomes = (compromisso.participantes || []).map((p) => p.nome).filter(Boolean);
+    return nomes.length > 0 ? nomes.join(', ') : 'Grupo';
+  }
+  return compromisso.patient_nome || 'Analisante';
+}
 
 // Cobrança "por sessão": pergunta se o pagamento já foi recebido logo após
 // marcar a sessão como realizada. Resolve a Promise só depois que a
@@ -59,7 +72,7 @@ function perguntarPagamentoSessao(compromisso) {
 function perguntarTipoNaoRealizada(compromisso, recarregar) {
   Alert.alert(
     'Foi cancelada ou falta?',
-    `A sessão de ${compromisso.patient_nome} não aconteceu. Foi cancelada com antecedência, ou foi uma falta (sem aviso)?`,
+    `${nomeExibicaoCompromisso(compromisso)} não aconteceu. Foi cancelada com antecedência, ou foi uma falta (sem aviso)?`,
     [
       {
         text: 'Cancelada',
@@ -97,6 +110,7 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
 
   const [compromisso, setCompromisso] = useState(null);
   const [temTranscricao, setTemTranscricao] = useState(false);
+  const [agindo, setAgindo] = useState(false);
   const alertaMostradoRef = useRef(false);
 
   const carregar = useCallback(async () => {
@@ -118,7 +132,7 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
       alertaMostradoRef.current = true;
       Alert.alert(
         'A sessão aconteceu?',
-        `O horário de ${compromisso.patient_nome} já passou. A sessão foi realizada?`,
+        `O horário de ${nomeExibicaoCompromisso(compromisso)} já passou. A sessão foi realizada?`,
         [
           {
             text: 'Não foi realizada',
@@ -143,6 +157,9 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
 
   useEffect(() => {
     if (!compromisso) return;
+    const tipo = compromisso.tipo || 'sessao_individual';
+    const eventoIndividual = tipo === 'sessao_individual' || tipo === 'supervisao_individual';
+    if (!eventoIndividual) return;
     temTranscricaoParaData(compromisso.patient_id, compromisso.date).then(setTemTranscricao);
   }, [compromisso]);
 
@@ -154,10 +171,12 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
     );
   }
 
+  const tipo = compromisso.tipo || 'sessao_individual';
+  const eventoIndividual = tipo === 'sessao_individual' || tipo === 'supervisao_individual';
   const horarioPassou = horarioJaPassou(compromisso.date, compromisso.end_time);
   const estado = getEstadoCompromisso({
     status: compromisso.status,
-    temTranscricao,
+    temTranscricao: eventoIndividual ? temTranscricao : true,
     horarioPassou,
   });
   const estadoInfo = ESTADO_LABEL[estado];
@@ -181,13 +200,16 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
   }
 
   async function iniciarSessao() {
+    setAgindo(true);
     try {
       await updateAppointmentStatus(compromisso.id, 'realizado');
     } catch (e) {
+      setAgindo(false);
       Alert.alert('Erro ao atualizar', mensagemDeErro(e));
       return;
     }
     await perguntarPagamentoSessao(compromisso);
+    setAgindo(false);
     navigation.replace('NewSession', {
       patientId: compromisso.patient_id,
       patientNome: compromisso.patient_nome,
@@ -195,15 +217,44 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
     });
   }
 
+  // Grupo/supervisão/outros não têm um único prontuário pra gravar — só
+  // marca como realizado, sem abrir a tela de gravação de sessão.
+  async function marcarComoRealizado() {
+    setAgindo(true);
+    try {
+      await updateAppointmentStatus(compromisso.id, 'realizado');
+      await carregar();
+    } catch (e) {
+      Alert.alert('Erro ao atualizar', mensagemDeErro(e));
+    } finally {
+      setAgindo(false);
+    }
+  }
+
+  async function cancelarCompromisso() {
+    setAgindo(true);
+    try {
+      await updateAppointmentStatus(compromisso.id, 'cancelado');
+      await carregar();
+    } catch (e) {
+      Alert.alert('Erro ao cancelar', mensagemDeErro(e));
+    } finally {
+      setAgindo(false);
+    }
+  }
+
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.nome}>{compromisso.patient_nome}</Text>
+      <Text style={[styles.tipoLabel, { color: infoTipoEvento(tipo).cor }]}>
+        {infoTipoEvento(tipo).labelCurto}
+      </Text>
+      <Text style={styles.nome}>{nomeExibicaoCompromisso(compromisso)}</Text>
 
       <View style={[styles.estadoPill, { backgroundColor: `${estadoInfo.cor}22` }]}>
         <Text style={[styles.estadoPillTxt, { color: estadoInfo.cor }]}>{estadoInfo.texto}</Text>
       </View>
 
-      {estado === 'realizado_sem_relato' && (
+      {eventoIndividual && estado === 'realizado_sem_relato' && (
         <View style={styles.avisoBox}>
           <Text style={styles.avisoTxt}>
             ⚠ Nenhum relato ou transcrição foi adicionado para esta sessão ainda.
@@ -215,9 +266,16 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
         <InfoLinha label="Modalidade" valor={compromisso.modality === 'online' ? 'Online' : 'Presencial'} />
         <InfoLinha label="Data" valor={compromisso.date.split('-').reverse().join('/')} />
         <InfoLinha label="Horário" valor={`${compromisso.start_time} - ${compromisso.end_time}`} />
-        <InfoLinha label="Telefone" valor={compromisso.patient_telefone || '-'} />
-        <InfoLinha label="Nascimento" valor={compromisso.patient_nascimento || '-'} />
-        <InfoLinha label="Início do tratamento" valor={compromisso.patient_data_inicio || '-'} />
+        {eventoIndividual && (
+          <>
+            <InfoLinha label="Telefone" valor={compromisso.patient_telefone || '-'} />
+            <InfoLinha label="Nascimento" valor={compromisso.patient_nascimento || '-'} />
+            <InfoLinha label="Início do tratamento" valor={compromisso.patient_data_inicio || '-'} />
+          </>
+        )}
+        {ehTipoGrupo(tipo) && (
+          <InfoLinha label="Participantes" valor={(compromisso.participantes || []).map((p) => p.nome).join(', ') || '-'} />
+        )}
       </View>
 
       <TouchableOpacity style={styles.btnEditarHorario} onPress={editarHorario}>
@@ -226,30 +284,27 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
 
       {podeAgir && (
         <>
-          <TouchableOpacity style={styles.btnIniciar} onPress={iniciarSessao}>
-            <Text style={styles.btnIniciarTxt}>Iniciar Sessão</Text>
+          <TouchableOpacity
+            style={[styles.btnIniciar, agindo && { opacity: 0.7 }]}
+            onPress={eventoIndividual ? iniciarSessao : marcarComoRealizado}
+            disabled={agindo}
+          >
+            {agindo
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={styles.btnIniciarTxt}>{eventoIndividual ? 'Iniciar Sessão' : 'Marcar como realizado'}</Text>}
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.btnCancelar}
+            style={[styles.btnCancelar, agindo && { opacity: 0.7 }]}
+            disabled={agindo}
             onPress={() => {
               Alert.alert('Cancelar compromisso', 'Confirma o cancelamento?', [
                 { text: 'Não' },
-                {
-                  text: 'Sim',
-                  onPress: async () => {
-                    try {
-                      await updateAppointmentStatus(compromisso.id, 'cancelado');
-                      await carregar();
-                    } catch (e) {
-                      Alert.alert('Erro ao cancelar', mensagemDeErro(e));
-                    }
-                  },
-                },
+                { text: 'Sim', onPress: cancelarCompromisso },
               ]);
             }}
           >
-            <Text style={styles.btnCancelarTxt}>Cancelar Compromisso</Text>
+            {agindo ? <ActivityIndicator color="#c62828" /> : <Text style={styles.btnCancelarTxt}>Cancelar Compromisso</Text>}
           </TouchableOpacity>
         </>
       )}
@@ -268,6 +323,7 @@ function InfoLinha({ label, valor }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16, backgroundColor: '#fff' },
+  tipoLabel: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 2 },
   nome: { fontSize: 24, fontWeight: 'bold', marginBottom: 12 },
   estadoPill: {
     alignSelf: 'flex-start', borderRadius: 20, paddingHorizontal: 12,

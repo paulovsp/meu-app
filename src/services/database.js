@@ -1,344 +1,263 @@
-import * as SQLite from 'expo-sqlite';
-import {
-  pseudonimizar, reverterPseudonimizacao, segmentarRegistro, montarPromptAnalise,
-  chamarIAEstruturada, validarEvidencia, detectarTransicoes, evidenciasParaManter,
-} from './nucleos';
-import { carregarRubricaAtiva } from './rubricas';
-import { analisarTextoObjetivo } from './perfilObjetivo';
-import {
-  calcularDensidadePorNucleo, calcularDefesasPorAsa, calcularIndiceRetorno,
-  calcularMobilidade, rankearGatilhos, detectarAusencias,
-} from './metricas';
+// ── PACIENTES (Supabase — tabela `patients`) ───────────
 
-const db = SQLite.openDatabaseSync('psicanalise.db');
-
-export function initDatabase() {
-  db.execSync(`
-    CREATE TABLE IF NOT EXISTS patients (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      nome TEXT NOT NULL,
-      nascimento TEXT,
-      data_inicio TEXT,
-      telefone TEXT,
-      email TEXT,
-      horario TEXT,
-      preco_sessao TEXT,
-      preco_moeda TEXT DEFAULT 'BRL',
-      modalidade TEXT,
-      endereco TEXT,
-      contato_emergencia TEXT,
-      como_chegou TEXT,
-      info_relevantes TEXT,
-      dia_pagamento INTEGER,
-      consentimento_perfil INTEGER DEFAULT 0,
-      consentimento_perfil_em TEXT
-    );
-    CREATE TABLE IF NOT EXISTS sessions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      patient_id INTEGER NOT NULL,
-      type TEXT,
-      online_platform TEXT,
-      date TEXT,
-      transcript TEXT,
-      audio_uri TEXT,
-      category TEXT,
-      duration_seconds INTEGER,
-      FOREIGN KEY (patient_id) REFERENCES patients(id)
-    );
-    CREATE TABLE IF NOT EXISTS records (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      patient_id INTEGER NOT NULL,
-      session_id INTEGER,
-      type TEXT,
-      title TEXT,
-      content TEXT,
-      file_uri TEXT,
-      date TEXT,
-      category TEXT,
-      author TEXT CHECK(author IN ('analyst', 'analysand', 'alternado')),
-      FOREIGN KEY (patient_id) REFERENCES patients(id),
-      FOREIGN KEY (session_id) REFERENCES sessions(id)
-    );
-    CREATE TABLE IF NOT EXISTS transcript_turns (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      session_id INTEGER NOT NULL,
-      turn_index INTEGER NOT NULL,
-      speaker TEXT NOT NULL CHECK(speaker IN ('analyst', 'analysand')),
-      text TEXT NOT NULL,
-      start_time_seconds REAL,
-      end_time_seconds REAL,
-      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-    );
-    CREATE TABLE IF NOT EXISTS user (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      nome TEXT NOT NULL,
-      crp TEXT,
-      email TEXT,
-      especialidade TEXT,
-      created_at TEXT,
-      cpf TEXT,
-      cidade TEXT,
-      contador_nome TEXT,
-      contador_email TEXT,
-      contador_telefone TEXT
-    );
-  `);
-
-  // Migrações
-  try { db.execSync(`ALTER TABLE patients ADD COLUMN nascimento TEXT;`); } catch (_) {}
-  try { db.execSync(`ALTER TABLE patients ADD COLUMN data_inicio TEXT;`); } catch (_) {}
-  try { db.execSync(`ALTER TABLE patients ADD COLUMN telefone TEXT;`); } catch (_) {}
-  try { db.execSync(`ALTER TABLE patients ADD COLUMN horario TEXT;`); } catch (_) {}
-  try { db.execSync(`ALTER TABLE patients ADD COLUMN preco_sessao TEXT;`); } catch (_) {}
-  try { db.execSync(`ALTER TABLE patients ADD COLUMN modalidade TEXT;`); } catch (_) {}
-  try { db.execSync(`ALTER TABLE patients ADD COLUMN endereco TEXT;`); } catch (_) {}
-  try { db.execSync(`ALTER TABLE patients ADD COLUMN contato_emergencia TEXT;`); } catch (_) {}
-  try { db.execSync(`ALTER TABLE patients ADD COLUMN como_chegou TEXT;`); } catch (_) {}
-  try { db.execSync(`ALTER TABLE patients ADD COLUMN info_relevantes TEXT;`); } catch (_) {}
-  try { db.execSync(`ALTER TABLE patients ADD COLUMN dia_pagamento INTEGER;`); } catch (_) {}
-  try { db.execSync(`ALTER TABLE patients ADD COLUMN email TEXT;`); } catch (_) {}
-  try { db.execSync(`ALTER TABLE patients ADD COLUMN cpf TEXT;`); } catch (_) {}
-  try { db.execSync(`ALTER TABLE patients ADD COLUMN preco_moeda TEXT DEFAULT 'BRL';`); } catch (_) {}
-  try { db.execSync(`ALTER TABLE patients ADD COLUMN consentimento_perfil INTEGER DEFAULT 0;`); } catch (_) {}
-  try { db.execSync(`ALTER TABLE patients ADD COLUMN consentimento_perfil_em TEXT;`); } catch (_) {}
-  try { db.execSync(`ALTER TABLE user ADD COLUMN cpf TEXT;`); } catch (_) {}
-  try { db.execSync(`ALTER TABLE user ADD COLUMN cidade TEXT;`); } catch (_) {}
-  try { db.execSync(`ALTER TABLE user ADD COLUMN contador_nome TEXT;`); } catch (_) {}
-  try { db.execSync(`ALTER TABLE user ADD COLUMN contador_email TEXT;`); } catch (_) {}
-  try { db.execSync(`ALTER TABLE user ADD COLUMN contador_telefone TEXT;`); } catch (_) {}
-  try { db.execSync(`ALTER TABLE sessions ADD COLUMN audio_uri TEXT;`); } catch (_) {}
-  try { db.execSync(`ALTER TABLE sessions ADD COLUMN online_platform TEXT;`); } catch (_) {}
-  try { db.execSync(`ALTER TABLE sessions ADD COLUMN category TEXT;`); } catch (_) {}
-  try { db.execSync(`ALTER TABLE sessions ADD COLUMN duration_seconds INTEGER;`); } catch (_) {}
-  try { db.execSync(`ALTER TABLE records ADD COLUMN category TEXT;`); } catch (_) {}
-  try { db.execSync(`ALTER TABLE records ADD COLUMN author TEXT;`); } catch (_) {}
-  try {
-    db.execSync(`INSERT INTO user (nome, crp, email, especialidade, created_at) SELECT nome, crp, email, especialidade, created_at FROM therapist`);
-    db.execSync(`DROP TABLE therapist`);
-  } catch (_) {}
+async function getUserId() {
+  const { supabase } = require('./supabase');
+  const { data: { session } } = await supabase.auth.getSession();
+  return session.user.id;
 }
 
-// ── USUÁRIO ────────────────────────────────────────────
-
-export function getUser() {
-  return db.getFirstSync('SELECT * FROM user LIMIT 1');
+export async function listarPacientes() {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase.from('patients').select('*').order('nome', { ascending: true });
+  if (error) throw error;
+  return data;
 }
 
-export function createUser({ nome, crp, email, especialidade }) {
-  const result = db.runSync(
-    'INSERT INTO user (nome, crp, email, especialidade, created_at) VALUES (?, ?, ?, ?, ?)',
-    [nome, crp || null, email || null, especialidade || null, new Date().toISOString()]
-  );
-  return result.lastInsertRowId;
-}
-
-export function updateUser({
-  id, nome, crp, email, especialidade,
-  cpf, cidade, contador_nome, contador_email, contador_telefone
-}) {
-  db.runSync(
-    `UPDATE user SET
-      nome = ?, crp = ?, email = ?, especialidade = ?,
-      cpf = ?, cidade = ?, contador_nome = ?, contador_email = ?, contador_telefone = ?
-    WHERE id = ?`,
-    [
-      nome, crp || null, email || null, especialidade || null,
-      cpf || null, cidade || null, contador_nome || null,
-      contador_email || null, contador_telefone || null, id
-    ]
-  );
-}
-
-// ── ESTATÍSTICAS DO USUÁRIO ────────────────────────────
-
-export function getUserStats() {
-  const totalSessoes = db.getFirstSync('SELECT COUNT(*) as total FROM sessions');
-  const totalPacientes = db.getFirstSync('SELECT COUNT(*) as total FROM patients');
-  const totalRegistros = db.getFirstSync('SELECT COUNT(*) as total FROM records');
-  const sessoesMes = db.getFirstSync(
-    `SELECT COUNT(*) as total FROM sessions WHERE date LIKE ?`,
-    [`${new Date().toISOString().slice(0, 7)}%`]
-  );
-  const duracaoTotal = db.getFirstSync(
-    'SELECT COALESCE(SUM(duration_seconds), 0) as total FROM sessions'
-  );
-  const totalTurns = db.getFirstSync(
-    'SELECT COUNT(*) as total FROM transcript_turns'
-  );
-
-  return {
-    totalSessoes: totalSessoes?.total ?? 0,
-    totalPacientes: totalPacientes?.total ?? 0,
-    totalRegistros: totalRegistros?.total ?? 0,
-    sessoesMes: sessoesMes?.total ?? 0,
-    duracaoTotalSegundos: duracaoTotal?.total ?? 0,
-    totalTurns: totalTurns?.total ?? 0,
-  };
-}
-
-// ── PACIENTES ──────────────────────────────────────────
-
-export function listarPacientes() {
-  return db.getAllSync('SELECT * FROM patients ORDER BY nome ASC');
-}
-
-export function inserirPaciente({
-  nome, nascimento, data_inicio, telefone, email, cpf,
+export async function inserirPaciente({
+  nome, nascimento, data_inicio, data_paralizacao, telefone, email, cpf,
   horario, preco_sessao, preco_moeda, modalidade, endereco,
-  contato_emergencia, como_chegou, info_relevantes, dia_pagamento
+  contato_emergencia, como_chegou, info_relevantes, dia_pagamento, tipo_cobranca,
+  valor_mensal_fixo,
 }) {
-  const result = db.runSync(
-    `INSERT INTO patients (
-      nome, nascimento, data_inicio, telefone, email, cpf,
-      horario, preco_sessao, preco_moeda, modalidade, endereco,
-      contato_emergencia, como_chegou, info_relevantes, dia_pagamento
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      nome, nascimento || null, data_inicio || null, telefone || null, email || null, cpf || null,
-      horario || null, preco_sessao || null, preco_moeda || 'BRL', modalidade || null, endereco || null,
-      contato_emergencia || null, como_chegou || null, info_relevantes || null,
-      dia_pagamento || null
-    ]
-  );
-  return result.lastInsertRowId;
+  const { supabase } = require('./supabase');
+  const userId = await getUserId();
+  const { data, error } = await supabase
+    .from('patients')
+    .insert({
+      user_id: userId, nome, nascimento: nascimento || null, data_inicio: data_inicio || null,
+      data_paralizacao: data_paralizacao || null,
+      telefone: telefone || null, email: email || null, cpf: cpf || null,
+      horario: horario || null, preco_sessao: preco_sessao || null, preco_moeda: preco_moeda || 'BRL',
+      modalidade: modalidade || null, endereco: endereco || null,
+      contato_emergencia: contato_emergencia || null, como_chegou: como_chegou || null,
+      info_relevantes: info_relevantes || null, dia_pagamento: dia_pagamento || null,
+      tipo_cobranca: tipo_cobranca || 'mensal',
+      valor_mensal_fixo: tipo_cobranca === 'mensal_fixo' ? (valor_mensal_fixo || null) : null,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data.id;
 }
 
-export function editarPaciente({
-  id, nome, nascimento, data_inicio, telefone, email, cpf,
+export async function editarPaciente({
+  id, nome, nascimento, data_inicio, data_paralizacao, telefone, email, cpf,
   horario, preco_sessao, preco_moeda, modalidade, endereco,
-  contato_emergencia, como_chegou, info_relevantes, dia_pagamento
+  contato_emergencia, como_chegou, info_relevantes, dia_pagamento, tipo_cobranca,
+  valor_mensal_fixo,
 }) {
-  db.runSync(
-    `UPDATE patients SET
-      nome = ?, nascimento = ?, data_inicio = ?, telefone = ?, email = ?, cpf = ?,
-      horario = ?, preco_sessao = ?, preco_moeda = ?, modalidade = ?, endereco = ?,
-      contato_emergencia = ?, como_chegou = ?, info_relevantes = ?, dia_pagamento = ?
-    WHERE id = ?`,
-    [
-      nome, nascimento || null, data_inicio || null, telefone || null, email || null, cpf || null,
-      horario || null, preco_sessao || null, preco_moeda || 'BRL', modalidade || null, endereco || null,
-      contato_emergencia || null, como_chegou || null, info_relevantes || null,
-      dia_pagamento || null, id
-    ]
-  );
+  const { supabase } = require('./supabase');
+  const { error } = await supabase
+    .from('patients')
+    .update({
+      nome, nascimento: nascimento || null, data_inicio: data_inicio || null,
+      data_paralizacao: data_paralizacao || null,
+      telefone: telefone || null, email: email || null, cpf: cpf || null,
+      horario: horario || null, preco_sessao: preco_sessao || null, preco_moeda: preco_moeda || 'BRL',
+      modalidade: modalidade || null, endereco: endereco || null,
+      contato_emergencia: contato_emergencia || null, como_chegou: como_chegou || null,
+      info_relevantes: info_relevantes || null, dia_pagamento: dia_pagamento || null,
+      tipo_cobranca: tipo_cobranca || 'mensal',
+      valor_mensal_fixo: tipo_cobranca === 'mensal_fixo' ? (valor_mensal_fixo || null) : null,
+    })
+    .eq('id', id);
+  if (error) throw error;
 }
 
-export function deletarPaciente(id) {
-  db.runSync('DELETE FROM records WHERE patient_id = ?', [id]);
-  db.runSync('DELETE FROM transcript_turns WHERE session_id IN (SELECT id FROM sessions WHERE patient_id = ?)', [id]);
-  db.runSync('DELETE FROM sessions WHERE patient_id = ?', [id]);
-  db.runSync('DELETE FROM patients WHERE id = ?', [id]);
+// Apaga o paciente e tudo que depende dele (sessions, records,
+// transcript_turns, agenda, financeiro, núcleos/objetivo, relatórios) via
+// `on delete cascade` nas FKs definidas nas migrations do Supabase.
+export async function deletarPaciente(id) {
+  const { supabase } = require('./supabase');
+  const { error } = await supabase.from('patients').delete().eq('id', id);
+  if (error) throw error;
 }
 
 // ── SESSÕES ────────────────────────────────────────────
 
-export function getSessions(patientId) {
-  return db.getAllSync(
-    'SELECT * FROM sessions WHERE patient_id = ? ORDER BY date DESC',
-    [patientId]
-  );
+export async function getSessions(patientId) {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase
+    .from('sessions')
+    .select('*')
+    .eq('patient_id', patientId)
+    .order('date', { ascending: false });
+  if (error) throw error;
+  return data;
 }
 
-export function getSessionById(id) {
-  return db.getFirstSync('SELECT * FROM sessions WHERE id = ?', [id]);
+export async function getSessionById(id) {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase.from('sessions').select('*').eq('id', id).maybeSingle();
+  if (error) throw error;
+  return data;
 }
 
-export function getSessionsToday() {
-  const hoje = new Date().toISOString().slice(0, 10);
-  const result = db.getFirstSync(
-    `SELECT COUNT(*) as total FROM sessions WHERE date LIKE ?`,
-    [`${hoje}%`]
-  );
-  return result?.total ?? 0;
+/**
+ * Resumo da agenda de hoje pro card da tela inicial: quantos horários
+ * ocupados (availability_slots com patient_id) existem hoje e quantos já
+ * passaram do horário de término, no formato "concluídas/total".
+ */
+export async function getResumoAgendaHoje() {
+  const { supabase } = require('./supabase');
+  const hoje = new Date();
+  const diaSemana = hoje.getDay();
+  const horaAtual = `${String(hoje.getHours()).padStart(2, '0')}:${String(hoje.getMinutes()).padStart(2, '0')}`;
+
+  const { data, error } = await supabase
+    .from('availability_slots')
+    .select('end_time')
+    .eq('day_of_week', diaSemana)
+    .not('patient_id', 'is', null);
+  if (error) throw error;
+  const total = data.length;
+  const concluidas = data.filter((s) => s.end_time <= horaAtual).length;
+  return { total, concluidas };
 }
 
-export function addSession(patientId, type, platform, category) {
-  const result = db.runSync(
-    'INSERT INTO sessions (patient_id, type, online_platform, date, transcript, audio_uri, category) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [patientId, type || null, platform || null, new Date().toISOString(), '', null, category || null]
-  );
-  return result.lastInsertRowId;
+export async function addSession(patientId, type, platform, category) {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase
+    .from('sessions')
+    .insert({
+      patient_id: patientId, type: type || null, online_platform: platform || null,
+      date: new Date().toISOString(), transcript: '', audio_uri: null, category: category || null,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data.id;
 }
 
-export function updateSession(id, { transcript, audio_uri, category, duration_seconds }) {
-  db.runSync(
-    'UPDATE sessions SET transcript = ?, audio_uri = ?, category = ?, duration_seconds = ? WHERE id = ?',
-    [transcript || '', audio_uri || null, category || null, duration_seconds || null, id]
-  );
+export async function updateSession(id, { transcript, audio_uri, category, duration_seconds }) {
+  const { supabase } = require('./supabase');
+  const { error } = await supabase
+    .from('sessions')
+    .update({
+      transcript: transcript || '', audio_uri: audio_uri || null,
+      category: category || null, duration_seconds: duration_seconds || null,
+    })
+    .eq('id', id);
+  if (error) throw error;
 }
 
-export function deleteSession(id) {
-  db.runSync('DELETE FROM transcript_turns WHERE session_id = ?', [id]);
-  db.runSync('DELETE FROM records WHERE session_id = ?', [id]);
-  db.runSync('DELETE FROM sessions WHERE id = ?', [id]);
+export async function deleteSession(id) {
+  const { supabase } = require('./supabase');
+  const { error } = await supabase.from('sessions').delete().eq('id', id);
+  if (error) throw error;
+}
+
+/** Fallback de quando a transcrição assíncrona (AssemblyAI) falha —
+ * digitação manual do texto completo (introdução + diálogo), voltando o
+ * status pra `null` (mesmo tratamento das sessões antigas, transcritas
+ * manualmente antes desta função existir). */
+export async function salvarTranscricaoManual(sessionId, transcript) {
+  const { supabase } = require('./supabase');
+  const { error } = await supabase
+    .from('sessions')
+    .update({ transcript: transcript || '', transcricao_status: null })
+    .eq('id', sessionId);
+  if (error) throw error;
 }
 
 // ── TRANSCRIPT TURNS ───────────────────────────────────
 
-export function saveTranscriptTurns(sessionId, turns) {
-  db.runSync('DELETE FROM transcript_turns WHERE session_id = ?', [sessionId]);
+export async function saveTranscriptTurns(sessionId, turns) {
+  const { supabase } = require('./supabase');
+  const { error: erroDelete } = await supabase.from('transcript_turns').delete().eq('session_id', sessionId);
+  if (erroDelete) throw erroDelete;
 
   if (!turns || turns.length === 0) return;
 
-  const stmt = db.prepareSync(
-    'INSERT INTO transcript_turns (session_id, turn_index, speaker, text, start_time_seconds, end_time_seconds) VALUES (?, ?, ?, ?, ?, ?)'
+  const { error } = await supabase.from('transcript_turns').insert(
+    turns.map((turn) => ({
+      session_id: sessionId,
+      turn_index: turn.turn_index,
+      speaker: turn.speaker,
+      text: turn.text,
+      start_time_seconds: turn.start_time_seconds ?? null,
+      end_time_seconds: turn.end_time_seconds ?? null,
+    }))
   );
-
-  try {
-    for (const turn of turns) {
-      stmt.executeSync([
-        sessionId,
-        turn.turn_index,
-        turn.speaker,
-        turn.text,
-        turn.start_time_seconds ?? null,
-        turn.end_time_seconds ?? null,
-      ]);
-    }
-  } finally {
-    stmt.finalizeSync();
-  }
+  if (error) throw error;
 }
 
-export function getTranscriptTurns(sessionId) {
-  return db.getAllSync(
-    'SELECT * FROM transcript_turns WHERE session_id = ? ORDER BY turn_index ASC',
-    [sessionId]
-  );
+export async function getTranscriptTurns(sessionId) {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase
+    .from('transcript_turns')
+    .select('*')
+    .eq('session_id', sessionId)
+    .order('turn_index', { ascending: true });
+  if (error) throw error;
+  return data;
 }
 
-export function getTurnCount(sessionId) {
-  const result = db.getFirstSync(
-    'SELECT COUNT(*) as total FROM transcript_turns WHERE session_id = ?',
-    [sessionId]
-  );
-  return result?.total ?? 0;
+export async function getTurnCount(sessionId) {
+  const { supabase } = require('./supabase');
+  const { count, error } = await supabase
+    .from('transcript_turns')
+    .select('*', { count: 'exact', head: true })
+    .eq('session_id', sessionId);
+  if (error) throw error;
+  return count ?? 0;
 }
 
 // ── REGISTROS ──────────────────────────────────────────
 
-export function getRecords(patientId) {
-  return db.getAllSync(
-    'SELECT * FROM records WHERE patient_id = ? ORDER BY date DESC',
-    [patientId]
-  );
+export async function getRecords(patientId) {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase
+    .from('records')
+    .select('*')
+    .eq('patient_id', patientId)
+    .order('date', { ascending: false });
+  if (error) throw error;
+  return data;
 }
 
-export function getRecordById(id) {
-  return db.getFirstSync('SELECT * FROM records WHERE id = ?', [id]);
+export async function getRecordById(id) {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase.from('records').select('*').eq('id', id).maybeSingle();
+  if (error) throw error;
+  return data;
 }
 
-export function addRecord(patientId, type, title, content, fileUri, sessionId, category, author) {
+export async function addRecord(patientId, type, title, content, fileUri, sessionId, category, author) {
+  const { supabase } = require('./supabase');
   const authorNorm = normalizarAuthor(author);
-  const result = db.runSync(
-    'INSERT INTO records (patient_id, session_id, type, title, content, file_uri, date, category, author) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [patientId, sessionId || null, type || null, title || '', content || '', fileUri || null, new Date().toISOString(), category || null, authorNorm]
-  );
-  return result.lastInsertRowId;
+  const { data, error } = await supabase
+    .from('records')
+    .insert({
+      patient_id: patientId, session_id: sessionId || null, type: type || null,
+      title: title || '', content: content || '', file_uri: fileUri || null,
+      date: new Date().toISOString(), category: category || null, author: authorNorm,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data.id;
 }
 
-export function deleteRecord(id) {
-  db.runSync('DELETE FROM records WHERE id = ?', [id]);
+export async function deleteRecord(id) {
+  const { supabase } = require('./supabase');
+  const { error } = await supabase.from('records').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ⚠️ TEMPORÁRIO — só pra importação de dados de teste, não é função do app final.
+export async function importarRegistroComData(patientId, type, title, content, dataISO) {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase
+    .from('records')
+    .insert({
+      patient_id: patientId, session_id: null, type: type || null, title: title || '',
+      content: content || '', file_uri: null, date: dataISO, category: null, author: 'analyst',
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data.id;
 }
 
 // ── NORMALIZAÇÃO DE AUTOR ──────────────────────────────
@@ -422,97 +341,226 @@ export function parseTranscriptToTurns(rawText) {
 }
 
 // ===================== AGENDA: DISPONIBILIDADE =====================
-db.execSync(`
-  CREATE TABLE IF NOT EXISTS availability_slots (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    day_of_week INTEGER NOT NULL,
-    start_time TEXT NOT NULL,
-    end_time TEXT NOT NULL,
-    modality TEXT NOT NULL,
-    patient_id INTEGER
-  );
-
-  CREATE TABLE IF NOT EXISTS appointments (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    patient_id INTEGER NOT NULL,
-    date TEXT NOT NULL,
-    start_time TEXT NOT NULL,
-    end_time TEXT NOT NULL,
-    modality TEXT NOT NULL,
-    status TEXT DEFAULT 'agendado',
-    FOREIGN KEY (patient_id) REFERENCES patients(id)
-  );
-`);
-
-try {
-  db.execSync(`ALTER TABLE availability_slots ADD COLUMN patient_id INTEGER;`);
-} catch (_) {}
+// `availability_slots`/`appointments` vivem no Supabase (ver
+// supabase/migrations/0004_child_tables.sql).
 
 // ---------- ANALISANTES (para o seletor da tela de disponibilidade) ----------
 
-export function getPatients() {
-  const rows = db.getAllSync('SELECT id, nome FROM patients ORDER BY nome ASC');
+export async function getPatients() {
+  const rows = await listarPacientes();
   return rows.map((row) => ({ id: row.id, name: row.nome }));
 }
 
-export function addPatient(nome) {
+export async function addPatient(nome) {
   if (!nome || !nome.trim()) return null;
 
-  const id = inserirPaciente({ nome: nome.trim() });
+  const id = await inserirPaciente({ nome: nome.trim() });
   return { id, name: nome.trim() };
 }
 
-// ---------- DISPONIBILIDADE ----------
+// ---------- DISPONIBILIDADE (Supabase — tabela `availability_slots`) -----
 
-export function getAvailabilitySlots() {
-  return db.getAllSync(
-    `SELECT s.*, p.nome as patient_name, p.telefone as patient_telefone,
-            p.preco_sessao as patient_preco, p.preco_moeda as patient_preco_moeda
-     FROM availability_slots s
-     LEFT JOIN patients p ON p.id = s.patient_id
-     ORDER BY s.day_of_week, s.start_time;`
-  );
+function achatarSlotComPaciente(row) {
+  const { patients, ...resto } = row;
+  return {
+    ...resto,
+    patient_name: patients?.nome ?? null,
+    patient_telefone: patients?.telefone ?? null,
+    patient_preco: patients?.preco_sessao ?? null,
+    patient_preco_moeda: patients?.preco_moeda ?? null,
+  };
 }
 
-export function addAvailabilitySlot(day_of_week, start_time, end_time, modality, patient_id) {
-  const result = db.runSync(
-    `INSERT INTO availability_slots (day_of_week, start_time, end_time, modality, patient_id)
-     VALUES (?, ?, ?, ?, ?);`,
-    [day_of_week, start_time, end_time, modality, patient_id || null]
-  );
-  return result.lastInsertRowId;
+/** Preenche `participantes` (lista {id, nome}) em cada slot de tipo "em
+ * grupo" — uma única consulta em lote pra todos os slots, em vez de uma
+ * por slot. */
+async function anexarParticipantesAosSlots(slots) {
+  const { supabase } = require('./supabase');
+  const idsGrupo = slots.filter((s) => s.tipo?.endsWith('_grupo')).map((s) => s.id);
+  if (idsGrupo.length === 0) return slots.map((s) => ({ ...s, participantes: [] }));
+
+  const { data, error } = await supabase
+    .from('slot_participantes')
+    .select('slot_id, patient_id, patients(nome)')
+    .in('slot_id', idsGrupo);
+  if (error) throw error;
+
+  const porSlot = {};
+  (data || []).forEach((p) => {
+    if (!porSlot[p.slot_id]) porSlot[p.slot_id] = [];
+    porSlot[p.slot_id].push({ id: p.patient_id, nome: p.patients?.nome ?? null });
+  });
+
+  return slots.map((s) => ({ ...s, participantes: porSlot[s.id] || [] }));
 }
 
-export function updateAvailabilitySlot(id, day_of_week, start_time, end_time, modality, patient_id) {
-  db.runSync(
-    `UPDATE availability_slots
-     SET day_of_week = ?, start_time = ?, end_time = ?, modality = ?, patient_id = ?
-     WHERE id = ?;`,
-    [day_of_week, start_time, end_time, modality, patient_id || null, id]
-  );
+export async function getAvailabilitySlots() {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase
+    .from('availability_slots')
+    .select('*, patients(nome, telefone, preco_sessao, preco_moeda)')
+    .order('day_of_week', { ascending: true })
+    .order('start_time', { ascending: true });
+  if (error) throw error;
+  return anexarParticipantesAosSlots(data.map(achatarSlotComPaciente));
 }
 
-export function deleteAvailabilitySlot(id) {
-  db.runSync(`DELETE FROM availability_slots WHERE id = ?;`, [id]);
+async function salvarParticipantesSlot(slotId, patientIds) {
+  const { supabase } = require('./supabase');
+  const userId = await getUserId();
+  const { error: errDelete } = await supabase.from('slot_participantes').delete().eq('slot_id', slotId);
+  if (errDelete) throw errDelete;
+  if (patientIds.length === 0) return;
+  const { error: errInsert } = await supabase
+    .from('slot_participantes')
+    .insert(patientIds.map((patient_id) => ({ slot_id: slotId, patient_id, user_id: userId })));
+  if (errInsert) throw errInsert;
 }
 
-export function clearAvailabilityByDay(day_of_week) {
-  db.runSync(`DELETE FROM availability_slots WHERE day_of_week = ?;`, [day_of_week]);
+export async function addAvailabilitySlot(day_of_week, start_time, end_time, modality, patient_id, tipo = 'sessao_individual', titulo = null, participantes = []) {
+  const { supabase } = require('./supabase');
+  const userId = await getUserId();
+  const { data, error } = await supabase
+    .from('availability_slots')
+    .insert({
+      user_id: userId, day_of_week, start_time, end_time, modality,
+      patient_id: patient_id || null, tipo, titulo: titulo || null,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  if (participantes.length > 0) await salvarParticipantesSlot(data.id, participantes);
+  return data.id;
 }
 
-export function clearAllAvailability() {
-  db.execSync(`DELETE FROM availability_slots;`);
+export async function updateAvailabilitySlot(id, day_of_week, start_time, end_time, modality, patient_id, tipo = 'sessao_individual', titulo = null, participantes = []) {
+  const { supabase } = require('./supabase');
+  const { error } = await supabase
+    .from('availability_slots')
+    .update({
+      day_of_week, start_time, end_time, modality,
+      patient_id: patient_id || null, tipo, titulo: titulo || null,
+    })
+    .eq('id', id);
+  if (error) throw error;
+  await salvarParticipantesSlot(id, participantes);
 }
 
-export function getAvailabilitySlotsByPatient(patientId) {
-  return db.getAllSync(
-    `SELECT * FROM availability_slots WHERE patient_id = ? ORDER BY day_of_week, start_time;`,
-    [patientId]
-  );
+export async function deleteAvailabilitySlot(id) {
+  const { supabase } = require('./supabase');
+  const { error } = await supabase.from('availability_slots').delete().eq('id', id);
+  if (error) throw error;
 }
 
-export function deleteAvailabilitySlotsByPatient(patientId) {
-  db.runSync(`DELETE FROM availability_slots WHERE patient_id = ?;`, [patientId]);
+export async function clearAvailabilityByDay(day_of_week) {
+  const { supabase } = require('./supabase');
+  const { error } = await supabase.from('availability_slots').delete().eq('day_of_week', day_of_week);
+  if (error) throw error;
+}
+
+export async function clearAllAvailability() {
+  const { supabase } = require('./supabase');
+  const userId = await getUserId();
+  const { error } = await supabase.from('availability_slots').delete().eq('user_id', userId);
+  if (error) throw error;
+}
+
+export async function getAvailabilitySlotsByPatient(patientId) {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase
+    .from('availability_slots')
+    .select('*')
+    .eq('patient_id', patientId)
+    .order('day_of_week', { ascending: true })
+    .order('start_time', { ascending: true });
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteAvailabilitySlotsByPatient(patientId) {
+  const { supabase } = require('./supabase');
+  const { error } = await supabase.from('availability_slots').delete().eq('patient_id', patientId);
+  if (error) throw error;
+}
+
+function agregarModalidades(modalidades) {
+  if (modalidades.size === 0) return null;
+  return modalidades.size > 1 ? 'hibrido' : [...modalidades][0];
+}
+
+/** Modalidade (online/presencial/híbrido) derivada da modalidade de cada
+ * horário recorrente do paciente — não é mais um campo que se escolhe na
+ * ficha, e sim o reflexo de como os horários já estão configurados. Usada
+ * na ficha completa (DetalheAnalisanteScreen). */
+export async function getModalidadeDerivada(patientId) {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase
+    .from('availability_slots')
+    .select('modality')
+    .eq('patient_id', patientId);
+  if (error) throw error;
+  const modalidades = new Set((data || []).map((s) => (s.modality === 'online' ? 'online' : 'presencial')));
+  return agregarModalidades(modalidades);
+}
+
+/** Mesma derivação de getModalidadeDerivada, mas em lote pra todos os
+ * pacientes do usuário de uma vez — usada na lista (AnalisantesScreen),
+ * pra não fazer uma consulta por paciente. */
+export async function getModalidadesPorPaciente() {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase
+    .from('availability_slots')
+    .select('patient_id, modality')
+    .not('patient_id', 'is', null);
+  if (error) throw error;
+
+  const porPaciente = {};
+  (data || []).forEach((s) => {
+    if (!porPaciente[s.patient_id]) porPaciente[s.patient_id] = new Set();
+    porPaciente[s.patient_id].add(s.modality === 'online' ? 'online' : 'presencial');
+  });
+
+  const resultado = {};
+  Object.entries(porPaciente).forEach(([patientId, modalidades]) => {
+    resultado[patientId] = agregarModalidades(modalidades);
+  });
+  return resultado;
+}
+
+/**
+ * Depois de resincronizar os horários recorrentes de um paciente (ex: nova
+ * modalidade por horário na ficha), atualiza a modalidade dos compromissos
+ * ainda 'agendado' (não realizado/cancelado) que combinam com o dia da
+ * semana + horário de início de cada horário atual — sem isso, a Agenda
+ * continuaria mostrando a modalidade "congelada" de quando o compromisso
+ * daquela data específica foi criado (appointments não é reescrito
+ * automaticamente quando o horário recorrente muda). Compromissos já
+ * concluídos/cancelados nunca são tocados, pra preservar o histórico real
+ * de como a sessão de fato aconteceu.
+ */
+export async function sincronizarModalidadeCompromissosAgendados(patientId, horarios) {
+  const { supabase } = require('./supabase');
+  const { data: compromissos, error } = await supabase
+    .from('appointments')
+    .select('id, date, start_time, modality')
+    .eq('patient_id', patientId)
+    .eq('status', 'agendado');
+  if (error) throw error;
+
+  for (const c of compromissos || []) {
+    const [ano, mes, dia] = c.date.split('-').map(Number);
+    const dayOfWeek = new Date(ano, mes - 1, dia).getDay();
+    const horarioCorrespondente = horarios.find(
+      (h) => h.day_of_week === dayOfWeek && h.start_time === c.start_time
+    );
+    if (horarioCorrespondente && horarioCorrespondente.modality !== c.modality) {
+      const { error: errUpdate } = await supabase
+        .from('appointments')
+        .update({ modality: horarioCorrespondente.modality })
+        .eq('id', c.id);
+      if (errUpdate) throw errUpdate;
+    }
+  }
 }
 
 // ---------- CONFLITOS DE HORÁRIO (item 6) ----------
@@ -549,12 +597,16 @@ function horariosSeSobrepoem(inicioA, fimA, inicioB, fimB) {
  *   substituídos se o usuário confirmar).
  * - modalidadeNormalizada: 'hibrido' convertido para 'ambos'.
  */
-export function verificarConflitoSlot({ id, day_of_week, start_time, end_time, modality }) {
+export async function verificarConflitoSlot({ id, day_of_week, start_time, end_time, modality }) {
+  const { supabase } = require('./supabase');
   const modalidadeNormalizada = modality === 'hibrido' ? 'ambos' : (modality || 'ambos');
 
-  const doDia = db
-    .getAllSync('SELECT * FROM availability_slots WHERE day_of_week = ?', [day_of_week])
-    .filter((slot) => !id || slot.id !== id);
+  const { data, error } = await supabase
+    .from('availability_slots')
+    .select('*')
+    .eq('day_of_week', day_of_week);
+  if (error) throw error;
+  const doDia = data.filter((slot) => !id || slot.id !== id);
 
   const sobrepostosCompativeis = doDia.filter((slot) =>
     horariosSeSobrepoem(start_time, end_time, slot.start_time, slot.end_time) &&
@@ -572,18 +624,19 @@ export function verificarConflitoSlot({ id, day_of_week, start_time, end_time, m
  * informados (tipicamente o resultado de `verificarConflitoSlot`, já
  * confirmado pelo usuário).
  */
-export function aplicarSlot({
-  id, day_of_week, start_time, end_time, modality, patient_id, livresParaRemover = []
+export async function aplicarSlot({
+  id, day_of_week, start_time, end_time, modality, patient_id, livresParaRemover = [],
+  tipo = 'sessao_individual', titulo = null, participantes = [],
 }) {
-  livresParaRemover.forEach((slot) => {
-    db.runSync('DELETE FROM availability_slots WHERE id = ?', [slot.id]);
-  });
+  for (const slot of livresParaRemover) {
+    await deleteAvailabilitySlot(slot.id);
+  }
 
   let novoId = id;
   if (id) {
-    updateAvailabilitySlot(id, day_of_week, start_time, end_time, modality, patient_id);
+    await updateAvailabilitySlot(id, day_of_week, start_time, end_time, modality, patient_id, tipo, titulo, participantes);
   } else {
-    novoId = addAvailabilitySlot(day_of_week, start_time, end_time, modality, patient_id);
+    novoId = await addAvailabilitySlot(day_of_week, start_time, end_time, modality, patient_id, tipo, titulo, participantes);
   }
 
   return novoId;
@@ -594,10 +647,10 @@ export function aplicarSlot({
  * usada em fluxos de lote, como ao salvar os vários horários de um
  * analisante de uma vez no formulário de cadastro.
  */
-export function resolverConflitoEAdicionarSlot({
+export async function resolverConflitoEAdicionarSlot({
   id, day_of_week, start_time, end_time, modality, patient_id
 }) {
-  const { ocupado, livres, modalidadeNormalizada } = verificarConflitoSlot({
+  const { ocupado, livres, modalidadeNormalizada } = await verificarConflitoSlot({
     id, day_of_week, start_time, end_time, modality
   });
 
@@ -605,7 +658,7 @@ export function resolverConflitoEAdicionarSlot({
     return { success: false, conflito: ocupado };
   }
 
-  const novoId = aplicarSlot({
+  const novoId = await aplicarSlot({
     id, day_of_week, start_time, end_time,
     modality: modalidadeNormalizada, patient_id,
     livresParaRemover: livres,
@@ -614,37 +667,308 @@ export function resolverConflitoEAdicionarSlot({
   return { success: true, id: novoId, removidos: livres.length };
 }
 
-// ---------- COMPROMISSOS (AGENDA) ----------
+// ---------- COMPROMISSOS (Supabase — tabela `appointments`) --------------
 
-export function getAppointmentsByDateRange(startDate, endDate) {
-  return db.getAllSync(
-    `SELECT a.*, p.nome as patient_nome, p.telefone as patient_telefone,
-            p.nascimento as patient_nascimento, p.data_inicio as patient_data_inicio,
-            p.preco_sessao as patient_preco, p.preco_moeda as patient_preco_moeda
-     FROM appointments a
-     JOIN patients p ON p.id = a.patient_id
-     WHERE a.date BETWEEN ? AND ?
-     ORDER BY a.date, a.start_time;`,
-    [startDate, endDate]
-  );
+function achatarAppointmentComPaciente(row) {
+  const { patients, ...resto } = row;
+  return {
+    ...resto,
+    patient_nome: patients?.nome ?? null,
+    patient_telefone: patients?.telefone ?? null,
+    patient_nascimento: patients?.nascimento ?? null,
+    patient_data_inicio: patients?.data_inicio ?? null,
+    patient_preco: patients?.preco_sessao ?? null,
+    patient_preco_moeda: patients?.preco_moeda ?? null,
+    patient_tipo_cobranca: patients?.tipo_cobranca ?? null,
+  };
 }
 
-export function getAppointmentsByDate(date) {
-  return db.getAllSync(
-    `SELECT a.*, p.nome as patient_nome, p.telefone as patient_telefone,
-            p.nascimento as patient_nascimento, p.data_inicio as patient_data_inicio,
-            p.preco_sessao as patient_preco, p.preco_moeda as patient_preco_moeda
-     FROM appointments a
-     JOIN patients p ON p.id = a.patient_id
-     WHERE a.date = ?
-     ORDER BY a.start_time;`,
-    [date]
-  );
+const APPOINTMENT_SELECT_COM_PACIENTE =
+  '*, patients(nome, telefone, nascimento, data_inicio, preco_sessao, preco_moeda, tipo_cobranca)';
+
+/** Mesma ideia de `anexarParticipantesAosSlots`, pro lado materializado
+ * (appointments) — em lote, só pros de tipo "em grupo". */
+async function anexarParticipantesAosAppointments(appointments) {
+  const { supabase } = require('./supabase');
+  const idsGrupo = appointments.filter((a) => a.tipo?.endsWith('_grupo')).map((a) => a.id);
+  if (idsGrupo.length === 0) return appointments.map((a) => ({ ...a, participantes: [] }));
+
+  const { data, error } = await supabase
+    .from('appointment_participantes')
+    .select('appointment_id, patient_id, patients(nome)')
+    .in('appointment_id', idsGrupo);
+  if (error) throw error;
+
+  const porAppointment = {};
+  (data || []).forEach((p) => {
+    if (!porAppointment[p.appointment_id]) porAppointment[p.appointment_id] = [];
+    porAppointment[p.appointment_id].push({ id: p.patient_id, nome: p.patients?.nome ?? null });
+  });
+
+  return appointments.map((a) => ({ ...a, participantes: porAppointment[a.id] || [] }));
 }
 
-export function getPatientById(patientId) {
-  const row = db.getFirstSync('SELECT * FROM patients WHERE id = ?', [patientId]);
-  return row || null;
+export async function getAppointmentsByDateRange(startDate, endDate) {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase
+    .from('appointments')
+    .select(APPOINTMENT_SELECT_COM_PACIENTE)
+    .gte('date', startDate)
+    .lte('date', endDate)
+    .order('date', { ascending: true })
+    .order('start_time', { ascending: true });
+  if (error) throw error;
+  return anexarParticipantesAosAppointments(data.map(achatarAppointmentComPaciente));
+}
+
+export async function getAppointmentsByDate(date) {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase
+    .from('appointments')
+    .select(APPOINTMENT_SELECT_COM_PACIENTE)
+    .eq('date', date)
+    .order('start_time', { ascending: true });
+  if (error) throw error;
+  return anexarParticipantesAosAppointments(data.map(achatarAppointmentComPaciente));
+}
+
+/** Todos os compromissos (qualquer data) de um paciente específico — usado
+ * no relatório de presença (sessões marcadas/canceladas/faltas). */
+export async function getAppointmentsByPatient(patientId) {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase
+    .from('appointments')
+    .select('*')
+    .eq('patient_id', patientId)
+    .order('date', { ascending: false })
+    .order('start_time', { ascending: false });
+  if (error) throw error;
+  return data;
+}
+
+export async function getAppointmentById(appointmentId) {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase
+    .from('appointments')
+    .select(APPOINTMENT_SELECT_COM_PACIENTE)
+    .eq('id', appointmentId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const [comParticipantes] = await anexarParticipantesAosAppointments([achatarAppointmentComPaciente(data)]);
+  return comParticipantes;
+}
+
+const STATUS_APPOINTMENT_VALIDOS = ['agendado', 'realizado', 'cancelado', 'nao_realizado'];
+
+export async function updateAppointmentStatus(appointmentId, novoStatus) {
+  if (!STATUS_APPOINTMENT_VALIDOS.includes(novoStatus)) {
+    throw new Error(`Status de compromisso inválido: ${novoStatus}`);
+  }
+  const { supabase } = require('./supabase');
+  const { error } = await supabase.from('appointments').update({ status: novoStatus }).eq('id', appointmentId);
+  if (error) throw error;
+}
+
+/** Copia os participantes do slot (template) pra ocorrência materializada
+ * — chamado sempre que um appointment "em grupo" é criado/reconfirmado,
+ * pra manter os dois em sincronia (mesmo padrão do `modality`, ver
+ * `sincronizarModalidadeCompromissosAgendados`). */
+async function sincronizarParticipantesAppointment(appointmentId, slotId) {
+  const { supabase } = require('./supabase');
+  const userId = await getUserId();
+  const { data: slotParts, error: errSlot } = await supabase
+    .from('slot_participantes')
+    .select('patient_id')
+    .eq('slot_id', slotId);
+  if (errSlot) throw errSlot;
+  const { error: errDelete } = await supabase
+    .from('appointment_participantes')
+    .delete()
+    .eq('appointment_id', appointmentId);
+  if (errDelete) throw errDelete;
+  if (!slotParts || slotParts.length === 0) return;
+  const { error: errInsert } = await supabase
+    .from('appointment_participantes')
+    .insert(slotParts.map((p) => ({ appointment_id: appointmentId, patient_id: p.patient_id, user_id: userId })));
+  if (errInsert) throw errInsert;
+}
+
+async function inserirAppointmentSeNaoExiste(userId, slot, dataISO) {
+  const { supabase } = require('./supabase');
+  const { error } = await supabase
+    .from('appointments')
+    .upsert(
+      {
+        user_id: userId, patient_id: slot.patient_id, date: dataISO,
+        start_time: slot.start_time, end_time: slot.end_time,
+        modality: slot.modality, status: 'agendado',
+        tipo: slot.tipo || 'sessao_individual', titulo: slot.titulo || null,
+      },
+      { onConflict: 'user_id,date,start_time', ignoreDuplicates: true }
+    );
+  if (error) throw error;
+
+  if (slot.tipo?.endsWith('_grupo')) {
+    const { data: appt, error: errBusca } = await supabase
+      .from('appointments')
+      .select('id')
+      .eq('user_id', userId).eq('date', dataISO).eq('start_time', slot.start_time)
+      .maybeSingle();
+    if (errBusca) throw errBusca;
+    if (appt) await sincronizarParticipantesAppointment(appt.id, slot.id);
+  }
+}
+
+/**
+ * Garante que exista uma linha em `appointments` (ocorrência específica
+ * numa data) para cada horário ocupado do template semanal
+ * `availability_slots` naquele dia da semana — sem isso não há como
+ * rastrear status de comparecimento por data específica, só o template
+ * recorrente. Idempotente: seguro chamar toda vez que a Agenda (visão
+ * diária) carrega os dados do dia.
+ *
+ * "Ocupado" agora não é só `patient_id` preenchido (sessão/supervisão
+ * individual) — os tipos "em grupo" e "outros" ocupam o horário mesmo sem
+ * um paciente único vinculado (item J.23).
+ */
+export async function ensureAppointmentsForDate(dataISO, dayOfWeek) {
+  const { supabase } = require('./supabase');
+  const userId = await getUserId();
+  const { data: slots, error } = await supabase
+    .from('availability_slots')
+    .select('*')
+    .eq('day_of_week', dayOfWeek)
+    .or('patient_id.not.is.null,tipo.in.(sessao_grupo,supervisao_grupo,outros)');
+  if (error) throw error;
+  for (const slot of slots) {
+    await inserirAppointmentSeNaoExiste(userId, slot, dataISO);
+  }
+}
+
+/**
+ * Mesma ideia do `ensureAppointmentsForDate`, mas pra um único slot — usado
+ * na visão SEMANAL da Agenda, que (diferente da diária) não pré-cria todos
+ * os compromissos do dia ao carregar; cria só o que foi de fato clicado,
+ * na hora do clique, e já devolve a linha (com os dados do paciente).
+ */
+export async function getOrCreateAppointmentForSlot(slot, dataISO) {
+  const { supabase } = require('./supabase');
+  const userId = await getUserId();
+  await inserirAppointmentSeNaoExiste(userId, slot, dataISO);
+  const { data, error } = await supabase
+    .from('appointments')
+    .select(APPOINTMENT_SELECT_COM_PACIENTE)
+    .eq('date', dataISO)
+    .eq('start_time', slot.start_time)
+    .single();
+  if (error) throw error;
+  const [comParticipantes] = await anexarParticipantesAosAppointments([achatarAppointmentComPaciente(data)]);
+  return comParticipantes;
+}
+
+/** Acha o slot do template semanal que originou um compromisso específico
+ * (mesmo dia da semana + mesmo horário de início), pra permitir editar o
+ * horário recorrente a partir da tela de detalhe do compromisso. */
+export async function getAvailabilitySlotByDayAndTime(dayOfWeek, startTime) {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase
+    .from('availability_slots')
+    .select('*')
+    .eq('day_of_week', dayOfWeek)
+    .eq('start_time', startTime)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Verifica se existe sessão (com transcrição/relato não vazio) do paciente
+ * numa data específica. `sessions.date` é gravado em UTC (`toISOString()`),
+ * então a comparação reconstrói a data local de cada sessão em vez de
+ * comparar strings diretamente.
+ */
+export async function temTranscricaoParaData(patientId, dataISO) {
+  const sessoes = await getSessions(patientId);
+  return sessoes.some((s) => {
+    if (!(s.transcript || '').trim()) return false;
+    const d = new Date(s.date);
+    const dataLocal = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return dataLocal === dataISO;
+  });
+}
+
+export async function getPatientById(patientId) {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase.from('patients').select('*').eq('id', patientId).maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+// ── Paralisação / retorno da análise (item G.20) ───────
+// Alterna a análise entre ativa e parada, guardando cada período (início +
+// fim) em vez de só sobrescrever uma data — permite ver o histórico
+// completo de paralisações, não só a mais recente.
+
+function hojeISODate() {
+  const hoje = new Date();
+  return `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+}
+
+export async function getHistoricoParalizacoes(patientId) {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase
+    .from('patient_paralizacoes')
+    .select('*')
+    .eq('patient_id', patientId)
+    .order('data_inicio', { ascending: false });
+  if (error) throw error;
+  return data;
+}
+
+/** Marca a análise como parada hoje — cria o período em aberto e reflete
+ * em `patients.data_paralizacao` (já usado em vários lugares do app como
+ * "está parado desde"). */
+export async function marcarParalizacao(patientId) {
+  const { supabase } = require('./supabase');
+  const hoje = hojeISODate();
+  const { error: errInsert } = await supabase
+    .from('patient_paralizacoes')
+    .insert({ patient_id: patientId, data_inicio: hoje });
+  if (errInsert) throw errInsert;
+  const { error: errUpdate } = await supabase
+    .from('patients')
+    .update({ data_paralizacao: hoje })
+    .eq('id', patientId);
+  if (errUpdate) throw errUpdate;
+}
+
+/** Fecha o período de paralisação em aberto (data_fim = hoje) e limpa
+ * `patients.data_paralizacao`, voltando a análise a ativa. */
+export async function marcarRetorno(patientId) {
+  const { supabase } = require('./supabase');
+  const hoje = hojeISODate();
+  const { data: aberto, error: errBusca } = await supabase
+    .from('patient_paralizacoes')
+    .select('id')
+    .eq('patient_id', patientId)
+    .is('data_fim', null)
+    .order('data_inicio', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (errBusca) throw errBusca;
+  if (aberto) {
+    const { error: errUpdatePeriodo } = await supabase
+      .from('patient_paralizacoes')
+      .update({ data_fim: hoje })
+      .eq('id', aberto.id);
+    if (errUpdatePeriodo) throw errUpdatePeriodo;
+  }
+  const { error: errUpdatePaciente } = await supabase
+    .from('patients')
+    .update({ data_paralizacao: null })
+    .eq('id', patientId);
+  if (errUpdatePaciente) throw errUpdatePaciente;
 }
 
 // ===================== FINANCEIRO =====================
@@ -671,54 +995,101 @@ export function formatarMoeda(valor) {
 }
 
 // ── COTAÇÃO DE MOEDAS (PTAX/BCB) ────────────────────────
-// Cache local da cotação oficial mais recente de cada moeda estrangeira,
-// atualizado sob demanda (ver src/services/currency.js) e consultado aqui
-// de forma síncrona para converter preços de sessão em moeda estrangeira
-// para Reais nos cálculos financeiros.
+// Cache compartilhado (tabela `cotacoes_cache` no Supabase) da cotação
+// oficial mais recente de cada moeda estrangeira, atualizado sob demanda
+// (ver src/services/currency.js) e consultado aqui pra converter preços de
+// sessão em moeda estrangeira para Reais nos cálculos financeiros.
 
-db.execSync(`
-  CREATE TABLE IF NOT EXISTS cotacoes_cache (
-    moeda TEXT PRIMARY KEY,
-    valor_brl REAL NOT NULL,
-    data_cotacao TEXT,
-    atualizado_em TEXT
-  );
-`);
-
-export function salvarCotacaoCache(moeda, valorBrl, dataCotacao) {
-  db.runSync(
-    `INSERT INTO cotacoes_cache (moeda, valor_brl, data_cotacao, atualizado_em)
-     VALUES (?, ?, ?, ?)
-     ON CONFLICT(moeda) DO UPDATE SET
-       valor_brl = excluded.valor_brl, data_cotacao = excluded.data_cotacao, atualizado_em = excluded.atualizado_em`,
-    [moeda, valorBrl, dataCotacao || null, new Date().toISOString()]
-  );
+export async function salvarCotacaoCache(moeda, valorBrl, dataCotacao) {
+  const { supabase } = require('./supabase');
+  const { error } = await supabase
+    .from('cotacoes_cache')
+    .upsert({ moeda, valor_brl: valorBrl, data_cotacao: dataCotacao || null, atualizado_em: new Date().toISOString() });
+  if (error) throw error;
 }
 
-export function getCotacaoCache(moeda) {
-  return db.getFirstSync('SELECT * FROM cotacoes_cache WHERE moeda = ?', [moeda]);
+export async function getCotacaoCache(moeda) {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase.from('cotacoes_cache').select('*').eq('moeda', moeda).maybeSingle();
+  if (error) throw error;
+  return data;
 }
 
 /** Converte um valor em moeda estrangeira para Reais usando a última cotação
  * conhecida em cache (1:1 se a moeda for BRL ou se ainda não há cotação
  * salva — nesse caso a tela deve chamar atualizarCotacao() antes). */
-export function converterParaBRL(valor, moeda) {
+export async function converterParaBRL(valor, moeda) {
   if (!moeda || moeda === 'BRL') return valor;
-  const cache = getCotacaoCache(moeda);
+  const cache = await getCotacaoCache(moeda);
   const taxa = cache?.valor_brl || 1;
   return valor * taxa;
 }
 
-export function getSlotsOcupados() {
-  return db.getAllSync(
-    `SELECT s.*, p.nome as patient_nome, p.preco_sessao as patient_preco,
-            p.preco_moeda as patient_preco_moeda,
-            p.dia_pagamento as patient_dia_pagamento
-     FROM availability_slots s
-     JOIN patients p ON p.id = s.patient_id
-     WHERE s.patient_id IS NOT NULL
-     ORDER BY s.day_of_week, s.start_time;`
-  );
+// ── Estatísticas de "Sua atividade" (Meu Perfil) ────────
+
+/** Média do preço de sessão de todos os analisantes que têm preço
+ * cadastrado, já convertido pra Reais quando a moeda for estrangeira. */
+export async function getPrecoMedioSessao() {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase.from('patients').select('preco_sessao, preco_moeda');
+  if (error) throw error;
+
+  const precos = [];
+  for (const p of data || []) {
+    const valor = parsePreco(p.preco_sessao);
+    if (valor > 0) precos.push(await converterParaBRL(valor, p.preco_moeda));
+  }
+  if (precos.length === 0) return 0;
+  return precos.reduce((soma, v) => soma + v, 0) / precos.length;
+}
+
+export async function getContagemPacientes() {
+  const { supabase } = require('./supabase');
+  const { count, error } = await supabase.from('patients').select('*', { count: 'exact', head: true });
+  if (error) throw error;
+  return count || 0;
+}
+
+/** Sessões (de qualquer analisante) sem transcrição/relato preenchido —
+ * mesmo critério já usado em temTranscricaoParaData (string vazia depois
+ * de trim conta como "sem relato"). */
+export async function getContagemSessoesSemRelato() {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase.from('sessions').select('transcript');
+  if (error) throw error;
+  return (data || []).filter((s) => !(s.transcript || '').trim()).length;
+}
+
+/** Horários recorrentes cadastrados na agenda: quantos estão ocupados
+ * (com analisante vinculado) do total configurado. */
+export async function getResumoHorariosSemanais() {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase.from('availability_slots').select('patient_id');
+  if (error) throw error;
+  const total = (data || []).length;
+  const ocupados = (data || []).filter((s) => s.patient_id).length;
+  return { ocupados, total };
+}
+
+export async function getSlotsOcupados() {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase
+    .from('availability_slots')
+    .select('*, patients!inner(nome, preco_sessao, preco_moeda, dia_pagamento)')
+    .not('patient_id', 'is', null)
+    .order('day_of_week', { ascending: true })
+    .order('start_time', { ascending: true });
+  if (error) throw error;
+  return data.map((row) => {
+    const { patients, ...resto } = row;
+    return {
+      ...resto,
+      patient_nome: patients?.nome ?? null,
+      patient_preco: patients?.preco_sessao ?? null,
+      patient_preco_moeda: patients?.preco_moeda ?? null,
+      patient_dia_pagamento: patients?.dia_pagamento ?? null,
+    };
+  });
 }
 
 function contarOcorrenciasDiaSemanaNoMes(ano, mesIndex, diaSemana) {
@@ -735,8 +1106,8 @@ function contarOcorrenciasDiaSemanaNoMes(ano, mesIndex, diaSemana) {
  * recorrente de cada analisante e do preço de sessão cadastrado na ficha.
  * `dataRef` define o "hoje"/mês de referência (padrão: data atual).
  */
-export function getPlanoFinanceiro(dataRef = new Date()) {
-  const slots = getSlotsOcupados();
+export async function getPlanoFinanceiro(dataRef = new Date()) {
+  const slots = await getSlotsOcupados();
   const diaSemanaHoje = dataRef.getDay();
   const ano = dataRef.getFullYear();
   const mesIndex = dataRef.getMonth();
@@ -749,7 +1120,7 @@ export function getPlanoFinanceiro(dataRef = new Date()) {
   const porPaciente = {};
 
   for (const slot of slots) {
-    const preco = converterParaBRL(parsePreco(slot.patient_preco), slot.patient_preco_moeda);
+    const preco = await converterParaBRL(parsePreco(slot.patient_preco), slot.patient_preco_moeda);
 
     totalSemanal += preco;
     itensSemanal.push({
@@ -813,568 +1184,234 @@ export function getPlanoFinanceiro(dataRef = new Date()) {
   };
 }
 
-// ===================== RECEBIMENTOS =====================
+// ===================== RECEBIMENTOS (Supabase — tabela `pagamentos`) =====
 //
 // Controla, mês a mês, se o pagamento previsto (dia_pagamento + valor do
 // cronograma financeiro) de cada analisante já foi de fato recebido.
 
-db.execSync(`
-  CREATE TABLE IF NOT EXISTS pagamentos (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    patient_id INTEGER NOT NULL,
-    ano INTEGER NOT NULL,
-    mes INTEGER NOT NULL,
-    recebido INTEGER NOT NULL DEFAULT 0,
-    data_recebimento TEXT,
-    valor REAL,
-    UNIQUE(patient_id, ano, mes),
-    FOREIGN KEY (patient_id) REFERENCES patients(id)
-  );
-`);
-
-function getStatusPagamentos(ano, mes) {
-  const rows = db.getAllSync(
-    'SELECT * FROM pagamentos WHERE ano = ? AND mes = ?',
-    [ano, mes]
-  );
+async function getStatusPagamentos(ano, mes) {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase
+    .from('pagamentos')
+    .select('*')
+    .eq('ano', ano)
+    .eq('mes', mes);
+  if (error) throw error;
   const mapa = {};
-  rows.forEach((r) => { mapa[r.patient_id] = r; });
+  data.forEach((r) => { mapa[r.patient_id] = r; });
   return mapa;
 }
 
-export function marcarPagamentoRecebido(patientId, ano, mes, valor) {
-  db.runSync(
-    `INSERT INTO pagamentos (patient_id, ano, mes, recebido, data_recebimento, valor)
-     VALUES (?, ?, ?, 1, ?, ?)
-     ON CONFLICT(patient_id, ano, mes) DO UPDATE SET
-       recebido = 1, data_recebimento = excluded.data_recebimento, valor = excluded.valor`,
-    [patientId, ano, mes, new Date().toISOString(), valor || null]
-  );
+// `pagamentos` não tem mais uma constraint única incondicional em
+// (patient_id, ano, mes) desde a migration 0017 — agora é um índice único
+// PARCIAL (só quando appointment_id is null, pra não colidir com as linhas
+// de pagamento por sessão). `.upsert(..., {onConflict: '...'})` do
+// supabase-js gera um ON CONFLICT sem cláusula WHERE, que não bate com
+// índice parcial nenhum — por isso resolvemos manualmente aqui: busca a
+// linha mensal existente (appointment_id is null) e decide update/insert.
+async function upsertPagamentoMensal(patientId, ano, mes, campos) {
+  const { supabase } = require('./supabase');
+  const { data: existente, error: errBusca } = await supabase
+    .from('pagamentos')
+    .select('id')
+    .eq('patient_id', patientId).eq('ano', ano).eq('mes', mes)
+    .is('appointment_id', null)
+    .maybeSingle();
+  if (errBusca) throw errBusca;
+
+  const { error } = existente
+    ? await supabase.from('pagamentos').update(campos).eq('id', existente.id)
+    : await supabase.from('pagamentos').insert({ patient_id: patientId, ano, mes, ...campos });
+  if (error) throw error;
 }
 
-export function desmarcarPagamentoRecebido(patientId, ano, mes) {
-  db.runSync(
-    `INSERT INTO pagamentos (patient_id, ano, mes, recebido, data_recebimento, valor)
-     VALUES (?, ?, ?, 0, NULL, NULL)
-     ON CONFLICT(patient_id, ano, mes) DO UPDATE SET
-       recebido = 0, data_recebimento = NULL`,
-    [patientId, ano, mes]
-  );
+export async function marcarPagamentoRecebido(patientId, ano, mes, valor) {
+  await upsertPagamentoMensal(patientId, ano, mes, {
+    recebido: true, data_recebimento: new Date().toISOString(), valor: valor || null,
+  });
+}
+
+export async function desmarcarPagamentoRecebido(patientId, ano, mes) {
+  await upsertPagamentoMensal(patientId, ano, mes, {
+    recebido: false, data_recebimento: null,
+  });
+}
+
+/** Histórico completo de pagamentos de um único paciente — usado no
+ * relatório financeiro por analisante. */
+export async function getPagamentosPorPaciente(patientId) {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase
+    .from('pagamentos')
+    .select('*')
+    .eq('patient_id', patientId)
+    .order('ano', { ascending: false })
+    .order('mes', { ascending: false });
+  if (error) throw error;
+  return data;
+}
+
+/** Soma dos pagamentos por sessão (appointment_id preenchido) já
+ * confirmados de um paciente num mês — usado por Cobrança, pelo
+ * cronograma de Recebimentos e pelo catch-up de envio fiscal semanal.
+ * `mes` é 0-11 (mesma convenção do restante da tabela `pagamentos`). */
+export async function getPagamentosSessaoDoMes(patientId, ano, mes) {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase
+    .from('pagamentos')
+    .select('valor')
+    .eq('patient_id', patientId)
+    .eq('ano', ano)
+    .eq('mes', mes)
+    .not('appointment_id', 'is', null);
+  if (error) throw error;
+  return {
+    valor: data.reduce((soma, r) => soma + (r.valor || 0), 0),
+    sessoes: data.length,
+  };
+}
+
+/** Soma dos pagamentos por sessão de um paciente num intervalo de datas
+ * (inclusive), pela data do compromisso vinculado — usado no catch-up de
+ * envio fiscal semanal, que agrega só a semana, não o mês inteiro. */
+export async function getPagamentosSessaoPorPeriodo(patientId, inicioISO, fimISO) {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase
+    .from('pagamentos')
+    .select('valor, appointments!inner(date)')
+    .eq('patient_id', patientId)
+    .not('appointment_id', 'is', null)
+    .gte('appointments.date', inicioISO)
+    .lte('appointments.date', fimISO);
+  if (error) throw error;
+  return data.reduce((soma, r) => soma + (r.valor || 0), 0);
 }
 
 /**
  * Junta o cronograma financeiro (dia de pagamento + valor previsto no mês)
  * com o status de recebimento e os contatos do analisante (telefone/email),
  * pronto para a tela de Recebimento (calendário + envio de lembrete).
- * `mesIndex` é 0-11.
+ * `mesIndex` é 0-11. Analisantes de cobrança "mensal" seguem o cronograma
+ * de sempre; analisantes "por sessão" (sem dia_pagamento) entram à parte,
+ * com o total já confirmado no mês via pagamentos por sessão.
  */
-export function getRecebimentosDoMes(ano, mesIndex) {
-  const plano = getPlanoFinanceiro(new Date(ano, mesIndex, 1));
-  const statusMap = getStatusPagamentos(ano, mesIndex);
+export async function getRecebimentosDoMes(ano, mesIndex) {
+  const { supabase } = require('./supabase');
+  const plano = await getPlanoFinanceiro(new Date(ano, mesIndex, 1));
+  const statusMap = await getStatusPagamentos(ano, mesIndex);
 
   const patientIds = plano.cronogramaRecebimentos.map((r) => r.patient_id);
   const contatos = {};
   if (patientIds.length > 0) {
-    const placeholders = patientIds.map(() => '?').join(',');
-    const rows = db.getAllSync(
-      `SELECT id, telefone, email FROM patients WHERE id IN (${placeholders})`,
-      patientIds
-    );
+    const { data: rows, error } = await supabase
+      .from('patients')
+      .select('id, telefone, email, cpf, tipo_emissao_fiscal, fiscal_frequencia_automatica, tipo_cobranca, valor_mensal_fixo')
+      .in('id', patientIds);
+    if (error) throw error;
     rows.forEach((r) => { contatos[r.id] = r; });
   }
 
-  return plano.cronogramaRecebimentos.map((item) => {
+  const recebimentosMensal = plano.cronogramaRecebimentos.map((item) => {
     const status = statusMap[item.patient_id];
     const contato = contatos[item.patient_id] || {};
+    const ehMensalFixo = contato.tipo_cobranca === 'mensal_fixo';
     return {
       patient_id: item.patient_id,
       nome: item.nome,
+      tipo_cobranca: ehMensalFixo ? 'mensal_fixo' : 'mensal',
+      tipo_emissao_fiscal: contato.tipo_emissao_fiscal || 'recibo',
+      fiscal_frequencia_automatica: contato.fiscal_frequencia_automatica || null,
       dia_pagamento: item.dia_pagamento,
-      valorPrevisto: item.subtotal,
+      valorPrevisto: ehMensalFixo ? Number(contato.valor_mensal_fixo) || 0 : item.subtotal,
       telefone: contato.telefone || null,
       email: contato.email || null,
+      cpf: contato.cpf || null,
       recebido: !!(status && status.recebido),
       data_recebimento: status?.data_recebimento || null,
     };
   });
-}
 
-// ===================== PERFIL PSICOSSOMÁTICO =====================
-//
-// Duas funções na ficha do analisante: Objetivo (sono/alimentação/movimento/
-// medicina, agrupados a partir de registros e transcrições) e Subjetivo
-// (Perfil por Núcleos Psíquicos — instrumento de apoio à hipótese
-// diagnóstica baseado em modelo teórico próprio; NUNCA um diagnóstico).
-// A rubrica clínica mora fora do código (rubricas_config, semeada a partir
-// de config/nucleos/rubricas.v1.json) para poder ser editada sem rebuild.
+  const { data: porSessaoPacientes, error: errPS } = await supabase
+    .from('patients')
+    .select('id, nome, telefone, email, cpf, tipo_emissao_fiscal, fiscal_frequencia_automatica')
+    .eq('tipo_cobranca', 'por_sessao');
+  if (errPS) throw errPS;
 
-db.execSync(`
-  CREATE TABLE IF NOT EXISTS rubricas_config (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    versao TEXT NOT NULL,
-    conteudo TEXT NOT NULL,
-    atualizado_em TEXT NOT NULL,
-    ativa INTEGER DEFAULT 1
-  );
-
-  CREATE TABLE IF NOT EXISTS nucleos_evidencias (
-    id TEXT PRIMARY KEY,
-    patient_id INTEGER NOT NULL,
-    registro_id INTEGER,
-    origem_tipo TEXT NOT NULL,
-    tipo_registro TEXT,
-    data_sessao TEXT,
-    trecho_literal TEXT NOT NULL,
-    posicao_inicio INTEGER,
-    posicao_fim INTEGER,
-    nucleo TEXT NOT NULL,
-    indicador TEXT,
-    via TEXT,
-    intensidade INTEGER,
-    confianca REAL,
-    justificativa TEXT,
-    diferenciais_considerados TEXT,
-    fonte TEXT NOT NULL DEFAULT 'ia',
-    status_validacao TEXT NOT NULL DEFAULT 'pendente',
-    validado_por TEXT,
-    validado_em TEXT,
-    rubrica_versao TEXT,
-    criado_em TEXT NOT NULL,
-    FOREIGN KEY (patient_id) REFERENCES patients(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS nucleos_transicoes (
-    id TEXT PRIMARY KEY,
-    patient_id INTEGER NOT NULL,
-    registro_id INTEGER,
-    de_nucleo TEXT,
-    para_nucleo TEXT,
-    evidencia_origem_id TEXT,
-    evidencia_destino_id TEXT,
-    gatilho_trecho TEXT,
-    gatilho_tipo TEXT,
-    asa_mediadora TEXT,
-    diagonal_direta INTEGER DEFAULT 0,
-    status_validacao TEXT DEFAULT 'pendente',
-    criado_em TEXT NOT NULL,
-    FOREIGN KEY (patient_id) REFERENCES patients(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS nucleos_snapshots (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    patient_id INTEGER NOT NULL,
-    criado_em TEXT NOT NULL,
-    sessoes_incluidas INTEGER,
-    metricas TEXT NOT NULL,
-    FOREIGN KEY (patient_id) REFERENCES patients(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS nucleos_perguntas (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    patient_id INTEGER NOT NULL,
-    pergunta TEXT NOT NULL,
-    opcoes TEXT,
-    contexto_registro_id INTEGER,
-    tipo TEXT,
-    status TEXT DEFAULT 'pendente',
-    resposta TEXT,
-    evidencia_gerada_id TEXT,
-    criado_em TEXT NOT NULL,
-    respondido_em TEXT,
-    FOREIGN KEY (patient_id) REFERENCES patients(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS nucleos_eventos_linha_tempo (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    patient_id INTEGER NOT NULL,
-    data TEXT NOT NULL,
-    tipo TEXT,
-    descricao TEXT,
-    criado_em TEXT NOT NULL,
-    FOREIGN KEY (patient_id) REFERENCES patients(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS objetivo_evidencias (
-    id TEXT PRIMARY KEY,
-    patient_id INTEGER NOT NULL,
-    registro_id INTEGER,
-    origem_tipo TEXT NOT NULL,
-    tipo_registro TEXT,
-    categoria TEXT NOT NULL,
-    trecho_literal TEXT NOT NULL,
-    data_registro TEXT,
-    status_validacao TEXT NOT NULL DEFAULT 'pendente',
-    criado_em TEXT NOT NULL,
-    FOREIGN KEY (patient_id) REFERENCES patients(id)
-  );
-`);
-
-// ── RUBRICAS (config clínica editável sem rebuild) ─────
-export function getRubricaConfigAtiva() {
-  return db.getFirstSync('SELECT * FROM rubricas_config WHERE ativa = 1 ORDER BY id DESC LIMIT 1');
-}
-
-export function salvarRubricaConfig(versao, conteudoJson) {
-  db.runSync('UPDATE rubricas_config SET ativa = 0 WHERE ativa = 1');
-  db.runSync(
-    'INSERT INTO rubricas_config (versao, conteudo, atualizado_em, ativa) VALUES (?, ?, ?, 1)',
-    [versao, conteudoJson, new Date().toISOString()]
-  );
-}
-
-// ── CONSENTIMENTO (Perfil Psicossomático) ──────────────
-export function getConsentimentoPerfil(patientId) {
-  const row = db.getFirstSync(
-    'SELECT consentimento_perfil, consentimento_perfil_em FROM patients WHERE id = ?',
-    [patientId]
-  );
-  return { concedido: !!row?.consentimento_perfil, em: row?.consentimento_perfil_em || null };
-}
-
-export function setConsentimentoPerfil(patientId, concedido) {
-  db.runSync(
-    'UPDATE patients SET consentimento_perfil = ?, consentimento_perfil_em = ? WHERE id = ?',
-    [concedido ? 1 : 0, concedido ? new Date().toISOString() : null, patientId]
-  );
-}
-
-function gerarId() {
-  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
-}
-
-// ── EVIDÊNCIAS · NÚCLEOS PSÍQUICOS ─────────────────────
-export function getEvidenciasNucleos(patientId, { apenasValidadas = false } = {}) {
-  const sql = apenasValidadas
-    ? 'SELECT * FROM nucleos_evidencias WHERE patient_id = ? AND status_validacao = ? ORDER BY data_sessao, posicao_inicio'
-    : 'SELECT * FROM nucleos_evidencias WHERE patient_id = ? ORDER BY data_sessao, posicao_inicio';
-  const params = apenasValidadas ? [patientId, 'confirmada'] : [patientId];
-  return db.getAllSync(sql, params);
-}
-
-export function getEvidenciasNucleosDoRegistro(registroId, origemTipo) {
-  return db.getAllSync(
-    'SELECT * FROM nucleos_evidencias WHERE registro_id = ? AND origem_tipo = ? ORDER BY posicao_inicio',
-    [registroId, origemTipo]
-  );
-}
-
-function inserirEvidenciaNucleo(patientId, registroId, origemTipo, tipoRegistro, dataSessao, rubricaVersao, evidencia) {
-  const id = gerarId();
-  db.runSync(
-    `INSERT INTO nucleos_evidencias (
-      id, patient_id, registro_id, origem_tipo, tipo_registro, data_sessao,
-      trecho_literal, posicao_inicio, posicao_fim, nucleo, indicador, via,
-      intensidade, confianca, justificativa, diferenciais_considerados,
-      fonte, status_validacao, rubrica_versao, criado_em
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ia', 'pendente', ?, ?)`,
-    [
-      id, patientId, registroId, origemTipo, tipoRegistro, dataSessao || null,
-      evidencia.trecho_literal, evidencia.posicao_inicio, evidencia.posicao_fim,
-      evidencia.nucleo, evidencia.indicador, evidencia.via,
-      evidencia.intensidade, evidencia.confianca, evidencia.justificativa,
-      evidencia.diferenciais_considerados, rubricaVersao, new Date().toISOString(),
-    ]
-  );
-  return { ...evidencia, id, patient_id: patientId, registro_id: registroId };
-}
-
-export function validarStatusEvidenciaNucleo(id, statusValidacao, validadoPor = 'terapeuta') {
-  db.runSync(
-    'UPDATE nucleos_evidencias SET status_validacao = ?, validado_por = ?, validado_em = ? WHERE id = ?',
-    [statusValidacao, validadoPor, new Date().toISOString(), id]
-  );
-}
-
-export function reclassificarEvidenciaNucleo(id, novoNucleo, novoIndicador) {
-  db.runSync(
-    `UPDATE nucleos_evidencias SET
-      nucleo = ?, indicador = ?, status_validacao = 'reclassificada',
-      validado_por = 'terapeuta', validado_em = ? WHERE id = ?`,
-    [novoNucleo, novoIndicador || null, new Date().toISOString(), id]
-  );
-}
-
-// ── TRANSIÇÕES · NÚCLEOS PSÍQUICOS ─────────────────────
-export function getTransicoesNucleos(patientId) {
-  return db.getAllSync(
-    'SELECT * FROM nucleos_transicoes WHERE patient_id = ? ORDER BY criado_em',
-    [patientId]
-  );
-}
-
-function inserirTransicaoNucleo(patientId, registroId, transicao) {
-  const id = gerarId();
-  db.runSync(
-    `INSERT INTO nucleos_transicoes (
-      id, patient_id, registro_id, de_nucleo, para_nucleo,
-      evidencia_origem_id, evidencia_destino_id, gatilho_trecho, gatilho_tipo,
-      asa_mediadora, diagonal_direta, status_validacao, criado_em
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pendente', ?)`,
-    [
-      id, patientId, registroId, transicao.de_nucleo, transicao.para_nucleo,
-      transicao.evidencia_origem_id, transicao.evidencia_destino_id,
-      transicao.gatilho_trecho, transicao.gatilho_tipo, transicao.asa_mediadora,
-      transicao.diagonal_direta ? 1 : 0, new Date().toISOString(),
-    ]
-  );
-}
-
-/**
- * Roda o motor de análise dos núcleos psíquicos sobre um registro (sessão
- * ou registro escrito) de um analisante que já deu consentimento. Idempotente:
- * evidências já validadas pelo terapeuta são preservadas; só as pendentes de
- * uma análise anterior são substituídas.
- */
-export async function analisarRegistroNucleos(paciente, registro) {
-  const consentimento = getConsentimentoPerfil(paciente.id);
-  if (!consentimento.concedido) {
-    throw new Error('Este analisante ainda não deu consentimento para o Perfil Psicossomático.');
+  const recebimentosSessao = [];
+  for (const p of porSessaoPacientes || []) {
+    const { valor, sessoes } = await getPagamentosSessaoDoMes(p.id, ano, mesIndex);
+    recebimentosSessao.push({
+      patient_id: p.id,
+      nome: p.nome,
+      tipo_cobranca: 'por_sessao',
+      tipo_emissao_fiscal: p.tipo_emissao_fiscal || 'recibo',
+      fiscal_frequencia_automatica: p.fiscal_frequencia_automatica || null,
+      dia_pagamento: null,
+      valorPrevisto: valor,
+      sessoesPagas: sessoes,
+      telefone: p.telefone || null,
+      email: p.email || null,
+      cpf: p.cpf || null,
+      recebido: valor > 0,
+      data_recebimento: null,
+    });
   }
 
-  const conteudoOriginal = registro.conteudo || '';
-  const rubrica = carregarRubricaAtiva();
-  const conteudoPseudonimizado = pseudonimizar(conteudoOriginal, paciente);
-  const unidades = segmentarRegistro({ tipoRegistro: registro.tipoRegistro, conteudo: conteudoPseudonimizado });
-
-  if (unidades.length === 0) {
-    return { evidencias: [], transicoes: [] };
-  }
-
-  const { promptSistema, promptUsuario } = montarPromptAnalise(unidades, rubrica);
-  const resposta = await chamarIAEstruturada(promptSistema, promptUsuario);
-  const evidenciasBrutas = Array.isArray(resposta?.evidencias) ? resposta.evidencias : [];
-
-  const evidenciasValidadas = evidenciasBrutas
-    .map((bruta) => {
-      const trechoRevertido = reverterPseudonimizacao(bruta.trecho_literal || '', paciente);
-      return validarEvidencia({ ...bruta, trecho_literal: trechoRevertido }, conteudoOriginal);
-    })
-    .filter(Boolean);
-
-  // Idempotência: mantém evidências já validadas, remove só as pendentes.
-  const existentes = getEvidenciasNucleosDoRegistro(registro.id, registro.origemTipo);
-  const mantidas = evidenciasParaManter(existentes);
-  db.runSync(
-    "DELETE FROM nucleos_evidencias WHERE registro_id = ? AND origem_tipo = ? AND status_validacao = 'pendente'",
-    [registro.id, registro.origemTipo]
-  );
-
-  const inseridas = evidenciasValidadas.map((ev) =>
-    inserirEvidenciaNucleo(
-      paciente.id, registro.id, registro.origemTipo, registro.tipoRegistro,
-      registro.data || null, rubrica.versao, ev
-    )
-  );
-
-  // Transições: sequência ordenada por posição, combinando evidências
-  // mantidas (já validadas) com as recém-inseridas deste registro.
-  const todasDoRegistro = [...mantidas, ...inseridas].sort(
-    (a, b) => (a.posicao_inicio ?? 0) - (b.posicao_inicio ?? 0)
-  );
-  const transicoes = detectarTransicoes(todasDoRegistro, rubrica);
-
-  db.runSync(
-    "DELETE FROM nucleos_transicoes WHERE registro_id = ? AND status_validacao = 'pendente'",
-    [registro.id]
-  );
-  transicoes.forEach((t) => inserirTransicaoNucleo(paciente.id, registro.id, t));
-
-  return { evidencias: inseridas, transicoes };
+  return [...recebimentosMensal, ...recebimentosSessao].sort((a, b) => a.nome.localeCompare(b.nome));
 }
 
-// ── EVIDÊNCIAS · PERFIL OBJETIVO (sono/alimentação/movimento/medicina) ─
-export function getEvidenciasObjetivo(patientId) {
-  return db.getAllSync(
-    'SELECT * FROM objetivo_evidencias WHERE patient_id = ? ORDER BY categoria, data_registro',
-    [patientId]
-  );
+// ===================== FISCAL (config por analisante + pagamento por sessão) ====
+
+/** Config de emissão fiscal de um paciente — usada por FiscalScreen,
+ * ConfiguracaoFiscalAutomaticaScreen e pelo catch-up automático. */
+export async function getConfiguracaoFiscal(patientId) {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase
+    .from('patients')
+    .select('id, nome, email, cpf, tipo_cobranca, tipo_emissao_fiscal, fiscal_frequencia_automatica, fiscal_dia_semana, fiscal_dia_mes, dia_pagamento, fiscal_ultimo_envio_semanal, fiscal_ultimo_envio_mensal')
+    .eq('id', patientId)
+    .single();
+  if (error) throw error;
+  return data;
 }
 
-export function getEvidenciasObjetivoDoRegistro(registroId, origemTipo) {
-  return db.getAllSync(
-    'SELECT * FROM objetivo_evidencias WHERE registro_id = ? AND origem_tipo = ?',
-    [registroId, origemTipo]
-  );
+/** Update parcial — só grava os campos passados em `campos`, pra não
+ * arriscar apagar uma config (ex: cadência) ao mexer só no tipo de
+ * emissão, ou vice-versa. */
+export async function salvarConfiguracaoFiscal(patientId, campos) {
+  const { supabase } = require('./supabase');
+  const { error } = await supabase.from('patients').update(campos).eq('id', patientId);
+  if (error) throw error;
 }
 
-function inserirEvidenciaObjetivo(patientId, registroId, origemTipo, tipoRegistro, dataRegistro, item) {
-  const id = gerarId();
-  db.runSync(
-    `INSERT INTO objetivo_evidencias (
-      id, patient_id, registro_id, origem_tipo, tipo_registro, categoria,
-      trecho_literal, data_registro, status_validacao, criado_em
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendente', ?)`,
-    [
-      id, patientId, registroId, origemTipo, tipoRegistro, item.categoria,
-      item.trecho_literal, dataRegistro || null, new Date().toISOString(),
-    ]
-  );
-  return { ...item, id, patient_id: patientId, registro_id: registroId };
+export async function marcarEnvioFiscalAutomatico(patientId, cadencia, dataISO) {
+  const { supabase } = require('./supabase');
+  const coluna = cadencia === 'semanal' ? 'fiscal_ultimo_envio_semanal' : 'fiscal_ultimo_envio_mensal';
+  const { error } = await supabase.from('patients').update({ [coluna]: dataISO }).eq('id', patientId);
+  if (error) throw error;
 }
 
-export function validarStatusEvidenciaObjetivo(id, statusValidacao) {
-  db.runSync('UPDATE objetivo_evidencias SET status_validacao = ? WHERE id = ?', [statusValidacao, id]);
+/** Confirma o pagamento de uma sessão específica (cobrança "por sessão"),
+ * gravando uma linha em `pagamentos` vinculada ao compromisso. */
+export async function confirmarPagamentoSessao(appointmentId, patientId, dataISO, valor) {
+  const { supabase } = require('./supabase');
+  const [ano, mes] = dataISO.split('-').map(Number);
+  const { error } = await supabase
+    .from('pagamentos')
+    .insert({
+      appointment_id: appointmentId, patient_id: patientId,
+      ano, mes: mes - 1, recebido: true,
+      data_recebimento: new Date().toISOString(), valor: valor || null,
+    });
+  if (error) throw error;
 }
 
-/**
- * Roda o motor do Perfil Objetivo sobre um registro. Idempotente: só
- * processa registros que ainda não têm nenhum item gravado.
- */
-export async function analisarRegistroObjetivo(paciente, registro) {
-  const consentimento = getConsentimentoPerfil(paciente.id);
-  if (!consentimento.concedido) {
-    throw new Error('Este analisante ainda não deu consentimento para o Perfil Psicossomático.');
-  }
+// ── PUSH NOTIFICATIONS (Supabase — coluna `profiles.expo_push_token`) ──
 
-  const conteudoOriginal = registro.conteudo || '';
-  if (!conteudoOriginal.trim()) return [];
-
-  const itensValidados = await analisarTextoObjetivo(conteudoOriginal, paciente);
-
-  return itensValidados.map((item) =>
-    inserirEvidenciaObjetivo(
-      paciente.id, registro.id, registro.origemTipo, registro.tipoRegistro,
-      registro.data || null, item
-    )
-  );
+export async function salvarPushToken(token) {
+  const { supabase } = require('./supabase');
+  const userId = await getUserId();
+  const { error } = await supabase.from('profiles').update({ expo_push_token: token }).eq('id', userId);
+  if (error) throw error;
 }
 
-/**
- * Lista os registros (sessões + registros escritos) de um analisante ainda
- * não processados por um dos motores (núcleos ou objetivo), no formato
- * comum usado pelos orquestradores acima ({ id, origemTipo, tipoRegistro,
- * conteudo, data }).
- */
-export function getRegistrosNaoAnalisados(patientId, motor) {
-  const sessoes = getSessions(patientId).filter((s) => (s.transcript || '').trim());
-  const registros = getRecords(patientId).filter((r) => (r.content || '').trim());
-
-  const jaTemEvidencia = (registroId, origemTipo) => {
-    const existentes = motor === 'nucleos'
-      ? getEvidenciasNucleosDoRegistro(registroId, origemTipo)
-      : getEvidenciasObjetivoDoRegistro(registroId, origemTipo);
-    return existentes.length > 0;
-  };
-
-  const doSessoes = sessoes
-    .filter((s) => !jaTemEvidencia(s.id, 'session'))
-    .map((s) => ({
-      id: s.id,
-      origemTipo: 'session',
-      tipoRegistro: 'transcricao',
-      conteudo: s.transcript,
-      data: s.date,
-    }));
-
-  const doRegistros = registros
-    .filter((r) => !jaTemEvidencia(r.id, 'record'))
-    .map((r) => ({
-      id: r.id,
-      origemTipo: 'record',
-      tipoRegistro: r.type === 'sessao' ? 'anotacao_sessao' : r.type === 'estudo' ? 'estudo_caso' : 'outro',
-      conteudo: r.content,
-      data: r.date,
-    }));
-
-  return [...doSessoes, ...doRegistros];
-}
-
-// ── SNAPSHOTS · NÚCLEOS PSÍQUICOS ──────────────────────
-export function getSnapshots(patientId) {
-  return db.getAllSync(
-    'SELECT * FROM nucleos_snapshots WHERE patient_id = ? ORDER BY criado_em',
-    [patientId]
-  ).map((row) => ({ ...row, metricas: JSON.parse(row.metricas) }));
-}
-
-/**
- * Calcula todas as métricas atuais do analisante e grava como um novo
- * snapshot (instantâneo). Nesta fase é sempre manual — o gatilho
- * automático a cada N sessões fica pra depois.
- */
-export function criarSnapshot(patientId) {
-  const evidencias = getEvidenciasNucleos(patientId, { apenasValidadas: false });
-  const transicoes = getTransicoesNucleos(patientId);
-  const sessoes = getSessions(patientId);
-
-  const metricas = {
-    densidade: calcularDensidadePorNucleo(evidencias),
-    asas: calcularDefesasPorAsa(transicoes),
-    indiceRetorno: calcularIndiceRetorno(transicoes),
-    mobilidade: calcularMobilidade(transicoes.length, sessoes.length),
-    gatilhos: rankearGatilhos(transicoes).slice(0, 10),
-    totalEvidencias: evidencias.length,
-    totalIndizíveis: evidencias.filter((e) => e.nucleo === 'eu_nuclear').length,
-  };
-
-  db.runSync(
-    'INSERT INTO nucleos_snapshots (patient_id, criado_em, sessoes_incluidas, metricas) VALUES (?, ?, ?, ?)',
-    [patientId, new Date().toISOString(), sessoes.length, JSON.stringify(metricas)]
-  );
-
-  return metricas;
-}
-
-// ── PERGUNTAS DO APP · NÚCLEOS PSÍQUICOS ───────────────
-export function getPerguntasPendentes(patientId) {
-  return db.getAllSync(
-    "SELECT * FROM nucleos_perguntas WHERE patient_id = ? AND status = 'pendente' ORDER BY criado_em DESC",
-    [patientId]
-  );
-}
-
-/**
- * Gera perguntas "por ausência": núcleo sem nenhuma evidência nas K
- * sessões mais recentes. Regra local, sem custo de IA. Evita duplicar
- * pergunta pendente já existente para o mesmo núcleo.
- */
-export function gerarPerguntasPorAusencia(patientId, k = 5) {
-  const sessoes = getSessions(patientId).slice(0, k);
-  const datasRecentes = sessoes.map((s) => s.date);
-  if (datasRecentes.length < k) return []; // histórico curto demais pra concluir ausência
-
-  const evidencias = getEvidenciasNucleos(patientId, { apenasValidadas: false });
-  const ausencias = detectarAusencias(evidencias, datasRecentes);
-  if (ausencias.length === 0) return [];
-
-  const rubrica = carregarRubricaAtiva();
-  const jaPendentes = getPerguntasPendentes(patientId);
-
-  const criadas = [];
-  ausencias.forEach((nucleo) => {
-    const nomeNucleo = rubrica.nucleos[nucleo]?.nome || nucleo;
-    const jaExiste = jaPendentes.some((p) => p.tipo === 'ausencia' && p.pergunta.includes(nomeNucleo));
-    if (jaExiste) return;
-
-    const pergunta =
-      `Não há nenhuma referência ao núcleo ${nomeNucleo} nas últimas ${k} sessões. ` +
-      'Isso confere com sua escuta, ou pode ser um ponto cego do registro?';
-    const opcoes = JSON.stringify(['Confere com minha escuta', 'Pode ser ponto cego do registro']);
-
-    db.runSync(
-      `INSERT INTO nucleos_perguntas (patient_id, pergunta, opcoes, tipo, status, criado_em)
-       VALUES (?, ?, ?, 'ausencia', 'pendente', ?)`,
-      [patientId, pergunta, opcoes, new Date().toISOString()]
-    );
-    criadas.push(pergunta);
-  });
-
-  return criadas;
-}
-
-/**
- * Registra a resposta do terapeuta a uma pergunta do app. Perguntas por
- * ausência não têm um trecho literal associado (não há "citação" — é uma
- * lacuna), então a resposta fica só como anotação, sem gerar uma
- * evidência fabricada (regra: nenhuma marcação sem trecho literal real).
- */
-export function responderPergunta(perguntaId, resposta) {
-  db.runSync(
-    "UPDATE nucleos_perguntas SET resposta = ?, status = 'respondida', respondido_em = ? WHERE id = ?",
-    [resposta, new Date().toISOString(), perguntaId]
-  );
-}
-
-export function descartarPergunta(perguntaId) {
-  db.runSync("UPDATE nucleos_perguntas SET status = 'descartada' WHERE id = ?", [perguntaId]);
-}

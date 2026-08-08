@@ -4,18 +4,21 @@ import {
   TextInput, Alert, ActivityIndicator, Image, Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
 import {
   getPlanoFinanceiro, getRecebimentosDoMes, getPrecoMedioSessao,
   getContagemPacientes, getContagemSessoesSemRelato, getResumoHorariosSemanais,
 } from '../services/database';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { validarCPF, buscarEnderecoPorCep, dataBRParaISO, dataISOParaBR } from '../services/validacao';
+import { validarCPF, dataBRParaISO, dataISOParaBR } from '../services/validacao';
 import { mensagemDeErro } from '../services/erros';
+import { enviarFotoPerfil } from '../services/avatar';
+import { exportarDadosUsuario } from '../services/exportacaoDados';
 import {
   formatarSaldoBRL, chamarRenovarCreditos, PLANOS_CREDITO_MENSAL_BRL, PLANO_LABEL,
 } from '../services/creditosIA';
-import { excluirConta } from '../services/conta';
+import { excluirConta, alterarEmailLogin } from '../services/conta';
 import {
   biometriaDisponivelNoAparelho, loginBiometricoEstaAtivo,
   ativarLoginBiometrico, desativarLoginBiometrico,
@@ -44,22 +47,21 @@ export default function PerfilScreen({ navigation }) {
   const [bioSuportada, setBioSuportada] = useState(false);
   const [bioAtiva, setBioAtiva] = useState(false);
   const [bioProcessando, setBioProcessando] = useState(false);
+  const [enviandoFoto, setEnviandoFoto] = useState(false);
+  const [notifTranscricaoPush, setNotifTranscricaoPush] = useState(true);
+  const [notifAtrasoEmail, setNotifAtrasoEmail] = useState(true);
+  const [notifSalvando, setNotifSalvando] = useState(null);
+  const [exportando, setExportando] = useState(false);
 
   const [nome, setNome] = useState('');
   const [cpf, setCpf] = useState('');
   const [dataNascimento, setDataNascimento] = useState('');
-  const [cep, setCep] = useState('');
-  const [logradouro, setLogradouro] = useState('');
-  const [numero, setNumero] = useState('');
-  const [complemento, setComplemento] = useState('');
-  const [bairro, setBairro] = useState('');
   const [cidade, setCidade] = useState('');
   const [uf, setUf] = useState('');
-  const [cepTravado, setCepTravado] = useState(false);
-  const [buscandoCep, setBuscandoCep] = useState(false);
   const [crp, setCrp] = useState('');
   const [email, setEmail] = useState('');
   const [telefone, setTelefone] = useState('');
+  const [pixKey, setPixKey] = useState('');
   const [contadorNome, setContadorNome] = useState('');
   const [contadorEmail, setContadorEmail] = useState('');
   const [contadorTelefone, setContadorTelefone] = useState('');
@@ -79,20 +81,17 @@ export default function PerfilScreen({ navigation }) {
       setNome(u.nome || '');
       setCpf(u.cpf || '');
       setDataNascimento(dataISOParaBR(u.data_nascimento));
-      setCep(u.cep || '');
-      setLogradouro(u.logradouro || '');
-      setNumero(u.numero || '');
-      setComplemento(u.complemento || '');
-      setBairro(u.bairro || '');
       setCidade(u.cidade || '');
       setUf(u.uf || '');
-      setCepTravado(!!u.logradouro);
       setCrp(u.crp || '');
       setEmail(u.email || '');
       setTelefone(u.telefone || '');
+      setPixKey(u.pix_key || '');
       setContadorNome(u.contador_nome || '');
       setContadorEmail(u.contador_email || '');
       setContadorTelefone(u.contador_telefone || '');
+      setNotifTranscricaoPush(u.notif_transcricao_push !== false);
+      setNotifAtrasoEmail(u.notif_atraso_email !== false);
 
       // Checagem silenciosa de renovação mensal de créditos — se houver
       // renovação pendente, já reflete o saldo/data novos sem recarregar tudo.
@@ -162,6 +161,60 @@ export default function PerfilScreen({ navigation }) {
     }
   }
 
+  async function alternarNotif(campo, valor, setter) {
+    setNotifSalvando(campo);
+    setter(valor);
+    const { error } = await supabase
+      .from('profiles')
+      .update({ [campo]: valor })
+      .eq('id', session.user.id);
+    setNotifSalvando(null);
+    if (error) {
+      setter(!valor);
+      Alert.alert('Erro', 'Não foi possível salvar a preferência.');
+    }
+  }
+
+  async function escolherFoto(deCamera) {
+    const perm = deCamera
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (perm.status !== 'granted') {
+      Alert.alert('Permissão negada', deCamera ? 'Precisamos de acesso à câmera.' : 'Precisamos de acesso à galeria.');
+      return;
+    }
+    const opcoes = {
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.6,
+    };
+    const result = deCamera
+      ? await ImagePicker.launchCameraAsync(opcoes)
+      : await ImagePicker.launchImageLibraryAsync(opcoes);
+    if (result.canceled) return;
+    const uri = result.assets?.[0]?.uri;
+    if (!uri) return;
+
+    setEnviandoFoto(true);
+    try {
+      const novaUrl = await enviarFotoPerfil(uri);
+      setUser((atual) => (atual ? { ...atual, avatar_url: novaUrl } : atual));
+    } catch (err) {
+      Alert.alert('Erro ao enviar foto', mensagemDeErro(err));
+    } finally {
+      setEnviandoFoto(false);
+    }
+  }
+
+  function trocarFoto() {
+    Alert.alert('Foto de perfil', 'Escolha de onde pegar a foto.', [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Galeria', onPress: () => escolherFoto(false) },
+      { text: 'Câmera', onPress: () => escolherFoto(true) },
+    ]);
+  }
+
   function formatarCpf(texto) {
     const numeros = texto.replace(/\D/g, '').slice(0, 11);
     let formatado = numeros;
@@ -184,37 +237,6 @@ export default function PerfilScreen({ navigation }) {
       formatado = `${numeros.slice(0, 2)}/${numeros.slice(2, 4)}/${numeros.slice(4, 8)}`;
     }
     setter(formatado);
-  }
-
-  async function formatarCep(texto) {
-    const numeros = texto.replace(/\D/g, '').slice(0, 8);
-    let formatado = numeros;
-    if (numeros.length > 5) formatado = `${numeros.slice(0, 5)}-${numeros.slice(5)}`;
-    setCep(formatado);
-
-    if (numeros.length === 8) {
-      setBuscandoCep(true);
-      const resultado = await buscarEnderecoPorCep(numeros);
-      setBuscandoCep(false);
-      if (!resultado) {
-        Alert.alert('CEP não encontrado', 'Confira o CEP ou toque em "preencher manualmente" abaixo.');
-        return;
-      }
-      setLogradouro(resultado.logradouro);
-      setBairro(resultado.bairro);
-      setCidade(resultado.cidade);
-      setUf(resultado.uf);
-      setCepTravado(true);
-    }
-  }
-
-  function refazerCep() {
-    setCepTravado(false);
-    setCep('');
-    setLogradouro('');
-    setBairro('');
-    setCidade('');
-    setUf('');
   }
 
   function formatarTelefone(texto, setter) {
@@ -242,14 +264,22 @@ export default function PerfilScreen({ navigation }) {
       Alert.alert('Campo obrigatório', 'Informe sua data de nascimento completa.');
       return;
     }
-    if (!logradouro.trim() || !bairro.trim() || !cidade.trim() || !uf.trim()) {
-      Alert.alert('Campo obrigatório', 'Informe seu endereço (CEP ou preenchimento manual).');
+    if (!cidade.trim() || !uf.trim()) {
+      Alert.alert('Campo obrigatório', 'Informe sua cidade e UF.');
       return;
     }
-    if (!numero.trim()) {
-      Alert.alert('Campo obrigatório', 'Informe o número do seu endereço.');
+
+    // E-mail de LOGIN (não é o mesmo que profiles.email) só muda depois de
+    // confirmação por link — nunca sai daqui direto no update em lote, pra
+    // não dessincronizar os dois enquanto a confirmação está pendente
+    // (ver alterarEmailLogin e a migration 0033). Item A.1/A.3.
+    const novoEmail = email.trim();
+    const emailMudou = novoEmail && novoEmail !== (user.email || '');
+    if (emailMudou && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(novoEmail)) {
+      Alert.alert('E-mail inválido', 'Confira o e-mail digitado.');
       return;
     }
+
     setSalvando(true);
     const { error } = await supabase
       .from('profiles')
@@ -257,29 +287,43 @@ export default function PerfilScreen({ navigation }) {
         nome: nome.trim(),
         cpf: cpf.trim(),
         data_nascimento: dataNascimentoISO,
-        cep: cep.trim() || null,
-        logradouro: logradouro.trim(),
-        numero: numero.trim(),
-        complemento: complemento.trim() || null,
-        bairro: bairro.trim(),
         cidade: cidade.trim(),
         uf: uf.trim(),
         crp: crp.trim(),
-        email: email.trim(),
         telefone: telefone.trim(),
+        pix_key: pixKey.trim() || null,
         contador_nome: contadorNome.trim(),
         contador_email: contadorEmail.trim(),
         contador_telefone: contadorTelefone.trim(),
         updated_at: new Date().toISOString(),
       })
       .eq('id', session.user.id);
-    setSalvando(false);
     if (error) {
+      setSalvando(false);
       Alert.alert('Erro', 'Não foi possível salvar seu perfil.');
       return;
     }
+
+    if (emailMudou) {
+      try {
+        await alterarEmailLogin(novoEmail);
+      } catch (e) {
+        setSalvando(false);
+        Alert.alert('Erro ao trocar e-mail', mensagemDeErro(e));
+        return;
+      }
+    }
+
+    setSalvando(false);
     setEditando(false);
     carregar();
+
+    if (emailMudou) {
+      Alert.alert(
+        'Confirme a troca de e-mail',
+        `Enviamos um link de confirmação pra ${novoEmail}. Seu e-mail de login só muda depois que você confirmar — até lá, continue entrando com o e-mail atual.`
+      );
+    }
   }
 
   function sair() {
@@ -287,6 +331,17 @@ export default function PerfilScreen({ navigation }) {
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Sair', style: 'destructive', onPress: sairLocalmente },
     ]);
+  }
+
+  async function exportarDados() {
+    setExportando(true);
+    try {
+      await exportarDadosUsuario();
+    } catch (e) {
+      Alert.alert('Erro ao exportar', mensagemDeErro(e));
+    } finally {
+      setExportando(false);
+    }
   }
 
   function excluirContaHandler() {
@@ -346,16 +401,31 @@ export default function PerfilScreen({ navigation }) {
       <ScrollView contentContainerStyle={st.scrollInner}>
         {/* ── Cabeçalho ── */}
         <View style={st.headerCard}>
-          <View style={st.avatar}>
-            <Text style={st.avatarText}>
-              {(user.nome || '?')
-                .split(' ')
-                .map(p => p[0])
-                .join('')
-                .slice(0, 2)
-                .toUpperCase()}
-            </Text>
-          </View>
+          <TouchableOpacity
+            style={st.avatar}
+            onPress={trocarFoto}
+            disabled={enviandoFoto}
+            activeOpacity={0.8}
+          >
+            {user.avatar_url ? (
+              <Image source={{ uri: user.avatar_url }} style={st.avatarImg} />
+            ) : (
+              <Text style={st.avatarText}>
+                {(user.nome || '?')
+                  .split(' ')
+                  .map(p => p[0])
+                  .join('')
+                  .slice(0, 2)
+                  .toUpperCase()}
+              </Text>
+            )}
+            {enviandoFoto && (
+              <View style={st.avatarLoadingOverlay}>
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              </View>
+            )}
+          </TouchableOpacity>
+          <Text style={st.avatarHint}>Toque pra trocar a foto</Text>
           <Text style={st.nomeHeader}>{user.nome || 'Sem nome'}</Text>
           {user.crp ? <Text style={st.crpHeader}>{user.crp}</Text> : null}
         </View>
@@ -412,7 +482,14 @@ export default function PerfilScreen({ navigation }) {
         </View>
 
         {/* ── Dados cadastrais ── */}
-        <Text style={st.sectionTitle}>👤 Dados cadastrais</Text>
+        <View style={st.sectionTitleRow}>
+          <Text style={st.sectionTitle}>👤 Dados cadastrais</Text>
+          {!editando && (
+            <TouchableOpacity style={st.editBtn} onPress={() => setEditando(true)}>
+              <Text style={st.editBtnText}>✏️ Editar</Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
         {editando ? (
           <>
@@ -439,87 +516,23 @@ export default function PerfilScreen({ navigation }) {
               maxLength={10}
             />
 
-            <Text style={st.label}>CEP *</Text>
-            <View style={st.cepRow}>
-              <TextInput
-                style={[st.input, { flex: 1 }, cepTravado && st.inputTravado]}
-                value={cep}
-                onChangeText={formatarCep}
-                keyboardType="numeric"
-                placeholder="00000-000"
-                maxLength={9}
-                editable={!cepTravado}
-              />
-              {buscandoCep && <ActivityIndicator style={st.cepLoading} color="#3D5A80" />}
-            </View>
-            {cepTravado ? (
-              <TouchableOpacity onPress={refazerCep}>
-                <Text style={st.linkRefazer}>Endereço errado? Buscar outro CEP</Text>
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity onPress={() => setCepTravado(false)}>
-                <Text style={st.linkRefazer}>Não encontrou seu CEP? Preencher manualmente</Text>
-              </TouchableOpacity>
-            )}
-
-            <Text style={st.label}>Logradouro *</Text>
-            <TextInput
-              style={[st.input, cepTravado && st.inputTravado]}
-              value={logradouro}
-              onChangeText={setLogradouro}
-              placeholder="Rua, avenida..."
-              editable={!cepTravado}
-            />
-
-            <View style={st.linhaDupla}>
-              <View style={{ flex: 1 }}>
-                <Text style={st.label}>Número *</Text>
-                <TextInput
-                  style={st.input}
-                  value={numero}
-                  onChangeText={setNumero}
-                  keyboardType="numeric"
-                  placeholder="Ex: 123"
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={st.label}>Complemento</Text>
-                <TextInput
-                  style={st.input}
-                  value={complemento}
-                  onChangeText={setComplemento}
-                  placeholder="Apto, bloco..."
-                />
-              </View>
-            </View>
-
-            <Text style={st.label}>Bairro *</Text>
-            <TextInput
-              style={[st.input, cepTravado && st.inputTravado]}
-              value={bairro}
-              onChangeText={setBairro}
-              editable={!cepTravado}
-            />
-
             <View style={st.linhaDupla}>
               <View style={{ flex: 2 }}>
                 <Text style={st.label}>Cidade *</Text>
                 <TextInput
-                  style={[st.input, cepTravado && st.inputTravado]}
+                  style={st.input}
                   value={cidade}
                   onChangeText={setCidade}
-                  editable={!cepTravado}
                 />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={st.label}>UF *</Text>
                 <TextInput
-                  style={[st.input, cepTravado && st.inputTravado]}
+                  style={st.input}
                   value={uf}
                   onChangeText={(t) => setUf(t.toUpperCase().slice(0, 2))}
                   autoCapitalize="characters"
                   maxLength={2}
-                  editable={!cepTravado}
                 />
               </View>
             </View>
@@ -544,6 +557,15 @@ export default function PerfilScreen({ navigation }) {
               keyboardType="phone-pad"
               maxLength={15}
               placeholder="(11) 99999-9999"
+            />
+
+            <Text style={st.label}>Chave Pix</Text>
+            <TextInput
+              style={st.input}
+              value={pixKey}
+              onChangeText={setPixKey}
+              autoCapitalize="none"
+              placeholder="CPF, e-mail, telefone ou chave aleatória"
             />
 
             {/* ── Contador (para envio do resumo mensal de recebimentos) ── */}
@@ -579,17 +601,12 @@ export default function PerfilScreen({ navigation }) {
                   setNome(user.nome || '');
                   setCpf(user.cpf || '');
                   setDataNascimento(dataISOParaBR(user.data_nascimento));
-                  setCep(user.cep || '');
-                  setLogradouro(user.logradouro || '');
-                  setNumero(user.numero || '');
-                  setComplemento(user.complemento || '');
-                  setBairro(user.bairro || '');
                   setCidade(user.cidade || '');
                   setUf(user.uf || '');
-                  setCepTravado(!!user.logradouro);
                   setCrp(user.crp || '');
                   setEmail(user.email || '');
                   setTelefone(user.telefone || '');
+                  setPixKey(user.pix_key || '');
                   setContadorNome(user.contador_nome || '');
                   setContadorEmail(user.contador_email || '');
                   setContadorTelefone(user.contador_telefone || '');
@@ -621,26 +638,6 @@ export default function PerfilScreen({ navigation }) {
               <Text style={st.infoValue}>{dataISOParaBR(user.data_nascimento) || '—'}</Text>
             </View>
             <View style={st.infoRow}>
-              <Text style={st.infoLabel}>CEP</Text>
-              <Text style={st.infoValue}>{user.cep || '—'}</Text>
-            </View>
-            <View style={st.infoRow}>
-              <Text style={st.infoLabel}>Rua</Text>
-              <Text style={st.infoValue}>{user.logradouro || '—'}</Text>
-            </View>
-            <View style={st.infoRow}>
-              <Text style={st.infoLabel}>Número</Text>
-              <Text style={st.infoValue}>{user.numero || '—'}</Text>
-            </View>
-            <View style={st.infoRow}>
-              <Text style={st.infoLabel}>Complemento</Text>
-              <Text style={st.infoValue}>{user.complemento || '—'}</Text>
-            </View>
-            <View style={st.infoRow}>
-              <Text style={st.infoLabel}>Bairro</Text>
-              <Text style={st.infoValue}>{user.bairro || '—'}</Text>
-            </View>
-            <View style={st.infoRow}>
               <Text style={st.infoLabel}>Cidade/Estado</Text>
               <Text style={st.infoValue}>{user.cidade ? `${user.cidade} - ${user.uf}` : '—'}</Text>
             </View>
@@ -656,6 +653,17 @@ export default function PerfilScreen({ navigation }) {
               <Text style={st.infoLabel}>Telefone</Text>
               <Text style={st.infoValue}>{user.telefone || '—'}</Text>
             </View>
+            <View style={st.infoRow}>
+              <Text style={st.infoLabel}>Chave Pix</Text>
+              <Text style={st.infoValue}>{user.pix_key || '—'}</Text>
+            </View>
+
+            <TouchableOpacity
+              style={st.mensagensLink}
+              onPress={() => navigation.navigate('MensagensPersonalizadas')}
+            >
+              <Text style={st.mensagensLinkText}>✉️ Mensagens personalizadas</Text>
+            </TouchableOpacity>
 
             <Text style={st.sectionTitle}>✍️ Assinatura</Text>
             <View style={st.assinaturaBox}>
@@ -732,10 +740,6 @@ export default function PerfilScreen({ navigation }) {
               <Text style={st.infoValue}>{user.contador_telefone || '—'}</Text>
             </View>
 
-            <TouchableOpacity style={st.editBtn} onPress={() => setEditando(true)}>
-              <Text style={st.editBtnText}>✏️ Editar dados</Text>
-            </TouchableOpacity>
-
             <Text style={st.sectionTitle}>🔒 Segurança</Text>
             <View style={st.bioRow}>
               <View style={{ flex: 1 }}>
@@ -756,6 +760,44 @@ export default function PerfilScreen({ navigation }) {
                 />
               )}
             </View>
+
+            <Text style={st.sectionTitle}>🔔 Notificações</Text>
+            <View style={st.bioRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={st.bioLabel}>Transcrição pronta</Text>
+                <Text style={st.bioSub}>Aviso no app quando a transcrição de uma sessão terminar (ou falhar).</Text>
+              </View>
+              {notifSalvando === 'notif_transcricao_push' ? (
+                <ActivityIndicator color="#3D5A80" />
+              ) : (
+                <Switch
+                  value={notifTranscricaoPush}
+                  onValueChange={(v) => alternarNotif('notif_transcricao_push', v, setNotifTranscricaoPush)}
+                />
+              )}
+            </View>
+            <View style={st.bioRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={st.bioLabel}>Recebimento em atraso</Text>
+                <Text style={st.bioSub}>E-mail avisando quando um pagamento mensal passar do vencimento.</Text>
+              </View>
+              {notifSalvando === 'notif_atraso_email' ? (
+                <ActivityIndicator color="#3D5A80" />
+              ) : (
+                <Switch
+                  value={notifAtrasoEmail}
+                  onValueChange={(v) => alternarNotif('notif_atraso_email', v, setNotifAtrasoEmail)}
+                />
+              )}
+            </View>
+
+            <TouchableOpacity style={st.exportarBtn} onPress={exportarDados} disabled={exportando}>
+              {exportando ? (
+                <ActivityIndicator color="#3D5A80" />
+              ) : (
+                <Text style={st.exportarBtnText}>📤 Exportar meus dados</Text>
+              )}
+            </TouchableOpacity>
 
             <TouchableOpacity style={st.sairBtn} onPress={sair}>
               <Text style={st.sairBtnText}>Sair da conta</Text>
@@ -801,10 +843,21 @@ const st = StyleSheet.create({
     width: 72, height: 72, borderRadius: 36,
     backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center', alignItems: 'center',
-    marginBottom: 14,
+    marginBottom: 6,
+    borderWidth: 3, borderColor: '#FFFFFF',
+    overflow: 'hidden',
+  },
+  avatarImg: { width: '100%', height: '100%' },
+  avatarLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'center', alignItems: 'center',
   },
   avatarText: {
     fontSize: 24, fontWeight: '700', color: '#FFFFFF',
+  },
+  avatarHint: {
+    fontSize: 11, color: 'rgba(255,255,255,0.7)', marginBottom: 8,
   },
   nomeHeader: { fontSize: 22, fontWeight: '700', color: '#FFFFFF' },
   crpHeader: { fontSize: 13, color: 'rgba(255,255,255,0.75)', marginTop: 4 },
@@ -813,6 +866,9 @@ const st = StyleSheet.create({
   sectionTitle: {
     fontSize: 17, fontWeight: '700', color: '#1C1C1E',
     marginBottom: 14, marginTop: 8,
+  },
+  sectionTitleRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
   },
 
   // Stats
@@ -858,12 +914,21 @@ const st = StyleSheet.create({
   assinaturaBtnTexto: { color: '#3D5A80', fontWeight: '700', fontSize: 13 },
 
   // Edit
-  editBtn: { alignSelf: 'flex-end', marginTop: 12, marginBottom: 8 },
+  editBtn: { paddingVertical: 4, paddingLeft: 12 },
+  mensagensLink: {
+    backgroundColor: '#FFFFFF', borderRadius: 14, padding: 16, marginBottom: 20,
+  },
+  mensagensLinkText: { fontSize: 15, fontWeight: '700', color: '#3D5A80' },
   editBtnText: { fontSize: 14, color: '#3D5A80', fontWeight: '600' },
 
   sairBtn: { alignItems: 'center', marginTop: 24 },
   sairBtnText: { fontSize: 14, color: '#c0392b', fontWeight: '600' },
 
+  exportarBtn: {
+    backgroundColor: '#FFFFFF', borderRadius: 14, padding: 16,
+    alignItems: 'center', marginTop: 12, borderWidth: 1, borderColor: '#E8E4DD',
+  },
+  exportarBtnText: { fontSize: 14, color: '#3D5A80', fontWeight: '700' },
   excluirContaBtn: { alignItems: 'center', marginTop: 16, paddingBottom: 8 },
   excluirContaBtnText: { fontSize: 12, color: '#999', fontWeight: '600', textDecorationLine: 'underline' },
 
@@ -874,12 +939,6 @@ const st = StyleSheet.create({
     paddingVertical: 12, fontSize: 15, color: '#1C1C1E',
     borderWidth: 1, borderColor: '#E8E4DD',
   },
-  inputTravado: {
-    backgroundColor: '#F0EFEC', color: '#6B6860',
-  },
-  cepRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  cepLoading: { width: 24 },
-  linkRefazer: { color: '#3D5A80', fontSize: 12.5, fontWeight: '600', marginTop: 8 },
   linhaDupla: { flexDirection: 'row', gap: 12 },
   btnRow: { flexDirection: 'row', gap: 12, marginTop: 20 },
   btn: { flex: 1, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },

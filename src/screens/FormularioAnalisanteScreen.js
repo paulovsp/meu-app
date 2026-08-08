@@ -62,6 +62,9 @@ export default function FormularioAnalisanteScreen() {
     pacienteExistente?.dia_pagamento ? String(pacienteExistente.dia_pagamento) : ''
   );
   const [tipoCobranca, setTipoCobranca] = useState(pacienteExistente?.tipo_cobranca || 'mensal');
+  const [valorMensalFixo, setValorMensalFixo] = useState(
+    pacienteExistente?.valor_mensal_fixo ? String(pacienteExistente.valor_mensal_fixo).replace('.', ',') : ''
+  );
   const [endereco, setEndereco]   = useState(pacienteExistente?.endereco ?? '');
   const [contatoEmergencia, setContatoEmergencia] = useState(pacienteExistente?.contato_emergencia ?? '');
   const [comoChegou, setComoChegou] = useState(pacienteExistente?.como_chegou ?? '');
@@ -278,6 +281,10 @@ export default function FormularioAnalisanteScreen() {
       return;
     }
     if (!validarHorarios()) return;
+    if (tipoCobranca === 'mensal_fixo' && !(Number(valorMensalFixo.replace(',', '.')) > 0)) {
+      Alert.alert('Campo obrigatório', 'Informe o valor mensal fixo.');
+      return;
+    }
 
     const resumoHorario = gerarResumoHorarios(horarios);
     const diaPagamentoNum = Number(diaPagamento) > 0 ? Number(diaPagamento) : null;
@@ -305,8 +312,9 @@ export default function FormularioAnalisanteScreen() {
           contato_emergencia: contatoEmergencia.trim() || null,
           como_chegou: comoChegou.trim() || null,
           info_relevantes: infoRelevantes.trim() || null,
-          dia_pagamento: tipoCobranca === 'mensal' ? diaPagamentoNum : null,
+          dia_pagamento: tipoCobranca !== 'por_sessao' ? diaPagamentoNum : null,
           tipo_cobranca: tipoCobranca,
+          valor_mensal_fixo: valorMensalFixo ? Number(valorMensalFixo.replace(',', '.')) : null,
         });
       } else {
         patientId = await inserirPaciente({
@@ -324,8 +332,9 @@ export default function FormularioAnalisanteScreen() {
           contato_emergencia: contatoEmergencia.trim() || null,
           como_chegou: comoChegou.trim() || null,
           info_relevantes: infoRelevantes.trim() || null,
-          dia_pagamento: tipoCobranca === 'mensal' ? diaPagamentoNum : null,
+          dia_pagamento: tipoCobranca !== 'por_sessao' ? diaPagamentoNum : null,
           tipo_cobranca: tipoCobranca,
+          valor_mensal_fixo: valorMensalFixo ? Number(valorMensalFixo.replace(',', '.')) : null,
         });
       }
 
@@ -484,7 +493,7 @@ export default function FormularioAnalisanteScreen() {
         </View>
 
         <View style={styles.fieldGroup}>
-          <Text style={styles.label}>Início do acompanhamento</Text>
+          <Text style={styles.label}>Início da análise</Text>
           <TextInput
             style={styles.input}
             placeholder="DD/MM/AAAA"
@@ -651,12 +660,31 @@ export default function FormularioAnalisanteScreen() {
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Tipo de cobrança</Text>
           <View style={styles.modalidadeContainer}>
-            {renderTipoCobrancaOption('mensal', '📅', 'Mensal')}
+            {renderTipoCobrancaOption('mensal', '📅', 'Mensal variável')}
+            {renderTipoCobrancaOption('mensal_fixo', '💰', 'Mensal fixo')}
             {renderTipoCobrancaOption('por_sessao', '🧾', 'Por sessão')}
           </View>
         </View>
 
-        {tipoCobranca === 'mensal' && (
+        {tipoCobranca === 'mensal_fixo' && (
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Valor mensal fixo *</Text>
+            <Text style={styles.hint}>
+              Valor único cobrado todo mês, independente do número de sessões.
+            </Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Ex: 800,00"
+              placeholderTextColor="#bbb"
+              value={valorMensalFixo}
+              onChangeText={setValorMensalFixo}
+              keyboardType="numeric"
+              returnKeyType="next"
+            />
+          </View>
+        )}
+
+        {tipoCobranca !== 'por_sessao' && (
           <View style={styles.fieldGroup}>
             <Text style={styles.label}>Dia de pagamento</Text>
             <Text style={styles.hint}>

@@ -59,22 +59,72 @@ export async function identificarPacienteNaPergunta(pergunta) {
   );
 }
 
+function tokenizar(texto) {
+  return (texto || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[^\x00-\x7F]/g, '')
+    .match(/[a-z0-9]{3,}/g) || [];
+}
+
+/** Escolhe os itens mais relevantes pra pergunta dentre TODO o histórico
+ * (não só os mais recentes) — antes disso, um paciente com 200+ sessões
+ * nunca tinha as sessões antigas nem consideradas, só as ~30 últimas
+ * (item C.6). Pontua por sobreposição de palavras com a pergunta; sem
+ * correspondência (pergunta genérica tipo "como ele está indo"), cai pro
+ * comportamento anterior — os mais recentes primeiro. */
+function selecionarItensRelevantes(itensOrdenados, queryTexto, limite) {
+  if (itensOrdenados.length <= limite) return itensOrdenados;
+
+  const tokensQuery = new Set(tokenizar(queryTexto));
+  if (tokensQuery.size === 0) return itensOrdenados.slice(0, limite);
+
+  const pontuados = itensOrdenados.map((item, index) => {
+    const tokensItem = tokenizar(item.texto);
+    let pontuacao = 0;
+    for (const t of tokensItem) if (tokensQuery.has(t)) pontuacao++;
+    return { item, pontuacao, index };
+  });
+
+  const relevantes = pontuados.filter((p) => p.pontuacao > 0);
+  if (relevantes.length === 0) return itensOrdenados.slice(0, limite);
+
+  relevantes.sort((a, b) => (b.pontuacao - a.pontuacao) || (a.index - b.index));
+  const selecionados = relevantes.slice(0, limite).map((p) => p.item);
+
+  // Preenche o resto do orçamento com os mais recentes que ainda não
+  // entraram, pra sempre ter algum contexto temporal mesmo quando a
+  // correspondência de palavras é escassa.
+  if (selecionados.length < limite) {
+    const jaSelecionados = new Set(selecionados);
+    for (const item of itensOrdenados) {
+      if (selecionados.length >= limite) break;
+      if (!jaSelecionados.has(item)) selecionados.push(item);
+    }
+  }
+
+  const conjuntoFinal = new Set(selecionados);
+  return itensOrdenados.filter((item) => conjuntoFinal.has(item));
+}
+
 /** Contexto do histórico de UM analisante só — nunca de todos ao mesmo
- * tempo. Itens mais recentes primeiro, truncados pra não explodir o
- * tamanho do prompt num paciente com histórico muito longo.
+ * tempo. `queryTexto` (a pergunta atual, ou a pergunta + histórico recente
+ * da conversa) guia a seleção por relevância entre TODOS os itens do
+ * paciente — sem isso, um histórico longo perderia tudo que não fosse
+ * recente. Itens truncados individualmente pra não explodir o tamanho do
+ * prompt.
  *
  * O nome do paciente nunca sai daqui: no cabeçalho ele já nasce como
  * `[ANALISANTE]`, e o corpo inteiro (transcrições e registros, onde o
  * nome pode aparecer dito/escrito) passa pela mesma substituição antes
  * de virar prompt. */
-export async function montarContextoPaciente(paciente) {
+export async function montarContextoPaciente(paciente, queryTexto = '') {
   const { redigir } = criarPseudonimizador(paciente);
   const [sessoes, registros] = await Promise.all([
     getSessions(paciente.id),
     getRecords(paciente.id),
   ]);
 
-  const itens = [
+  const todosItens = [
     ...sessoes.map((s) => ({
       data: s.date,
       texto: `Sessão (${s.type === 'online' ? 'online' : 'presencial'}): ${truncar(s.transcript, TRUNCAR_SESSAO) || '(sem transcrição)'}`,
@@ -83,9 +133,9 @@ export async function montarContextoPaciente(paciente) {
       data: r.date,
       texto: `${r.type === 'estudo' ? 'Estudo' : 'Registro'}${r.title ? ` — ${r.title}` : ''}: ${truncar(stripHtml(r.content), TRUNCAR_REGISTRO) || '(sem conteúdo)'}`,
     })),
-  ]
-    .sort((a, b) => new Date(b.data) - new Date(a.data))
-    .slice(0, MAX_ITENS_POR_PACIENTE);
+  ].sort((a, b) => new Date(b.data) - new Date(a.data));
+
+  const itens = selecionarItensRelevantes(todosItens, queryTexto, MAX_ITENS_POR_PACIENTE);
 
   const corpo = itens.length
     ? itens.map((i) => `  [${formatarDataBR(i.data)}] ${redigir(i.texto)}`).join('\n')

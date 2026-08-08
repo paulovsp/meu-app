@@ -1,18 +1,33 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  SafeAreaView, FlatList, Alert
+  FlatList, Alert, ActivityIndicator
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { listarPacientes, deletarPaciente } from '../services/database';
+import { listarPacientes, deletarPaciente, getModalidadesPorPaciente } from '../services/database';
+import { mensagemDeErro } from '../services/erros';
+import { calcularAnosEMeses, formatarAnosEMeses } from '../services/validacao';
 
-export default function PatientsScreen() {
+export default function AnalisantesScreen() {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const [pacientes, setPacientes] = useState([]);
+  const [modalidades, setModalidades] = useState({});
+  const [removendoId, setRemovendoId] = useState(null);
+
+  async function carregar() {
+    try {
+      setPacientes(await listarPacientes());
+      setModalidades(await getModalidadesPorPaciente());
+    } catch (e) {
+      Alert.alert('Erro ao carregar', mensagemDeErro(e));
+    }
+  }
 
   useFocusEffect(
     useCallback(() => {
-      setPacientes(listarPacientes());
+      carregar();
     }, [])
   );
 
@@ -20,59 +35,88 @@ export default function PatientsScreen() {
     navigation.navigate('PatientForm', paciente ? { paciente } : {});
   }
 
-  function confirmarDelecao(id, codinome) {
-    Alert.alert('Remover analisante', `Deseja remover "${codinome}"?`, [
+  function confirmarDelecao(id, nome) {
+    Alert.alert('Remover analisante', `Deseja remover "${nome}"?`, [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Remover', style: 'destructive',
-        onPress: () => {
-          deletarPaciente(id);
-          setPacientes(listarPacientes());
+        onPress: async () => {
+          setRemovendoId(id);
+          try {
+            await deletarPaciente(id);
+            await carregar();
+          } catch (e) {
+            Alert.alert('Erro ao remover', mensagemDeErro(e));
+          } finally {
+            setRemovendoId(null);
+          }
         }
       }
     ]);
   }
 
-  // Inicial do avatar usa codinome
+  // ⚠️ CORRIGIDO: não existe mais campo "codinome" — usa sempre o nome real
   function getInicial(item) {
-    const ref = item.codinome || item.nome;
+    const ref = item.nome || 'A';
     return ref.charAt(0).toUpperCase();
   }
 
-  // Nome exibido é sempre o codinome (se tiver), senão mostra "–"
   function getNomeExibido(item) {
-    return item.codinome || '—';
+    return item.nome || '—';
+  }
+
+  function getModalidadeLabel(modalidade) {
+    switch (modalidade) {
+      case 'online':     return '💻 Online';
+      case 'presencial': return '🏥 Presencial';
+      case 'hibrido':    return '🔀 Híbrido';
+      default:           return null;
+    }
   }
 
   function renderItem({ item }) {
+    const idadeTexto = formatarAnosEMeses(calcularAnosEMeses(item.nascimento));
+    const tempoAnaliseTexto = formatarAnosEMeses(calcularAnosEMeses(item.data_inicio));
+    const modalidadeLabel = getModalidadeLabel(modalidades[item.id]);
+
     return (
       <View style={styles.card}>
         <TouchableOpacity
-          style={styles.cardBody}
+          style={styles.cardMain}
           onPress={() => navigation.navigate('PatientDetail', { paciente: item })}
         >
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{getInicial(item)}</Text>
-          </View>
-          <View style={styles.cardInfo}>
-            <Text style={styles.cardName}>{getNomeExibido(item)}</Text>
-            {item.telefone
-              ? <Text style={styles.cardSub}>📞 {item.telefone}</Text>
-              : null}
-            {item.data_inicio
-              ? <Text style={styles.cardSub}>🗓 Início: {item.data_inicio}</Text>
-              : null}
+          <Text style={styles.cardName} numberOfLines={1} ellipsizeMode="tail">
+            {getNomeExibido(item)}
+          </Text>
+
+          <View style={styles.cardBody}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{getInicial(item)}</Text>
+            </View>
+            <View style={styles.cardInfo}>
+              {modalidadeLabel ? <Text style={styles.cardInfoLinha}>{modalidadeLabel}</Text> : null}
+              {idadeTexto ? <Text style={styles.cardInfoLinha}>🎂 {idadeTexto}</Text> : null}
+              {tempoAnaliseTexto ? <Text style={styles.cardInfoLinha}>🗓 {tempoAnaliseTexto}</Text> : null}
+            </View>
           </View>
         </TouchableOpacity>
+
         <View style={styles.cardActions}>
-          <TouchableOpacity style={styles.editBtn} onPress={() => irParaFormulario(item)}>
-            <Text style={styles.editBtnText}>✏️</Text>
+          <TouchableOpacity
+            style={styles.actionBtn}
+            onPress={() => irParaFormulario(item)}
+            disabled={removendoId === item.id}
+          >
+            <Text style={styles.actionBtnText}>✏️</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.deleteBtn}
+            style={styles.actionBtn}
             onPress={() => confirmarDelecao(item.id, getNomeExibido(item))}
+            disabled={removendoId === item.id}
           >
-            <Text style={styles.deleteBtnText}>🗑️</Text>
+            {removendoId === item.id
+              ? <ActivityIndicator size="small" color="#c0392b" />
+              : <Text style={styles.actionBtnText}>🗑️</Text>}
           </TouchableOpacity>
         </View>
       </View>
@@ -80,7 +124,7 @@ export default function PatientsScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <Text style={styles.title}>Analisantes</Text>
         <TouchableOpacity style={styles.addBtn} onPress={() => irParaFormulario()}>
@@ -101,7 +145,7 @@ export default function PatientsScreen() {
           data={pacientes}
           keyExtractor={(item) => item.id.toString()}
           renderItem={renderItem}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 16 }]}
         />
       )}
     </SafeAreaView>
@@ -120,25 +164,24 @@ const styles = StyleSheet.create({
   addBtnText:   { color: '#fff', fontWeight: 'bold', fontSize: 14 },
   list:         { padding: 16, gap: 12 },
   card: {
-    backgroundColor: '#fff', borderRadius: 14, padding: 16,
+    backgroundColor: '#fff', borderRadius: 14, padding: 14,
     flexDirection: 'row', alignItems: 'center',
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08, shadowRadius: 4, elevation: 2,
   },
-  cardBody:     { flex: 1, flexDirection: 'row', alignItems: 'center' },
+  cardMain:     { flex: 1 },
+  cardName:     { fontSize: 16, fontWeight: '700', color: '#1A1A2E', marginBottom: 8 },
+  cardBody:     { flexDirection: 'row', alignItems: 'center' },
   avatar: {
-    width: 46, height: 46, borderRadius: 23, backgroundColor: '#3D5A80',
+    width: 44, height: 44, borderRadius: 22, backgroundColor: '#3D5A80',
     justifyContent: 'center', alignItems: 'center', marginRight: 14,
   },
-  avatarText:   { color: '#fff', fontSize: 20, fontWeight: 'bold' },
-  cardInfo:     { flex: 1 },
-  cardName:     { fontSize: 16, fontWeight: '700', color: '#1A1A2E', marginBottom: 4 },
-  cardSub:      { fontSize: 13, color: '#888', marginTop: 2 },
-  cardActions:  { flexDirection: 'row', gap: 8 },
-  editBtn:      { padding: 8 },
-  editBtnText:  { fontSize: 20 },
-  deleteBtn:    { padding: 8 },
-  deleteBtnText:{ fontSize: 20 },
+  avatarText:   { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+  cardInfo:     { flex: 1, gap: 2 },
+  cardInfoLinha:{ fontSize: 13, color: '#666' },
+  cardActions:  { flexDirection: 'column', gap: 2, marginLeft: 6 },
+  actionBtn:    { padding: 4 },
+  actionBtnText:{ fontSize: 15 },
   empty:        { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
   emptyIcon:    { fontSize: 64, marginBottom: 16 },
   emptyText:    { fontSize: 16, color: '#aaa', marginBottom: 24 },

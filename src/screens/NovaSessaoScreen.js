@@ -123,6 +123,7 @@ export default function NovaSessaoScreen() {
   const [tipo, setTipo] = useState(null);
   const [plataforma, setPlataforma] = useState(null);
   const [gravando, setGravando] = useState(false);
+  const [preparandoGravacao, setPreparandoGravacao] = useState(false);
   const [transcrevendo, setTranscrevendo] = useState(false);
   const [progressoTranscricao, setProgressoTranscricao] = useState('');
   const [transcricao, setTranscricao] = useState('');
@@ -240,6 +241,7 @@ export default function NovaSessaoScreen() {
       Alert.alert('Autorização necessária', `${paciente?.nome} ainda não autorizou a gravação e transcrição das sessões.`);
       return;
     }
+    setPreparandoGravacao(true);
     try {
       const { granted } = await Audio.requestPermissionsAsync();
       if (!granted) {
@@ -270,6 +272,8 @@ export default function NovaSessaoScreen() {
       await mostrarNotificacaoGravacao();
     } catch (err) {
       Alert.alert('Erro', 'Não foi possível iniciar a gravação:\n' + err.message);
+    } finally {
+      setPreparandoGravacao(false);
     }
   }
 
@@ -571,7 +575,8 @@ export default function NovaSessaoScreen() {
             </View>
           ) : !gravando ? (
             <TouchableOpacity
-              style={s.btnIniciar}
+              style={[s.btnIniciar, preparandoGravacao && { opacity: 0.7 }]}
+              disabled={preparandoGravacao}
               onPress={async () => {
                 await iniciarGravacao();
                 if (isOnline && plataforma?.url) {
@@ -586,7 +591,9 @@ export default function NovaSessaoScreen() {
                 }
               }}
             >
-              <Text style={s.btnIniciarText}>🎙️ Iniciar Gravação</Text>
+              {preparandoGravacao
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={s.btnIniciarText}>🎙️ Iniciar Gravação</Text>}
             </TouchableOpacity>
           ) : (
             <View style={s.gravandoBox}>

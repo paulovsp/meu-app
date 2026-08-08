@@ -40,18 +40,24 @@ const COLORS = {
   btnShadow:   '#1A2D45',
 };
 
+// Cor do badge do ícone por botão — item E.11 ("ícones sem graça",
+// monocromáticos). Nova Sessão/Novo Registro/Recebíveis usam a cor
+// combinada com o usuário; o resto cai em "outros" (#6B7A8F). O badge do
+// Recebíveis usa ícone escuro em vez de branco porque #D9A441 é claro
+// demais pro branco cumprir o contraste mínimo AA (WCAG 1.4.11, 3:1).
+const COR_OUTROS = '#6B7A8F';
 const CLINICA_BUTTONS = [
-  { id: 'session',  icon: 'mic-outline',       label: 'Nova Sessão',    screen: 'NewSession' },
-  { id: 'record',   icon: 'clipboard-outline', label: 'Novo Registro',  screen: 'AddRecord'  },
-  { id: 'patients', icon: 'person-outline',    label: 'Analisantes',    screen: 'Patients'   },
-  { id: 'search',   icon: 'chatbubbles-outline', label: 'Busca Dr.Sig', screen: 'Busca' },
+  { id: 'session',  icon: 'mic-outline',       label: 'Nova Sessão',    screen: 'NewSession', corBadge: '#3D5A80' },
+  { id: 'record',   icon: 'clipboard-outline', label: 'Novo Registro',  screen: 'AddRecord',  corBadge: '#4C9F8F' },
+  { id: 'patients', icon: 'person-outline',    label: 'Analisantes',    screen: 'Patients',   corBadge: COR_OUTROS },
+  { id: 'search',   icon: 'chatbubbles-outline', label: 'Busca Dr.Sig', screen: 'Busca',      corBadge: COR_OUTROS },
 ];
 
 const ADMIN_BUTTONS = [
-  { id: 'agenda',     icon: 'calendar-outline',     label: 'Agenda',      screen: 'Agenda'     },
-  { id: 'financeiro', icon: 'cash-outline',         label: 'Financeiro',  screen: 'Financeiro' },
-  { id: 'cobranca',   icon: 'notifications-outline',label: 'Recebíveis',  screen: 'Cobranca'   },
-  { id: 'fiscal',     icon: 'receipt-outline',       label: 'Fiscal',      screen: 'Fiscal'     },
+  { id: 'agenda',     icon: 'calendar-outline',     label: 'Agenda',      screen: 'Agenda',     corBadge: COR_OUTROS },
+  { id: 'financeiro', icon: 'cash-outline',         label: 'Financeiro',  screen: 'Financeiro', corBadge: COR_OUTROS },
+  { id: 'cobranca',   icon: 'notifications-outline',label: 'Recebíveis',  screen: 'Cobranca',   corBadge: '#D9A441', corIcone: '#1C1C1E' },
+  { id: 'fiscal',     icon: 'receipt-outline',       label: 'Fiscal',      screen: 'Fiscal',    corBadge: COR_OUTROS },
 ];
 
 // ⚠️ Reduzidos para caber tudo na tela sem precisar rolar na maioria dos aparelhos
@@ -151,6 +157,11 @@ export default function InicioScreen({ navigation }) {
     onSwipeLeft: () => setModo('administrativa'),
     onSwipeRight: () => setModo('clinica'),
     limiar: SWIPE_THRESHOLD,
+    // Só 2 telas — clínica é a mais à esquerda, administrativa a mais à
+    // direita. Sem isso, deslizar de novo no limite reabria a mesma tela
+    // como se houvesse mais uma (item E.14).
+    podeEsquerda: modo === 'clinica',
+    podeDireita: modo === 'administrativa',
   });
 
   function trocarModo(novoModo) {
@@ -307,14 +318,18 @@ export default function InicioScreen({ navigation }) {
           >
             <View style={s.userBannerLeft}>
               <View style={s.userBannerAvatar}>
-                <Text style={s.userBannerAvatarText}>
-                  {user.nome
-                    .split(' ')
-                    .map(p => p[0])
-                    .join('')
-                    .slice(0, 2)
-                    .toUpperCase()}
-                </Text>
+                {user.avatar_url ? (
+                  <Image source={{ uri: user.avatar_url }} style={s.userBannerAvatarImg} />
+                ) : (
+                  <Text style={s.userBannerAvatarText}>
+                    {user.nome
+                      .split(' ')
+                      .map(p => p[0])
+                      .join('')
+                      .slice(0, 2)
+                      .toUpperCase()}
+                  </Text>
+                )}
               </View>
               <View style={s.userBannerInfo}>
                 <Text style={s.userBannerLabel}>Usuário</Text>
@@ -333,10 +348,10 @@ export default function InicioScreen({ navigation }) {
               activeOpacity={0.75}
               onPress={() => navigation.navigate(btn.screen)}
             >
-              <View style={s.cellIconBadge}>
-                <Ionicons name={btn.icon} size={26} color="#FFFFFF" />
+              <View style={[s.cellIconBadge, { backgroundColor: btn.corBadge }]}>
+                <Ionicons name={btn.icon} size={26} color={btn.corIcone || '#FFFFFF'} />
               </View>
-              <Text style={s.cellLabel} numberOfLines={2}>{btn.label}</Text>
+              <Text style={s.cellLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{btn.label}</Text>
             </TouchableOpacity>
           ))}
         </Animated.View>
@@ -524,6 +539,13 @@ const s = StyleSheet.create({
     backgroundColor: COLORS.btnBlue,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: COLORS.btnBlue,
+    overflow: 'hidden',
+  },
+  userBannerAvatarImg: {
+    width: '100%',
+    height: '100%',
   },
   userBannerAvatarText: {
     fontSize: 12,

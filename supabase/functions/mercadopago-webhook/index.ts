@@ -8,15 +8,16 @@
 // a validação vem antes de qualquer outra coisa, e falha fecha (401), não
 // abre.
 //
-// Correlação pagamento -> conta: o link de assinatura hoje é estático
-// (mpago.la/2NjrpL3, igual pra todo mundo) — não carrega o id do usuário,
-// só o e-mail de quem pagou. A solução definitiva é gerar o checkout por
-// API do Mercado Pago com `external_reference` = id do usuário; isso exige
-// a conta já existir ANTES da assinatura ser criada no Mercado Pago (um
-// checkout dinâmico gerado depois do login/cadastro), o que não é o caso
-// hoje — a venda acontece no site, antes ou depois de a pessoa ter conta
-// no app. Enquanto isso, casa por e-mail; se não achar perfil, grava em
-// `pagamentos_pendentes` (ver migration 0026), consultada no cadastro.
+// Correlação pagamento -> conta: os links de assinatura no site
+// (drsig.com.br) são estáticos, iguais pra todo mundo — não carregam o id
+// do usuário, só o e-mail de quem pagou. A solução definitiva é gerar o
+// checkout por API do Mercado Pago com `external_reference` = id do
+// usuário; isso exige a conta já existir ANTES da assinatura ser criada no
+// Mercado Pago (um checkout dinâmico gerado depois do login/cadastro), o
+// que não é o caso hoje — a venda acontece no site, antes ou depois de a
+// pessoa ter conta no app. Enquanto isso, casa por e-mail; se não achar
+// perfil, grava em `pagamentos_pendentes` (ver migration 0026), consultada
+// no cadastro.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -31,6 +32,69 @@ const CICLO_PADRAO_DIAS = 30; // fallback quando o recurso não informa next_pay
 // Mesma taxa de referência usada em creditosIA.js/renovar-creditos — só
 // pra converter o valor pago (BRL) pro saldo interno (US$).
 const TAXA_REFERENCIA_USD_BRL = 5.08;
+
+// Novo modelo de 3 planos (ver migration 0035). Decisão confirmada: a
+// Referência de API do Mercado Pago só documenta `card_token_id` como meio
+// de pagamento pra preapproval (assinatura recorrente) — Pix não aparece
+// ali. Por isso:
+//   • Mensal (recorrente, indefinido) — SEMPRE cartão, via preapproval
+//     normal. Identificado pelo evento `preapproval`/`subscription`.
+//   • Semestral/Anual — SEMPRE Pix, como pagamento ÚNICO (não é uma
+//     preapproval — é só um pagamento avulso que o Paulo gera como link no
+//     painel do Mercado Pago). Identificado pelo evento `payment` comum,
+//     sem auto_recurring nem plan_id nenhum pra ler — a única forma de
+//     saber qual dos dois é o valor cobrado (414 ou 588).
+// Consequência importante pro ciclo de renovação (ver
+// assinatura-processar-ciclo): como Pix não guarda cartão nenhum, NUNCA
+// vai existir um mp_preapproval_id pra reaproveitar quando o semestral/anual
+// vencer — o caminho de aviso por e-mail/push + confirmação manual não é
+// um fallback de exceção, é o caminho normal e esperado pra essas contas.
+const MP_PLANO_MENSAL_ID = Deno.env.get('MP_PLANO_MENSAL_ID') || '';
+
+type Plano = 'mensal' | 'semestral' | 'anual';
+
+const VALOR_MENSAL_EQUIVALENTE: Record<Plano, number> = {
+  mensal: 89,
+  semestral: 69,
+  anual: 49,
+};
+
+// Preço do pagamento único (BRL) -> plano. Único jeito de saber qual dos
+// dois é um pagamento Pix avulso, já que ele não carrega plan_id nem
+// auto_recurring. Se o Paulo mudar esses preços, atualizar aqui também.
+const VALOR_PAGAMENTO_UNICO_PARA_PLANO: Record<number, Plano> = {
+  414: 'semestral',
+  588: 'anual',
+};
+
+function identificarPlanoPagamentoUnico(transactionAmount: number): Plano | null {
+  return VALOR_PAGAMENTO_UNICO_PARA_PLANO[Math.round(transactionAmount)] ?? null;
+}
+
+// deno-lint-ignore no-explicit-any
+function identificarPlano(preapproval: any): Plano {
+  const planId = preapproval?.preapproval_plan_id || '';
+  if (planId && MP_PLANO_MENSAL_ID && planId === MP_PLANO_MENSAL_ID) return 'mensal';
+
+  // Fallback defensivo — plan_id não configurado ou não bateu: infere pela
+  // frequência declarada na própria preapproval (auto_recurring). Na
+  // prática só preapproval mensal chega aqui (semestral/anual são Pix
+  // avulso, tratados em identificarPlanoPagamentoUnico), mas mantém o
+  // reconhecimento por meses caso isso mude no futuro.
+  const freqType = preapproval?.auto_recurring?.frequency_type;
+  const freq = Number(preapproval?.auto_recurring?.frequency) || 0;
+  if (freqType === 'months' && freq >= 12) return 'anual';
+  if (freqType === 'months' && freq >= 6) return 'semestral';
+  return 'mensal';
+}
+
+function calcularCicloFim(plano: Plano, inicio: Date): Date {
+  const fim = new Date(inicio);
+  if (plano === 'semestral') fim.setMonth(fim.getMonth() + 6);
+  else if (plano === 'anual') fim.setMonth(fim.getMonth() + 12);
+  else fim.setDate(fim.getDate() + CICLO_PADRAO_DIAS);
+  return fim;
+}
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -78,7 +142,14 @@ async function validarAssinatura(req: Request): Promise<boolean> {
 async function aplicarNaContaOuPendente(
   supabaseAdmin: ReturnType<typeof createClient>,
   email: string,
-  estado: { assinatura_status: string; assinatura_expira_em: string | null; mp_preapproval_id: string | null },
+  estado: {
+    assinatura_status: string;
+    assinatura_expira_em: string | null;
+    mp_preapproval_id: string | null;
+    assinatura_plano?: Plano;
+    assinatura_ciclo_inicio?: string;
+    assinatura_valor_mensal_equivalente?: number;
+  },
   valorPagoBRL: number,
 ) {
   const { data: perfil } = await supabaseAdmin
@@ -95,6 +166,9 @@ async function aplicarNaContaOuPendente(
       mp_preapproval_id: estado.mp_preapproval_id,
       assinatura_status: estado.assinatura_status,
       assinatura_expira_em: estado.assinatura_expira_em,
+      assinatura_plano: estado.assinatura_plano ?? null,
+      assinatura_ciclo_inicio: estado.assinatura_ciclo_inicio ?? null,
+      assinatura_valor_mensal_equivalente: estado.assinatura_valor_mensal_equivalente ?? null,
       valor: valorPagoBRL,
     });
     return;
@@ -103,6 +177,14 @@ async function aplicarNaContaOuPendente(
   const patch: Record<string, unknown> = { assinatura_status: estado.assinatura_status };
   if (estado.assinatura_expira_em) patch.assinatura_expira_em = estado.assinatura_expira_em;
   if (estado.mp_preapproval_id) patch.mp_preapproval_id = estado.mp_preapproval_id;
+  if (estado.assinatura_plano) patch.assinatura_plano = estado.assinatura_plano;
+  if (estado.assinatura_ciclo_inicio) patch.assinatura_ciclo_inicio = estado.assinatura_ciclo_inicio;
+  if (estado.assinatura_valor_mensal_equivalente != null) {
+    patch.assinatura_valor_mensal_equivalente = estado.assinatura_valor_mensal_equivalente;
+  }
+  // Uma renovação bem-sucedida (webhook de preapproval autorizada) encerra
+  // qualquer aviso de renovação pendente que estivesse em aberto.
+  if (estado.assinatura_status === 'ativa') patch.assinatura_renovacao_notificada_em = null;
   await supabaseAdmin.from('profiles').update(patch).eq('id', perfil.id);
 
   if (valorPagoBRL > 0) {
@@ -173,7 +255,44 @@ Deno.serve(async (req) => {
       const email = pagamento?.payer?.email;
       if (!email) return json({ ok: true, semEmail: true });
 
-      if (pagamento.status === 'approved') {
+      // Pagamento gerado por uma preapproval mensal (cartão) já é tratado
+      // com a duração certa pelo evento `preapproval` — aplicar aqui de
+      // novo sobrescreveria com o ciclo padrão errado. `operation_type` é o
+      // campo documentado do Mercado Pago pra distinguir ('recurring_payment'
+      // vs 'regular_payment') — se isso mudar de nome/comportamento no
+      // futuro, reconferir na documentação de pagamentos.
+      if (pagamento.operation_type === 'recurring_payment') {
+        return json({ ok: true, ignoradoPorSerRecorrente: true });
+      }
+
+      // Pix avulso do Semestral/Anual: sem plan_id nem auto_recurring pra
+      // ler, o valor cobrado é o único jeito de saber qual dos dois é.
+      const planoPagamentoUnico = pagamento.status === 'approved'
+        ? identificarPlanoPagamentoUnico(Number(pagamento.transaction_amount) || 0)
+        : null;
+
+      if (pagamento.status === 'approved' && planoPagamentoUnico) {
+        const cicloInicio = new Date();
+        await aplicarNaContaOuPendente(
+          supabaseAdmin,
+          email,
+          {
+            assinatura_status: 'ativa',
+            assinatura_expira_em: calcularCicloFim(planoPagamentoUnico, cicloInicio).toISOString(),
+            // Pix não guarda cartão — não há preapproval nenhuma associada
+            // a este pagamento (ver nota de renovação no topo do arquivo).
+            mp_preapproval_id: null,
+            assinatura_plano: planoPagamentoUnico,
+            assinatura_ciclo_inicio: cicloInicio.toISOString(),
+            assinatura_valor_mensal_equivalente: VALOR_MENSAL_EQUIVALENTE[planoPagamentoUnico],
+          },
+          Number(pagamento.transaction_amount) || 0,
+        );
+      } else if (pagamento.status === 'approved') {
+        // Valor não bate com nenhum dos dois planos de pagamento único —
+        // trata como cobrança avulsa genérica (ciclo padrão de 30 dias),
+        // mesmo comportamento de sempre pra qualquer pagamento fora do
+        // padrão dos 3 planos.
         const expiraEm = new Date(Date.now() + CICLO_PADRAO_DIAS * 24 * 60 * 60 * 1000).toISOString();
         await aplicarNaContaOuPendente(
           supabaseAdmin,
@@ -214,13 +333,26 @@ Deno.serve(async (req) => {
       if (!email) return json({ ok: true, semEmail: true });
 
       if (preapproval.status === 'authorized') {
-        const expiraEm = preapproval.next_payment_date
-          ? new Date(preapproval.next_payment_date).toISOString()
-          : new Date(Date.now() + CICLO_PADRAO_DIAS * 24 * 60 * 60 * 1000).toISOString();
+        const plano = identificarPlano(preapproval);
+        const cicloInicio = preapproval.date_created ? new Date(preapproval.date_created) : new Date();
+        // next_payment_date só é confiável pro mensal (cobra de novo no mês
+        // seguinte); semestral/anual têm repetitions:1 — não há "próxima
+        // cobrança" a esperar, o fim do ciclo é calculado pela duração do
+        // plano mesmo.
+        const expiraEm = plano === 'mensal' && preapproval.next_payment_date
+          ? new Date(preapproval.next_payment_date)
+          : calcularCicloFim(plano, cicloInicio);
         await aplicarNaContaOuPendente(
           supabaseAdmin,
           email,
-          { assinatura_status: 'ativa', assinatura_expira_em: expiraEm, mp_preapproval_id: recursoId },
+          {
+            assinatura_status: 'ativa',
+            assinatura_expira_em: expiraEm.toISOString(),
+            mp_preapproval_id: recursoId,
+            assinatura_plano: plano,
+            assinatura_ciclo_inicio: cicloInicio.toISOString(),
+            assinatura_valor_mensal_equivalente: VALOR_MENSAL_EQUIVALENTE[plano],
+          },
           Number(preapproval?.auto_recurring?.transaction_amount) || 0,
         );
       } else if (['cancelled', 'paused'].includes(preapproval.status)) {

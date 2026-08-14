@@ -36,15 +36,22 @@ import DetalheRegistroScreen from '../screens/DetalheRegistroScreen';
 import PerfilScreen from '../screens/PerfilScreen';
 import AssinaturaScreen from '../screens/AssinaturaScreen';
 import MensagensPersonalizadasScreen from '../screens/MensagensPersonalizadasScreen';
+import CursosScreen from '../screens/CursosScreen';
+import FormularioCursoScreen from '../screens/FormularioCursoScreen';
 
 // Administrativo
 import AgendaScreen from '../screens/AgendaScreen';
 import FinanceiroScreen from '../screens/FinanceiroScreen';
 import CobrancaScreen from '../screens/CobrancaScreen';
 import FiscalScreen from '../screens/FiscalScreen';
+import PagamentosScreen from '../screens/PagamentosScreen';
 import ConfiguracaoFiscalAutomaticaScreen from '../screens/ConfiguracaoFiscalAutomaticaScreen';
 import EditarHorarioScreen from '../screens/DisponibilidadeScreen';
 import DetalheCompromissoScreen from '../screens/DetalheCompromissoScreen';
+
+// Início — afazeres, arquivo e relatórios
+import AfazeresScreen from '../screens/AfazeresScreen';
+import ArquivoRelatoriosScreen from '../screens/ArquivoRelatoriosScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -70,9 +77,12 @@ function AppStackNavigator() {
   // navegador raiz, não uma tela dentro dele.
   useEffect(() => {
     const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
-      const sessionId = response.notification.request.content.data?.sessionId;
-      if (sessionId && navigationRef.isReady()) {
-        navigationRef.navigate('SessionDetail', { sessionId });
+      const dados = response.notification.request.content.data || {};
+      if (!navigationRef.isReady()) return;
+      if (dados.sessionId) {
+        navigationRef.navigate('SessionDetail', { sessionId: dados.sessionId });
+      } else if (dados.cursoId) {
+        navigationRef.navigate('FormularioCurso', { cursoId: dados.cursoId });
       }
     });
     return () => subscription.remove();
@@ -157,6 +167,31 @@ function AppStackNavigator() {
         options={{ title: 'Mensagens personalizadas' }}
       />
 
+      <Stack.Screen
+        name="Cursos"
+        component={CursosScreen}
+        options={{ title: 'Meus cursos' }}
+      />
+
+      <Stack.Screen
+        name="FormularioCurso"
+        component={FormularioCursoScreen}
+        options={{ title: 'Curso' }}
+      />
+
+      {/* Início */}
+      <Stack.Screen
+        name="Afazeres"
+        component={AfazeresScreen}
+        options={{ title: 'Afazeres' }}
+      />
+
+      <Stack.Screen
+        name="ArquivoRelatorios"
+        component={ArquivoRelatoriosScreen}
+        options={{ title: 'Arquivo e Relatórios' }}
+      />
+
       {/* Administrativo */}
       <Stack.Screen
         name="Agenda"
@@ -180,6 +215,12 @@ function AppStackNavigator() {
         name="Fiscal"
         component={FiscalScreen}
         options={{ title: 'Fiscal' }}
+      />
+
+      <Stack.Screen
+        name="Pagamentos"
+        component={PagamentosScreen}
+        options={{ title: 'Pagamentos' }}
       />
 
       <Stack.Screen

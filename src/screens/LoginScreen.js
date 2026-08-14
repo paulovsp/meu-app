@@ -2,13 +2,15 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ScrollView, Alert,
-  StatusBar,
+  StatusBar, Modal, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../services/supabase';
 import { loginBiometricoEstaAtivo, obterEmailBiometrico, entrarComBiometria } from '../services/biometria';
+import { solicitarRedefinicaoSenha } from '../services/conta';
+import { mensagemDeErro } from '../services/erros';
 
 const COLORS = {
   bg: '#F7F6F3',
@@ -45,6 +47,9 @@ export default function LoginScreen({ navigation }) {
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [entrando, setEntrando] = useState(false);
   const [entrandoComDigital, setEntrandoComDigital] = useState(false);
+  const [modalEsqueciVisivel, setModalEsqueciVisivel] = useState(false);
+  const [emailEsqueci, setEmailEsqueci] = useState('');
+  const [enviandoEsqueci, setEnviandoEsqueci] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -98,6 +103,32 @@ export default function LoginScreen({ navigation }) {
       Alert.alert('Erro', 'Não foi possível conectar. Tente novamente.');
     } finally {
       setEntrando(false);
+    }
+  }
+
+  function abrirModalEsqueci() {
+    setEmailEsqueci(email.trim());
+    setModalEsqueciVisivel(true);
+  }
+
+  async function handleEnviarRedefinicao() {
+    const emailTrim = emailEsqueci.trim();
+    if (!emailTrim || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrim)) {
+      Alert.alert('E-mail inválido', 'Informe o e-mail da sua conta.');
+      return;
+    }
+    setEnviandoEsqueci(true);
+    try {
+      await solicitarRedefinicaoSenha(emailTrim);
+      setModalEsqueciVisivel(false);
+      Alert.alert(
+        'Verifique seu e-mail',
+        'Se esse e-mail tiver uma conta no Dr.Sig, você vai receber um link pra escolher uma nova senha.'
+      );
+    } catch (err) {
+      Alert.alert('Não foi possível enviar', mensagemDeErro(err));
+    } finally {
+      setEnviandoEsqueci(false);
     }
   }
 
@@ -164,6 +195,10 @@ export default function LoginScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
+          <TouchableOpacity style={s.linkEsqueci} onPress={abrirModalEsqueci}>
+            <Text style={s.linkEsqueciTexto}>Esqueceu a senha?</Text>
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={[s.btn, entrando && { opacity: 0.7 }]}
             onPress={handleEntrar}
@@ -177,6 +212,52 @@ export default function LoginScreen({ navigation }) {
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <Modal
+        visible={modalEsqueciVisivel}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModalEsqueciVisivel(false)}
+      >
+        <View style={s.modalOverlay}>
+          <View style={s.modalCard}>
+            <Text style={s.modalTitulo}>Redefinir senha</Text>
+            <Text style={s.modalSubtitulo}>
+              Informe o e-mail da sua conta. Vamos mandar um link pra você escolher uma nova senha.
+            </Text>
+            <TextInput
+              style={s.modalInput}
+              value={emailEsqueci}
+              onChangeText={setEmailEsqueci}
+              placeholder="Ex: paulo@email.com"
+              placeholderTextColor="#B0ADA6"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoFocus
+            />
+            <View style={s.modalBtnRow}>
+              <TouchableOpacity
+                style={s.modalBtnCancelar}
+                onPress={() => setModalEsqueciVisivel(false)}
+                disabled={enviandoEsqueci}
+              >
+                <Text style={s.modalBtnCancelarText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.modalBtnConfirmar, enviandoEsqueci && { opacity: 0.7 }]}
+                onPress={handleEnviarRedefinicao}
+                disabled={enviandoEsqueci}
+              >
+                {enviandoEsqueci ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={s.modalBtnConfirmarText}>Enviar link</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -236,6 +317,33 @@ const s = StyleSheet.create({
   },
   linkCadastro: { alignItems: 'center', marginTop: 20 },
   linkCadastroTexto: { color: COLORS.btnLight, fontSize: 14, fontWeight: '600' },
+  linkEsqueci: { alignItems: 'flex-end', marginTop: 10 },
+  linkEsqueciTexto: { color: COLORS.btnLight, fontSize: 13, fontWeight: '600' },
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center', alignItems: 'center', padding: 24,
+  },
+  modalCard: {
+    width: '100%', maxWidth: 420, backgroundColor: '#FFFFFF',
+    borderRadius: 18, padding: 24,
+  },
+  modalTitulo: { fontSize: 18, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 },
+  modalSubtitulo: { fontSize: 13, color: COLORS.textMid, lineHeight: 19, marginBottom: 16 },
+  modalInput: {
+    backgroundColor: '#F7F6F3', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 15, color: COLORS.textDark, borderWidth: 1, borderColor: '#E8E4DD',
+  },
+  modalBtnRow: { flexDirection: 'row', gap: 12, marginTop: 20 },
+  modalBtnCancelar: {
+    flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center',
+    backgroundColor: '#F0EEE9',
+  },
+  modalBtnCancelarText: { fontSize: 15, fontWeight: '700', color: COLORS.textMid },
+  modalBtnConfirmar: {
+    flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center',
+    backgroundColor: COLORS.btnBlue,
+  },
+  modalBtnConfirmarText: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
   senhaRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   olhoBtn: { padding: 4 },
   btnDigital: {

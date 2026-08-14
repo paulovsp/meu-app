@@ -33,3 +33,36 @@ export async function alterarEmailLogin(novoEmail) {
   const { error } = await supabase.auth.updateUser({ email: novoEmail });
   if (error) throw error;
 }
+
+/**
+ * Troca de senha com o usuário já logado (Perfil → Segurança). Confirma a
+ * senha atual reautenticando (supabase.auth.signInWithPassword) antes de
+ * trocar — sem isso, qualquer pessoa que pegasse o celular já desbloqueado
+ * e logado poderia trocar a senha sem saber a atual.
+ */
+export async function alterarSenha(email, senhaAtual, novaSenha) {
+  const { error: erroVerificacao } = await supabase.auth.signInWithPassword({
+    email,
+    password: senhaAtual,
+  });
+  if (erroVerificacao) {
+    throw new Error('Senha atual incorreta.');
+  }
+  const { error } = await supabase.auth.updateUser({ password: novaSenha });
+  if (error) throw error;
+}
+
+/**
+ * Fluxo "esqueci minha senha" — usado na tela de Login. O link do e-mail
+ * leva pra uma página web (redefinir-senha.html, mesmo padrão do
+ * confirmado.html em docs/) porque o app não tem `scheme` de deep link
+ * configurado — a troca de senha em si acontece nessa página, não dentro
+ * do app. Precisa que essa URL esteja na lista de Redirect URLs permitidas
+ * no painel do Supabase (Authentication → URL Configuration).
+ */
+export async function solicitarRedefinicaoSenha(email) {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: 'https://app.drsig.com.br/redefinir-senha.html',
+  });
+  if (error) throw error;
+}

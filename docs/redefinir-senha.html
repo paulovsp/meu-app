@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Redefinir senha — Dr.Sig</title>
+<style>
+  body {
+    font-family: -apple-system, Arial, sans-serif;
+    background: #3D5A80;
+    margin: 0;
+    padding: 24px;
+    color: #1A1A2E;
+    line-height: 1.6;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .card {
+    max-width: 420px;
+    width: 100%;
+    background: #fff;
+    border-radius: 20px;
+    padding: 40px 32px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.18);
+    text-align: center;
+  }
+  .selo {
+    width: 64px; height: 64px;
+    border-radius: 50%;
+    background: #E6F5EE;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 20px;
+    font-size: 32px;
+  }
+  h1 {
+    font-size: 22px;
+    margin: 0 0 12px;
+    color: #1A1A2E;
+  }
+  p {
+    font-size: 14.5px;
+    color: #6B6860;
+    margin: 0 0 20px;
+  }
+  form { text-align: left; }
+  label {
+    display: block;
+    font-size: 13px;
+    font-weight: 700;
+    color: #1A1A2E;
+    margin: 16px 0 6px;
+  }
+  input[type="password"] {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid #E8E4DD;
+    background: #F7F6F3;
+    font-size: 15px;
+    color: #1A1A2E;
+  }
+  input[type="password"]:focus { outline: 2px solid #3D5A80; }
+  .erro {
+    background: #FDEDED;
+    color: #B3261E;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 13px;
+    margin-top: 14px;
+    display: none;
+  }
+  .erro.visivel { display: block; }
+  button.btn {
+    display: block;
+    width: 100%;
+    background: #3D5A80;
+    color: #fff;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 15px;
+    padding: 14px 28px;
+    border-radius: 12px;
+    border: none;
+    margin-top: 22px;
+    cursor: pointer;
+  }
+  button.btn:disabled { opacity: 0.6; }
+  a.btn {
+    display: inline-block;
+    background: #3D5A80;
+    color: #fff;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 15px;
+    padding: 14px 28px;
+    border-radius: 12px;
+  }
+  .marca {
+    margin-top: 28px;
+    font-size: 12px;
+    color: #B0ADA6;
+    font-style: italic;
+  }
+  #tela-erro, #tela-sucesso { display: none; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div id="tela-form">
+      <div class="selo">🔑</div>
+      <h1>Escolha uma nova senha</h1>
+      <p>Defina a nova senha da sua conta no Dr.Sig. Depois é só voltar pro app e entrar com ela.</p>
+      <form id="form-senha">
+        <label for="nova">Nova senha</label>
+        <input type="password" id="nova" placeholder="Mínimo 6 caracteres" autocomplete="new-password" />
+        <label for="confirmar">Confirmar nova senha</label>
+        <input type="password" id="confirmar" placeholder="Repita a nova senha" autocomplete="new-password" />
+        <div class="erro" id="erro-form"></div>
+        <button type="submit" class="btn" id="btn-salvar">Salvar nova senha</button>
+      </form>
+    </div>
+
+    <div id="tela-erro">
+      <div class="selo">⚠️</div>
+      <h1>Link inválido ou expirado</h1>
+      <p>Esse link de redefinição de senha não é mais válido. Volte pro app e peça um novo link em "Esqueceu a senha?".</p>
+    </div>
+
+    <div id="tela-sucesso">
+      <div class="selo">✅</div>
+      <h1>Senha alterada!</h1>
+      <p>Sua senha foi atualizada. Volte pro app Dr.Sig e entre com a nova senha.</p>
+      <a class="btn" href="https://play.google.com/store/apps/details?id=br.com.drsig.app">Abrir / baixar o Dr.Sig</a>
+    </div>
+
+    <p class="marca">O consultório e a escuta, no mesmo lugar.</p>
+  </div>
+
+<script>
+  // Chave pública (anon), a mesma já embutida no bundle do app — segura pra
+  // expor num site estático. O access_token de recuperação vem no fragmento
+  // da URL (#access_token=...&type=recovery), colocado ali pelo próprio
+  // /auth/v1/verify do Supabase depois que o link do e-mail é clicado; por
+  // ser fragmento (#), nunca é enviado a nenhum servidor, só o JS local lê.
+  const SUPABASE_URL = 'https://iahtyvqjgukdgrftpyxm.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_GEYLOEfzFHU0zkdpJCNDVw_cVbO_rS6';
+
+  function lerParametrosHash() {
+    const hash = window.location.hash.replace(/^#/, '');
+    return new URLSearchParams(hash);
+  }
+
+  const params = lerParametrosHash();
+  const accessToken = params.get('access_token');
+  const tipo = params.get('type');
+  const erroUrl = params.get('error_description') || params.get('error');
+
+  const telaForm = document.getElementById('tela-form');
+  const telaErro = document.getElementById('tela-erro');
+  const telaSucesso = document.getElementById('tela-sucesso');
+  const erroForm = document.getElementById('erro-form');
+  const btnSalvar = document.getElementById('btn-salvar');
+
+  function mostrarErroForm(msg) {
+    erroForm.textContent = msg;
+    erroForm.classList.add('visivel');
+  }
+
+  if (!accessToken || erroUrl || tipo !== 'recovery') {
+    telaForm.style.display = 'none';
+    telaErro.style.display = 'block';
+  } else {
+    telaForm.style.display = 'block';
+
+    document.getElementById('form-senha').addEventListener('submit', async function (ev) {
+      ev.preventDefault();
+      erroForm.classList.remove('visivel');
+
+      const nova = document.getElementById('nova').value;
+      const confirmar = document.getElementById('confirmar').value;
+
+      if (!nova || nova.length < 6) {
+        mostrarErroForm('A senha precisa ter pelo menos 6 caracteres.');
+        return;
+      }
+      if (nova !== confirmar) {
+        mostrarErroForm('As senhas não coincidem.');
+        return;
+      }
+
+      btnSalvar.disabled = true;
+      btnSalvar.textContent = 'Salvando...';
+
+      try {
+        const resp = await fetch(SUPABASE_URL + '/auth/v1/user', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: 'Bearer ' + accessToken,
+          },
+          body: JSON.stringify({ password: nova }),
+        });
+
+        if (!resp.ok) {
+          const corpo = await resp.json().catch(() => ({}));
+          throw new Error(corpo.msg || corpo.error_description || 'Não foi possível salvar a nova senha.');
+        }
+
+        telaForm.style.display = 'none';
+        telaSucesso.style.display = 'block';
+      } catch (err) {
+        mostrarErroForm(err.message || 'Não foi possível salvar a nova senha. Tente novamente.');
+        btnSalvar.disabled = false;
+        btnSalvar.textContent = 'Salvar nova senha';
+      }
+    });
+  }
+</script>
+</body>
+</html>

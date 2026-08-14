@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  TextInput, Alert, ActivityIndicator, Image, Switch,
+  TextInput, Alert, ActivityIndicator, Image, Switch, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
@@ -18,7 +18,7 @@ import { exportarDadosUsuario } from '../services/exportacaoDados';
 import {
   formatarSaldoBRL, chamarRenovarCreditos, PLANOS_CREDITO_MENSAL_BRL, PLANO_LABEL,
 } from '../services/creditosIA';
-import { excluirConta, alterarEmailLogin } from '../services/conta';
+import { excluirConta, alterarEmailLogin, alterarSenha } from '../services/conta';
 import {
   biometriaDisponivelNoAparelho, loginBiometricoEstaAtivo,
   ativarLoginBiometrico, desativarLoginBiometrico,
@@ -52,6 +52,11 @@ export default function PerfilScreen({ navigation }) {
   const [notifAtrasoEmail, setNotifAtrasoEmail] = useState(true);
   const [notifSalvando, setNotifSalvando] = useState(null);
   const [exportando, setExportando] = useState(false);
+  const [modalSenhaVisivel, setModalSenhaVisivel] = useState(false);
+  const [senhaAtual, setSenhaAtual] = useState('');
+  const [novaSenha, setNovaSenha] = useState('');
+  const [confirmarNovaSenha, setConfirmarNovaSenha] = useState('');
+  const [trocandoSenha, setTrocandoSenha] = useState(false);
 
   const [nome, setNome] = useState('');
   const [cpf, setCpf] = useState('');
@@ -158,6 +163,38 @@ export default function PerfilScreen({ navigation }) {
       Alert.alert('Não foi possível ativar', mensagemDeErro(err));
     } finally {
       setBioProcessando(false);
+    }
+  }
+
+  function fecharModalSenha() {
+    setModalSenhaVisivel(false);
+    setSenhaAtual('');
+    setNovaSenha('');
+    setConfirmarNovaSenha('');
+  }
+
+  async function confirmarTrocaSenha() {
+    if (!senhaAtual || !novaSenha || !confirmarNovaSenha) {
+      Alert.alert('Campos obrigatórios', 'Preencha a senha atual e a nova senha (duas vezes).');
+      return;
+    }
+    if (novaSenha.length < 6) {
+      Alert.alert('Senha muito curta', 'A nova senha precisa ter pelo menos 6 caracteres.');
+      return;
+    }
+    if (novaSenha !== confirmarNovaSenha) {
+      Alert.alert('Senhas diferentes', 'A confirmação não bate com a nova senha.');
+      return;
+    }
+    setTrocandoSenha(true);
+    try {
+      await alterarSenha(user.email, senhaAtual, novaSenha);
+      fecharModalSenha();
+      Alert.alert('Senha alterada', 'Sua senha foi atualizada com sucesso.');
+    } catch (err) {
+      Alert.alert('Não foi possível trocar a senha', mensagemDeErro(err));
+    } finally {
+      setTrocandoSenha(false);
     }
   }
 
@@ -740,6 +777,11 @@ export default function PerfilScreen({ navigation }) {
               <Text style={st.infoValue}>{user.contador_telefone || '—'}</Text>
             </View>
 
+            <Text style={st.sectionTitle}>🎓 Cursos</Text>
+            <TouchableOpacity style={st.trocarSenhaBtn} onPress={() => navigation.navigate('Cursos')}>
+              <Text style={st.trocarSenhaBtnText}>Meu currículo de cursos</Text>
+            </TouchableOpacity>
+
             <Text style={st.sectionTitle}>🔒 Segurança</Text>
             <View style={st.bioRow}>
               <View style={{ flex: 1 }}>
@@ -760,6 +802,10 @@ export default function PerfilScreen({ navigation }) {
                 />
               )}
             </View>
+
+            <TouchableOpacity style={st.trocarSenhaBtn} onPress={() => setModalSenhaVisivel(true)}>
+              <Text style={st.trocarSenhaBtnText}>Alterar senha</Text>
+            </TouchableOpacity>
 
             <Text style={st.sectionTitle}>🔔 Notificações</Text>
             <View style={st.bioRow}>
@@ -809,6 +855,61 @@ export default function PerfilScreen({ navigation }) {
           </>
         )}
       </ScrollView>
+
+      <Modal visible={modalSenhaVisivel} transparent animationType="fade" onRequestClose={fecharModalSenha}>
+        <View style={st.modalOverlay}>
+          <View style={st.modalCard}>
+            <Text style={st.modalTitulo}>Alterar senha</Text>
+
+            <Text style={st.modalLabel}>Senha atual</Text>
+            <TextInput
+              style={st.modalInput}
+              value={senhaAtual}
+              onChangeText={setSenhaAtual}
+              placeholder="Sua senha atual"
+              placeholderTextColor="#B0ADA6"
+              secureTextEntry
+            />
+
+            <Text style={st.modalLabel}>Nova senha</Text>
+            <TextInput
+              style={st.modalInput}
+              value={novaSenha}
+              onChangeText={setNovaSenha}
+              placeholder="Mínimo 6 caracteres"
+              placeholderTextColor="#B0ADA6"
+              secureTextEntry
+            />
+
+            <Text style={st.modalLabel}>Confirmar nova senha</Text>
+            <TextInput
+              style={st.modalInput}
+              value={confirmarNovaSenha}
+              onChangeText={setConfirmarNovaSenha}
+              placeholder="Repita a nova senha"
+              placeholderTextColor="#B0ADA6"
+              secureTextEntry
+            />
+
+            <View style={st.modalBtnRow}>
+              <TouchableOpacity style={st.modalBtnCancelar} onPress={fecharModalSenha} disabled={trocandoSenha}>
+                <Text style={st.modalBtnCancelarText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[st.modalBtnConfirmar, trocandoSenha && { opacity: 0.7 }]}
+                onPress={confirmarTrocaSenha}
+                disabled={trocandoSenha}
+              >
+                {trocandoSenha ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={st.modalBtnConfirmarText}>Salvar</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -820,6 +921,36 @@ const st = StyleSheet.create({
   },
   bioLabel: { fontSize: 15, fontWeight: '700', color: '#1C1C1E' },
   bioSub: { fontSize: 12, color: '#6B6860', marginTop: 4, lineHeight: 17 },
+  trocarSenhaBtn: {
+    backgroundColor: '#FFFFFF', borderRadius: 14, padding: 16, marginBottom: 20,
+    borderWidth: 1, borderColor: '#E8E4DD',
+  },
+  trocarSenhaBtnText: { fontSize: 15, fontWeight: '700', color: '#3D5A80' },
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center', alignItems: 'center', padding: 24,
+  },
+  modalCard: {
+    width: '100%', maxWidth: 420, backgroundColor: '#FFFFFF',
+    borderRadius: 18, padding: 24,
+  },
+  modalTitulo: { fontSize: 18, fontWeight: '700', color: '#1C1C1E', marginBottom: 16 },
+  modalLabel: { fontSize: 13, fontWeight: '600', color: '#1C1C1E', marginBottom: 6, marginTop: 12 },
+  modalInput: {
+    backgroundColor: '#F7F6F3', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 15, color: '#1C1C1E', borderWidth: 1, borderColor: '#E8E4DD',
+  },
+  modalBtnRow: { flexDirection: 'row', gap: 12, marginTop: 24 },
+  modalBtnCancelar: {
+    flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center',
+    backgroundColor: '#F0EEE9',
+  },
+  modalBtnCancelarText: { fontSize: 15, fontWeight: '700', color: '#6B6860' },
+  modalBtnConfirmar: {
+    flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center',
+    backgroundColor: '#3D5A80',
+  },
+  modalBtnConfirmarText: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
   safe: { flex: 1, backgroundColor: '#F5F7FA' },
   scrollInner: { padding: 20, paddingBottom: 50 },
   loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32, gap: 12 },

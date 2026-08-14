@@ -16,6 +16,8 @@ import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import MenuLateral from '../components/MenuLateral';
 import BannerAssinaturaInativa from '../components/BannerAssinaturaInativa';
+import MiniAfazeresBox from '../components/MiniAfazeresBox';
+import MiniAgendaBox from '../components/MiniAgendaBox';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -53,12 +55,19 @@ const CLINICA_BUTTONS = [
   { id: 'search',   icon: 'chatbubbles-outline', label: 'Busca Dr.Sig', screen: 'Busca',      corBadge: COR_OUTROS },
 ];
 
+// Agenda saiu daqui e virou o widget da aba Início — no lugar entrou
+// Pagamentos (despesas do consultório, tela nova).
 const ADMIN_BUTTONS = [
-  { id: 'agenda',     icon: 'calendar-outline',     label: 'Agenda',      screen: 'Agenda',     corBadge: COR_OUTROS },
+  { id: 'pagamentos', icon: 'wallet-outline',       label: 'Pagamentos', screen: 'Pagamentos', corBadge: COR_OUTROS },
   { id: 'financeiro', icon: 'cash-outline',         label: 'Financeiro',  screen: 'Financeiro', corBadge: COR_OUTROS },
   { id: 'cobranca',   icon: 'notifications-outline',label: 'Recebíveis',  screen: 'Cobranca',   corBadge: '#D9A441', corIcone: '#1C1C1E' },
   { id: 'fiscal',     icon: 'receipt-outline',       label: 'Fiscal',      screen: 'Fiscal',    corBadge: COR_OUTROS },
 ];
+
+// Ordem das 3 abas no deslize — Início é a primeira/padrão. Usado tanto
+// pelo deslize quanto pelo toggle de cima.
+const ORDEM_MODOS = ['inicio', 'clinica', 'administrativa'];
+const MODO_LABEL = { inicio: 'Início', clinica: 'Clínica', administrativa: 'Administrativo' };
 
 // ⚠️ Reduzidos para caber tudo na tela sem precisar rolar na maioria dos aparelhos
 const HEADER_H       = 172;
@@ -139,7 +148,7 @@ export default function InicioScreen({ navigation }) {
   const { session } = useAuth();
   const [resumoAgenda, setResumoAgenda] = useState({ total: 0, concluidas: 0 });
   const [user, setUser] = useState(null);
-  const [modo, setModo] = useState('clinica'); // 'clinica' | 'administrativa'
+  const [modo, setModo] = useState('inicio'); // 'inicio' | 'clinica' | 'administrativa'
   const [menuAberto, setMenuAberto] = useState(false);
 
   // Registra o token de push uma vez por sessão de app (não a cada vez que
@@ -149,25 +158,27 @@ export default function InicioScreen({ navigation }) {
     registrarPushToken();
   }, [session.user.id]);
 
-  // ─── Deslize de verdade entre Clínica ⇄ Administrativa ────────────────
+  // ─── Deslize de verdade entre Início ⇄ Clínica ⇄ Administrativa ───────
   // Acompanha o dedo ao vivo durante o arraste (não só anima na soltura) —
   // ver src/hooks/useSwipeHorizontal.js. Toque nos botões de cima usa a
-  // mesma transição de entrada, só sem o arraste.
+  // mesma transição de entrada, só sem o arraste. Início é a 1ª aba (mais à
+  // esquerda) — só nela aparecem o banner do usuário e os widgets.
+  const idxModo = ORDEM_MODOS.indexOf(modo);
   const { panHandlers, animatedStyle: gridAnimatedStyle, entrarDe } = useSwipeHorizontal({
-    onSwipeLeft: () => setModo('administrativa'),
-    onSwipeRight: () => setModo('clinica'),
+    onSwipeLeft: () => trocarModo(ORDEM_MODOS[Math.min(idxModo + 1, ORDEM_MODOS.length - 1)]),
+    onSwipeRight: () => trocarModo(ORDEM_MODOS[Math.max(idxModo - 1, 0)]),
     limiar: SWIPE_THRESHOLD,
-    // Só 2 telas — clínica é a mais à esquerda, administrativa a mais à
-    // direita. Sem isso, deslizar de novo no limite reabria a mesma tela
-    // como se houvesse mais uma (item E.14).
-    podeEsquerda: modo === 'clinica',
-    podeDireita: modo === 'administrativa',
+    // Sem isso, deslizar de novo no limite reabria a mesma tela como se
+    // houvesse mais uma (item E.14).
+    podeEsquerda: idxModo < ORDEM_MODOS.length - 1,
+    podeDireita: idxModo > 0,
   });
 
   function trocarModo(novoModo) {
     if (modo === novoModo) return;
+    const indoParaFrente = ORDEM_MODOS.indexOf(novoModo) > idxModo;
     setModo(novoModo);
-    entrarDe(novoModo === 'administrativa' ? 46 : -46);
+    entrarDe(indoParaFrente ? 46 : -46);
   }
 
   // Mostra no máximo 1x por sessão do app (não a cada vez que a tela ganha
@@ -278,26 +289,21 @@ export default function InicioScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* 🔀 Toggle Clínica / Administrativa — sobrepõe a faixa mais clara do header */}
+      {/* 🔀 Toggle Início / Clínica / Administrativa — sobrepõe a faixa mais
+          clara do fundo do header */}
       <View style={s.toggleWrap}>
-        <TouchableOpacity
-          style={[s.toggleBtn, modo === 'clinica' && s.toggleBtnActive]}
-          activeOpacity={0.8}
-          onPress={() => trocarModo('clinica')}
-        >
-          <Text style={[s.toggleText, modo === 'clinica' && s.toggleTextActive]}>
-            Clínica
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[s.toggleBtn, modo === 'administrativa' && s.toggleBtnActive]}
-          activeOpacity={0.8}
-          onPress={() => trocarModo('administrativa')}
-        >
-          <Text style={[s.toggleText, modo === 'administrativa' && s.toggleTextActive]}>
-            Administrativo
-          </Text>
-        </TouchableOpacity>
+        {ORDEM_MODOS.map((m) => (
+          <TouchableOpacity
+            key={m}
+            style={[s.toggleBtn, modo === m && s.toggleBtnActive]}
+            activeOpacity={0.8}
+            onPress={() => trocarModo(m)}
+          >
+            <Text style={[s.toggleText, modo === m && s.toggleTextActive]}>
+              {MODO_LABEL[m]}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
       <BannerAssinaturaInativa />
@@ -309,52 +315,71 @@ export default function InicioScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
         {...panHandlers}
       >
-        {/* Banner do usuário */}
-        {user ? (
-          <TouchableOpacity
-            style={s.userBanner}
-            activeOpacity={0.7}
-            onPress={() => navigation.navigate('UserProfile')}
-          >
-            <View style={s.userBannerLeft}>
-              <View style={s.userBannerAvatar}>
-                {user.avatar_url ? (
-                  <Image source={{ uri: user.avatar_url }} style={s.userBannerAvatarImg} />
-                ) : (
-                  <Text style={s.userBannerAvatarText}>
-                    {user.nome
-                      .split(' ')
-                      .map(p => p[0])
-                      .join('')
-                      .slice(0, 2)
-                      .toUpperCase()}
-                  </Text>
-                )}
-              </View>
-              <View style={s.userBannerInfo}>
-                <Text style={s.userBannerLabel}>Usuário</Text>
-                <Text style={s.userBannerName}>{user.nome}</Text>
-              </View>
-            </View>
-            <Text style={s.userBannerArrow}>›</Text>
-          </TouchableOpacity>
-        ) : null}
+        {modo === 'inicio' ? (
+          <Animated.View style={gridAnimatedStyle}>
+            {/* Banner do usuário — só aparece na aba Início */}
+            {user ? (
+              <TouchableOpacity
+                style={s.userBanner}
+                activeOpacity={0.7}
+                onPress={() => navigation.navigate('UserProfile')}
+              >
+                <View style={s.userBannerLeft}>
+                  <View style={s.userBannerAvatar}>
+                    {user.avatar_url ? (
+                      <Image source={{ uri: user.avatar_url }} style={s.userBannerAvatarImg} />
+                    ) : (
+                      <Text style={s.userBannerAvatarText}>
+                        {user.nome
+                          .split(' ')
+                          .map(p => p[0])
+                          .join('')
+                          .slice(0, 2)
+                          .toUpperCase()}
+                      </Text>
+                    )}
+                  </View>
+                  <View style={s.userBannerInfo}>
+                    <Text style={s.userBannerLabel}>Usuário</Text>
+                    <Text style={s.userBannerName}>{user.nome}</Text>
+                  </View>
+                </View>
+                <Text style={s.userBannerArrow}>›</Text>
+              </TouchableOpacity>
+            ) : null}
 
-        <Animated.View style={[s.grid, gridAnimatedStyle]}>
-          {botoesAtivos.map((btn) => (
+            <View style={s.widgetsRow}>
+              <MiniAfazeresBox navigation={navigation} />
+              <MiniAgendaBox navigation={navigation} />
+            </View>
+
             <TouchableOpacity
-              key={btn.id}
-              style={s.cell}
+              style={s.arquivoBtn}
               activeOpacity={0.75}
-              onPress={() => navigation.navigate(btn.screen)}
+              onPress={() => navigation.navigate('ArquivoRelatorios')}
             >
-              <View style={[s.cellIconBadge, { backgroundColor: btn.corBadge }]}>
-                <Ionicons name={btn.icon} size={26} color={btn.corIcone || '#FFFFFF'} />
-              </View>
-              <Text style={s.cellLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{btn.label}</Text>
+              <Ionicons name="folder-outline" size={20} color={COLORS.btnBlue} />
+              <Text style={s.arquivoBtnText}>Arquivo e Relatórios</Text>
+              <Ionicons name="chevron-forward" size={18} color={COLORS.textLight} />
             </TouchableOpacity>
-          ))}
-        </Animated.View>
+          </Animated.View>
+        ) : (
+          <Animated.View style={[s.grid, gridAnimatedStyle]}>
+            {botoesAtivos.map((btn) => (
+              <TouchableOpacity
+                key={btn.id}
+                style={s.cell}
+                activeOpacity={0.75}
+                onPress={() => navigation.navigate(btn.screen)}
+              >
+                <View style={[s.cellIconBadge, { backgroundColor: btn.corBadge }]}>
+                  <Ionicons name={btn.icon} size={26} color={btn.corIcone || '#FFFFFF'} />
+                </View>
+                <Text style={s.cellLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{btn.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </Animated.View>
+        )}
       </ScrollView>
 
       <MenuLateral
@@ -515,7 +540,7 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     backgroundColor: COLORS.surface,
     marginHorizontal: 20,
-    marginBottom: 10,
+    marginBottom: 16,
     borderRadius: 14,
     paddingVertical: 8,
     paddingHorizontal: 14,
@@ -571,6 +596,32 @@ const s = StyleSheet.create({
     fontSize: 22,
     color: COLORS.textLight,
     fontWeight: '300',
+  },
+
+  widgetsRow: {
+    flexDirection: 'row',
+    gap: 14,
+    paddingHorizontal: 20,
+    marginBottom: 16,
+  },
+
+  arquivoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: COLORS.surface,
+    marginHorizontal: 20,
+    borderRadius: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    borderWidth: 1.5,
+    borderColor: COLORS.btnBlue,
+  },
+  arquivoBtnText: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.textDark,
   },
 
   grid: {

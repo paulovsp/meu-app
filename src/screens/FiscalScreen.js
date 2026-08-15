@@ -85,7 +85,9 @@ export default function FiscalScreen() {
     setCarregando(false);
   }, [ano, mesIndex, session.user.id]);
 
-  useEffect(() => { carregar(); }, [carregar]);
+  // useFocusEffect já cobre a montagem inicial e o retorno de foco — um
+  // useEffect adicional aqui rodava carregar() em dobro logo na abertura
+  // da tela, dobrando as consultas ao Supabase à toa.
   useFocusEffect(useCallback(() => { carregar(); }, [carregar]));
 
   function mudarMes(delta) {

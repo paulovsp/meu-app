@@ -13,7 +13,7 @@ const COLORS = {
 
 const MAX_LINHAS = 4;
 
-export default function MiniAfazeresBox({ navigation }) {
+export default function MiniAfazeresBox({ navigation, altura }) {
   const [itens, setItens] = useState([]);
 
   useFocusEffect(
@@ -34,7 +34,7 @@ export default function MiniAfazeresBox({ navigation }) {
       onPress={() => navigation.navigate('Afazeres')}
     >
       <View style={s.molduraFina}>
-        <View style={s.caixa}>
+        <View style={[s.caixa, altura ? { minHeight: altura } : null]}>
           <View style={s.header}>
             <Ionicons name="checkbox-outline" size={18} color={COLORS.borderAzul} />
             <Text style={s.titulo}>Afazeres</Text>

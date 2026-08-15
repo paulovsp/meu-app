@@ -18,7 +18,7 @@ function hojeISO() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-export default function MiniAgendaBox({ navigation }) {
+export default function MiniAgendaBox({ navigation, altura }) {
   const [compromissos, setCompromissos] = useState([]);
 
   useFocusEffect(
@@ -39,7 +39,7 @@ export default function MiniAgendaBox({ navigation }) {
       onPress={() => navigation.navigate('Agenda')}
     >
       <View style={s.molduraFina}>
-        <View style={s.caixa}>
+        <View style={[s.caixa, altura ? { minHeight: altura } : null]}>
           <View style={s.header}>
             <Ionicons name="calendar-outline" size={18} color={COLORS.borderAzul} />
             <Text style={s.titulo}>Agenda de hoje</Text>

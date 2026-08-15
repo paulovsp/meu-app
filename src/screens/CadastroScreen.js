@@ -194,7 +194,7 @@ export default function CadastroScreen({ navigation }) {
             style={s.input}
             value={nome}
             onChangeText={setNome}
-            placeholder="Ex: Paulo Reboco"
+            placeholder="Ex: Sigmund Freud"
             placeholderTextColor="#B0ADA6"
             autoFocus
           />

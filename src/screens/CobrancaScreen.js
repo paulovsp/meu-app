@@ -192,9 +192,10 @@ export default function CobrancaScreen() {
       .then(({ data }) => setProfissional(data || null));
   }, [session.user.id]);
 
-  // Recarrega ao mudar de mês/ano (navegação dentro do calendário)...
-  useEffect(() => { carregar(); }, [carregar]);
-  // ...e também ao voltar o foco pra esta tela (ex: após editar um analisante).
+  // useFocusEffect já cobre tanto a montagem inicial quanto voltar o foco
+  // pra esta tela (ex: após editar um analisante) — um useEffect adicional
+  // aqui rodava carregar() em dobro logo na abertura da tela, dobrando as
+  // consultas ao Supabase à toa.
   useFocusEffect(useCallback(() => { carregar(); }, [carregar]));
 
   function onMonthChange(m) {

@@ -30,12 +30,13 @@ import { formatarValorMoeda } from '../services/currency';
 import { horarioJaPassou, getEstadoCompromisso, ESTADO_LABEL } from '../services/compromissoStatus';
 import { mensagemDeErro } from '../services/erros';
 import { useSwipeHorizontal } from '../hooks/useSwipeHorizontal';
+import { usePinchZoom } from '../hooks/usePinchZoom';
 import { corTipoEvento, infoTipoEvento, ehTipoGrupo } from '../services/tiposEvento';
 
 const DIAS_LABEL = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const COL_WIDTH = (SCREEN_WIDTH - 16) / 7;
-const SLOT_HEIGHT = 34;
+const SLOT_HEIGHT_BASE = 34;
 
 const COR_PRESENCIAL = '#A5D6A7'; // verde claro
 const COR_ONLINE = '#1B5E20'; // verde escuro
@@ -203,6 +204,17 @@ export default function AgendaScreen({ navigation }) {
     onSwipeRight: () => (modoView === 'diario' ? mudarDia(-1) : mudarSemana(-1)),
   });
 
+  // Zoom por pinça (2 dedos) na visão semanal: aumenta/diminui o tamanho
+  // dos botões de horário pra facilitar a leitura. Só faz sentido na
+  // semanal (a diária já usa cards grandes de largura total).
+  const { escala: escalaSemanal, panHandlers: pinchPanHandlers, scaleAnim: pinchScaleAnim } = usePinchZoom({
+    min: 0.6,
+    max: 2.2,
+  });
+  const alturaSlotAtual = Math.round(SLOT_HEIGHT_BASE * escalaSemanal);
+  const fontHorarioAtual = Math.max(7, Math.min(13, Math.round(9 * escalaSemanal)));
+  const fontPacienteAtual = Math.max(6, Math.min(11, Math.round(8 * escalaSemanal)));
+
   function slotsDoDiaDaSemana(diaSemana) {
     return availability
       .filter((slot) => slot.day_of_week === diaSemana)
@@ -312,7 +324,7 @@ export default function AgendaScreen({ navigation }) {
         key={key}
         style={[
           styles.slotBtn,
-          { backgroundColor: ocupado ? corTipoEvento(tipo) : '#43A047' },
+          { height: alturaSlotAtual, backgroundColor: ocupado ? corTipoEvento(tipo) : '#43A047' },
         ]}
         onPress={() => abrirCompromissoOuEdicao({ slot, dataISO })}
         onLongPress={() => {
@@ -320,12 +332,12 @@ export default function AgendaScreen({ navigation }) {
         }}
         activeOpacity={0.75}
       >
-        <Text style={styles.slotHorarioTxt} numberOfLines={1}>
+        <Text style={[styles.slotHorarioTxt, { fontSize: fontHorarioAtual }]} numberOfLines={1}>
           {horario}
         </Text>
 
         {ocupado && (
-          <Text style={styles.slotPacienteTxt} numberOfLines={1}>
+          <Text style={[styles.slotPacienteTxt, { fontSize: fontPacienteAtual }]} numberOfLines={1}>
             {nomePaciente}
           </Text>
         )}
@@ -608,6 +620,7 @@ export default function AgendaScreen({ navigation }) {
               day: '2-digit',
               month: '2-digit',
             })}
+            {Math.abs(escalaSemanal - 1) > 0.02 ? `  ·  zoom ${Math.round(escalaSemanal * 100)}%` : ''}
           </Text>
 
           <TouchableOpacity onPress={() => mudarSemana(1)}>
@@ -635,7 +648,13 @@ export default function AgendaScreen({ navigation }) {
           </View>
         ) : (
           <>
-            {modoView === 'semanal' && renderSemanal()}
+            {modoView === 'semanal' && (
+              <View style={{ flex: 1 }} {...pinchPanHandlers}>
+                <Animated.View style={{ flex: 1, transform: [{ scaleY: pinchScaleAnim }] }}>
+                  {renderSemanal()}
+                </Animated.View>
+              </View>
+            )}
             {modoView === 'diario' && renderDiario()}
           </>
         )}
@@ -720,7 +739,7 @@ const styles = StyleSheet.create({
   diaHeaderData: { fontSize: 9, color: '#555555' },
   listaSlots: { padding: 3 },
   slotBtn: {
-    height: SLOT_HEIGHT,
+    height: SLOT_HEIGHT_BASE,
     borderRadius: 5,
     marginBottom: 3,
     justifyContent: 'center',

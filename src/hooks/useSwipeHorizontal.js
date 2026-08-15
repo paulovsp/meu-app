@@ -62,6 +62,7 @@ export function useSwipeHorizontal({
       onStartShouldSetPanResponderCapture: () => false,
       onMoveShouldSetPanResponderCapture: (_evt, gestureState) => {
         if (!ativoRef.current) return false;
+        if (_evt.nativeEvent.touches.length > 1) return false;
         return (
           Math.abs(gestureState.dx) > 18 &&
           Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.5

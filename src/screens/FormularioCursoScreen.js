@@ -15,6 +15,7 @@ import {
 } from '../services/cursos';
 import { mensagemDeErro } from '../services/erros';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
+import { dataBRParaISO, dataISOParaBR } from '../services/validacao';
 
 const COLORS = {
   bg: '#F7F6F3',
@@ -50,6 +51,21 @@ const RECORDING_OPTIONS = {
   },
 };
 
+// Mesmo padrão de máscara de data usado em FormularioAnalisanteScreen/
+// PerfilScreen/CadastroScreen — insere as barras enquanto digita, sempre
+// DD/MM/AAAA (esse campo antes aceitava texto livre em AAAA-MM-DD, o único
+// lugar do app fora desse padrão).
+function formatarDataDigitada(texto, setter) {
+  const numeros = texto.replace(/\D/g, '');
+  let formatado = numeros;
+  if (numeros.length >= 3 && numeros.length <= 4) {
+    formatado = `${numeros.slice(0, 2)}/${numeros.slice(2)}`;
+  } else if (numeros.length > 4) {
+    formatado = `${numeros.slice(0, 2)}/${numeros.slice(2, 4)}/${numeros.slice(4, 8)}`;
+  }
+  setter(formatado);
+}
+
 function formatarTempo(seg) {
   const m = Math.floor(seg / 60).toString().padStart(2, '0');
   const s = (seg % 60).toString().padStart(2, '0');
@@ -73,7 +89,7 @@ export default function FormularioCursoScreen() {
   const [custo, setCusto] = useState(cursoInicial?.custo ? String(cursoInicial.custo) : '');
   const [formato, setFormato] = useState(cursoInicial?.formato || 'presencial');
   const [local, setLocal] = useState(cursoInicial?.local || '');
-  const [data, setData] = useState(cursoInicial?.data || '');
+  const [data, setData] = useState(cursoInicial?.data ? dataISOParaBR(cursoInicial.data) : '');
   const [anotacoes, setAnotacoes] = useState(cursoInicial?.anotacoes || '');
   const [salvando, setSalvando] = useState(false);
   const [removendo, setRemovendo] = useState(false);
@@ -93,7 +109,7 @@ export default function FormularioCursoScreen() {
       setCusto(encontrado.custo ? String(encontrado.custo) : '');
       setFormato(encontrado.formato || 'presencial');
       setLocal(encontrado.local || '');
-      setData(encontrado.data || '');
+      setData(encontrado.data ? dataISOParaBR(encontrado.data) : '');
       setAnotacoes(encontrado.anotacoes || '');
       setTranscricaoManual(encontrado.transcript || '');
     }).finally(() => setCarregandoCurso(false));
@@ -132,7 +148,7 @@ export default function FormularioCursoScreen() {
         cargaHoraria: cargaHoraria ? parseFloat(cargaHoraria.replace(',', '.')) : null,
         custo: custo ? parseFloat(custo.replace(',', '.')) : null,
         formato, local: formato === 'presencial' ? local : null,
-        data: data || null, anotacoes,
+        data: data ? dataBRParaISO(data) : null, anotacoes,
       };
       const salvo = curso ? await editarCurso(curso.id, dados) : await criarCurso(dados);
       setCurso(salvo);
@@ -323,7 +339,15 @@ export default function FormularioCursoScreen() {
         )}
 
         <Text style={s.label}>Data</Text>
-        <TextInput style={s.input} value={data} onChangeText={setData} placeholder="AAAA-MM-DD" placeholderTextColor="#B0ADA6" />
+        <TextInput
+          style={s.input}
+          value={data}
+          onChangeText={(t) => formatarDataDigitada(t, setData)}
+          placeholder="DD/MM/AAAA"
+          placeholderTextColor="#B0ADA6"
+          keyboardType="numeric"
+          maxLength={10}
+        />
 
         <Text style={s.label}>Anotações</Text>
         <TextInput

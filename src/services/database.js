@@ -1074,13 +1074,23 @@ export async function getPrecoMedioSessao() {
   const { data, error } = await supabase.from('patients').select('preco_sessao, preco_moeda');
   if (error) throw error;
 
-  const precos = [];
-  for (const p of data || []) {
-    const valor = parsePreco(p.preco_sessao);
-    if (valor > 0) precos.push(await converterParaBRL(valor, p.preco_moeda));
-  }
-  if (precos.length === 0) return 0;
-  return precos.reduce((soma, v) => soma + v, 0) / precos.length;
+  const comPreco = (data || [])
+    .map((p) => ({ valor: parsePreco(p.preco_sessao), moeda: p.preco_moeda }))
+    .filter((p) => p.valor > 0);
+  if (comPreco.length === 0) return 0;
+
+  // Busca a cotação de cada moeda estrangeira envolvida UMA vez só (não uma
+  // vez por analisante) — antes disparava um round-trip ao Supabase por
+  // analisante com preço em moeda estrangeira, em sequência (await dentro
+  // de um for), o que sozinho já deixava o Perfil lento pra abrir com uma
+  // agenda cheia.
+  const moedasEstrangeiras = [...new Set(comPreco.map((p) => p.moeda).filter((m) => m && m !== 'BRL'))];
+  const taxas = Object.fromEntries(
+    await Promise.all(moedasEstrangeiras.map(async (moeda) => [moeda, await converterParaBRL(1, moeda)]))
+  );
+
+  const precosBRL = comPreco.map((p) => (p.moeda && p.moeda !== 'BRL' ? p.valor * (taxas[p.moeda] ?? 1) : p.valor));
+  return precosBRL.reduce((soma, v) => soma + v, 0) / precosBRL.length;
 }
 
 /** Contagens separadas — um paciente pode contar nas duas ao mesmo tempo
@@ -1097,13 +1107,19 @@ export async function getContagemAnalisantesESupervisionandos() {
 }
 
 /** Sessões (de qualquer analisante) sem transcrição/relato preenchido —
- * mesmo critério já usado em temTranscricaoParaData (string vazia depois
- * de trim conta como "sem relato"). */
+ * mesmo critério já usado em temTranscricaoParaData (nulo ou string vazia
+ * conta como "sem relato"). Usa count/head — antes baixava o TEXTO
+ * COMPLETO da transcrição de toda sessão já gravada só pra contar quantas
+ * estavam vazias, o que sozinho podia ser a maior parte do tempo de
+ * carregamento do Perfil numa agenda com muito histórico. */
 export async function getContagemSessoesSemRelato() {
   const { supabase } = require('./supabase');
-  const { data, error } = await supabase.from('sessions').select('transcript');
+  const { count, error } = await supabase
+    .from('sessions')
+    .select('*', { count: 'exact', head: true })
+    .or('transcript.is.null,transcript.eq.');
   if (error) throw error;
-  return (data || []).filter((s) => !(s.transcript || '').trim()).length;
+  return count || 0;
 }
 
 /** Horários recorrentes cadastrados na agenda: quantos estão ocupados
@@ -1158,6 +1174,19 @@ export async function getPlanoFinanceiro(dataRef = new Date()) {
   const ano = dataRef.getFullYear();
   const mesIndex = dataRef.getMonth();
 
+  // Busca a cotação de cada moeda estrangeira envolvida UMA vez só (não
+  // uma vez por horário) — antes rodava um round-trip ao Supabase por slot
+  // com preço em moeda estrangeira, em sequência (await dentro do for),
+  // somando o tempo de todos. Isso sozinho já deixava Financeiro, Fiscal e
+  // Recebíveis lentos pra abrir (os três chamam esta função).
+  const moedasEstrangeiras = [...new Set(
+    slots.map((s) => s.patient_preco_moeda).filter((m) => m && m !== 'BRL')
+  )];
+  const taxas = Object.fromEntries(
+    await Promise.all(moedasEstrangeiras.map(async (moeda) => [moeda, await converterParaBRL(1, moeda)]))
+  );
+  const precoEmBRL = (valor, moeda) => (moeda && moeda !== 'BRL' ? valor * (taxas[moeda] ?? 1) : valor);
+
   let totalDiario = 0;
   let totalSemanal = 0;
   let totalMensal = 0;
@@ -1166,7 +1195,7 @@ export async function getPlanoFinanceiro(dataRef = new Date()) {
   const porPaciente = {};
 
   for (const slot of slots) {
-    const preco = await converterParaBRL(parsePreco(slot.patient_preco), slot.patient_preco_moeda);
+    const preco = precoEmBRL(parsePreco(slot.patient_preco), slot.patient_preco_moeda);
 
     totalSemanal += preco;
     itensSemanal.push({
@@ -1343,8 +1372,11 @@ export async function getPagamentosSessaoPorPeriodo(patientId, inicioISO, fimISO
  */
 export async function getRecebimentosDoMes(ano, mesIndex) {
   const { supabase } = require('./supabase');
-  const plano = await getPlanoFinanceiro(new Date(ano, mesIndex, 1));
-  const statusMap = await getStatusPagamentos(ano, mesIndex);
+  // Independentes entre si — rodar em sequência somava o tempo das duas.
+  const [plano, statusMap] = await Promise.all([
+    getPlanoFinanceiro(new Date(ano, mesIndex, 1)),
+    getStatusPagamentos(ano, mesIndex),
+  ]);
 
   const patientIds = plano.cronogramaRecebimentos.map((r) => r.patient_id);
   const contatos = {};
@@ -1383,25 +1415,31 @@ export async function getRecebimentosDoMes(ano, mesIndex) {
     .eq('tipo_cobranca', 'por_sessao');
   if (errPS) throw errPS;
 
-  const recebimentosSessao = [];
-  for (const p of porSessaoPacientes || []) {
-    const { valor, sessoes } = await getPagamentosSessaoDoMes(p.id, ano, mesIndex);
-    recebimentosSessao.push({
-      patient_id: p.id,
-      nome: p.nome,
-      tipo_cobranca: 'por_sessao',
-      tipo_emissao_fiscal: p.tipo_emissao_fiscal || 'recibo',
-      fiscal_frequencia_automatica: p.fiscal_frequencia_automatica || null,
-      dia_pagamento: null,
-      valorPrevisto: valor,
-      sessoesPagas: sessoes,
-      telefone: p.telefone || null,
-      email: p.email || null,
-      cpf: p.cpf || null,
-      recebido: valor > 0,
-      data_recebimento: null,
-    });
-  }
+  // Uma consulta por analisante de cobrança "por sessão" — antes rodava em
+  // sequência (um await por vez dentro de um for), somando o tempo de
+  // todas; em paralelo o tempo total vira o da mais lenta, não a soma. Era
+  // a principal causa da demora pra abrir Recebíveis com vários
+  // analisantes nessa modalidade.
+  const recebimentosSessao = await Promise.all(
+    (porSessaoPacientes || []).map(async (p) => {
+      const { valor, sessoes } = await getPagamentosSessaoDoMes(p.id, ano, mesIndex);
+      return {
+        patient_id: p.id,
+        nome: p.nome,
+        tipo_cobranca: 'por_sessao',
+        tipo_emissao_fiscal: p.tipo_emissao_fiscal || 'recibo',
+        fiscal_frequencia_automatica: p.fiscal_frequencia_automatica || null,
+        dia_pagamento: null,
+        valorPrevisto: valor,
+        sessoesPagas: sessoes,
+        telefone: p.telefone || null,
+        email: p.email || null,
+        cpf: p.cpf || null,
+        recebido: valor > 0,
+        data_recebimento: null,
+      };
+    })
+  );
 
   return [...recebimentosMensal, ...recebimentosSessao].sort((a, b) => a.nome.localeCompare(b.nome));
 }

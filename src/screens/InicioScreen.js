@@ -15,12 +15,12 @@ import { registrarPushToken } from '../services/pushToken';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import MenuLateral from '../components/MenuLateral';
-import BannerAssinaturaInativa from '../components/BannerAssinaturaInativa';
+import { assinaturaEstaAtiva, MENSAGEM_ASSINATURA_INATIVA } from '../services/assinatura';
 import MiniAfazeresBox from '../components/MiniAfazeresBox';
 import MiniAgendaBox from '../components/MiniAgendaBox';
 import { CLINICA_BUTTONS, ADMIN_BUTTONS } from '../constants/menuBotoes';
 
-const { width: SW } = Dimensions.get('window');
+const { width: SW, height: SH } = Dimensions.get('window');
 
 import FreudImage from '../../assets/freud.png';
 
@@ -66,13 +66,38 @@ const TOGGLE_OVERLAP = 34;
 
 // Grade principal — a largura da caixa é calculada a partir da tela para
 // caber exatamente 2 por linha sem sobra de pixel (antes usava '47%', que
-// deixava um resto assimétrico de alguns pixels de um dos lados). O gap
-// vertical é maior que o horizontal para ocupar o espaço que sobrava
-// embaixo da tela, mantendo a largura/altura da caixa como está hoje.
+// deixava um resto assimétrico de alguns pixels de um dos lados).
+//
+// A altura também é calculada (não é mais aspectRatio fixo) — com só 4
+// botões em 2 linhas, uma altura fixa deixava uma faixa vazia embaixo da
+// tela em aparelhos mais altos. TOGGLE_H é uma medida aproximada da barra
+// Início/Clínica/Administrativo (padding + texto), não um valor exato do
+// layout — se o toggle mudar de tamanho, reconferir aqui.
 const GRID_PADDING = 20;
 const GRID_COL_GAP = 14;
-const GRID_ROW_GAP = 26;
+const GRID_ROW_GAP = 16;
 const CELL_W = (SW - GRID_PADDING * 2 - GRID_COL_GAP) / 2;
+const TOGGLE_H = 52;
+const GRID_ROWS = 2;
+const ESPACO_ACIMA_DA_GRADE =
+  (HEADER_H + FREUD_OVERFLOW - TOGGLE_OVERLAP) + TOGGLE_H + 14 /* scrollContent.paddingTop */;
+const ESPACO_ABAIXO_DA_GRADE = 20; // scrollContent.paddingBottom
+const CELL_H = Math.max(
+  140,
+  (SH - ESPACO_ACIMA_DA_GRADE - ESPACO_ABAIXO_DA_GRADE - GRID_ROW_GAP * (GRID_ROWS - 1)) / GRID_ROWS
+);
+
+// Mesma lógica pra aba Início: Afazeres/Agenda de hoje crescem pra ocupar
+// o espaço vertical que sobrava, com o botão Arquivo e Relatórios (agora
+// fundo azul, igual aos outros botões — só Afazeres/Agenda mantêm a
+// moldura com borda) fixo na parte mais baixa da tela.
+const USER_BANNER_H = 66; // aproximado: avatar 32 + paddingVertical 8*2 + marginBottom 16
+const WIDGETS_ROW_MARGIN_BOTTOM = 16;
+const ARQUIVO_BTN_H = 64;
+const WIDGET_H = Math.max(
+  150,
+  SH - ESPACO_ACIMA_DA_GRADE - ESPACO_ABAIXO_DA_GRADE - USER_BANNER_H - WIDGETS_ROW_MARGIN_BOTTOM - ARQUIVO_BTN_H
+);
 
 // Distância mínima de arraste horizontal para trocar de modo
 const SWIPE_THRESHOLD = 45;
@@ -166,6 +191,19 @@ export default function InicioScreen({ navigation }) {
     const indoParaFrente = ORDEM_MODOS.indexOf(novoModo) > idxModo;
     setModo(novoModo);
     entrarDe(indoParaFrente ? 46 : -46);
+  }
+
+  // Botões que levam pra uma tela de criação (bloqueiaSemAssinatura) checam
+  // a assinatura ANTES de navegar — sem isso, a tela abriria e fecharia
+  // sozinha (o mount-guard de lá é só uma rede de segurança pra quem chega
+  // por outro caminho, ex: deep link). Sem banner fixo ocupando espaço —
+  // o aviso só aparece como popup na hora que faz sentido.
+  async function abrirBotaoGrid(btn) {
+    if (btn.bloqueiaSemAssinatura && !(await assinaturaEstaAtiva())) {
+      Alert.alert('Assinatura inativa', MENSAGEM_ASSINATURA_INATIVA);
+      return;
+    }
+    navigation.navigate(btn.screen);
   }
 
   // Mostra no máximo 1x por sessão do app (não a cada vez que a tela ganha
@@ -293,8 +331,6 @@ export default function InicioScreen({ navigation }) {
         ))}
       </View>
 
-      <BannerAssinaturaInativa />
-
       {/* Área com gesto de arraste — troca de modo ao arrastar para os lados */}
       <ScrollView
         style={{ flex: 1 }}
@@ -336,22 +372,18 @@ export default function InicioScreen({ navigation }) {
             ) : null}
 
             <View style={s.widgetsRow}>
-              <MiniAfazeresBox navigation={navigation} />
-              <MiniAgendaBox navigation={navigation} />
+              <MiniAfazeresBox navigation={navigation} altura={WIDGET_H} />
+              <MiniAgendaBox navigation={navigation} altura={WIDGET_H} />
             </View>
 
             <TouchableOpacity
-              style={s.arquivoMolduraGrossa}
+              style={[s.arquivoBtnAzul, { height: ARQUIVO_BTN_H }]}
               activeOpacity={0.75}
               onPress={() => navigation.navigate('ArquivoRelatorios')}
             >
-              <View style={s.arquivoMolduraFina}>
-                <View style={s.arquivoBtn}>
-                  <Ionicons name="folder-outline" size={24} color={COLORS.btnBlue} />
-                  <Text style={s.arquivoBtnText}>Arquivo e Relatórios</Text>
-                  <Ionicons name="chevron-forward" size={20} color={COLORS.textLight} />
-                </View>
-              </View>
+              <Ionicons name="folder-outline" size={24} color="#FFFFFF" />
+              <Text style={s.arquivoBtnAzulText}>Arquivo e Relatórios</Text>
+              <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
             </TouchableOpacity>
           </Animated.View>
         ) : (
@@ -361,7 +393,7 @@ export default function InicioScreen({ navigation }) {
                 key={btn.id}
                 style={s.cell}
                 activeOpacity={0.75}
-                onPress={() => navigation.navigate(btn.screen)}
+                onPress={() => abrirBotaoGrid(btn)}
               >
                 <View style={[s.cellIconBadge, { backgroundColor: btn.corBadge }]}>
                   <Ionicons name={btn.icon} size={32} color={btn.corIcone || '#FFFFFF'} />
@@ -596,35 +628,22 @@ const s = StyleSheet.create({
     marginBottom: 16,
   },
 
-  // Moldura em 3 linhas (grossa + fina + fina), mesmo padrão dos widgets
-  // Afazeres/Agenda logo acima.
-  arquivoMolduraGrossa: {
-    marginHorizontal: 20,
-    borderRadius: 18,
-    borderWidth: 3,
-    borderColor: COLORS.btnBlue,
-    padding: 3,
-  },
-  arquivoMolduraFina: {
-    borderRadius: 15,
-    borderWidth: 1,
-    borderColor: COLORS.btnBlue,
-    padding: 2,
-  },
-  arquivoBtn: {
+  // Fundo azul sólido, igual ao tom dos botões das outras abas — só
+  // Afazeres/Agenda (acima) mantêm a moldura com borda.
+  arquivoBtnAzul: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: COLORS.surface,
-    borderRadius: 13,
-    paddingVertical: 20,
+    marginHorizontal: 20,
+    backgroundColor: COLORS.btnBlue,
+    borderRadius: 15,
     paddingHorizontal: 18,
   },
-  arquivoBtnText: {
+  arquivoBtnAzulText: {
     flex: 1,
     fontSize: 16,
     fontWeight: '700',
-    color: COLORS.textDark,
+    color: '#FFFFFF',
   },
 
   grid: {
@@ -637,7 +656,7 @@ const s = StyleSheet.create({
   },
   cell: {
     width: CELL_W,
-    aspectRatio: 1.05,
+    height: CELL_H,
     backgroundColor: COLORS.btnBlue,
     borderRadius: 22,
     paddingVertical: 22,

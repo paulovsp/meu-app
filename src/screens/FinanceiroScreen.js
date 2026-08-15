@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Animated } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Animated, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -83,7 +83,15 @@ export default function FinanceiroScreen() {
     },
   });
 
-  if (!plano) return null;
+  if (!plano) {
+    return (
+      <SafeAreaView style={s.container} edges={['bottom']}>
+        <View style={s.carregandoWrap}>
+          <ActivityIndicator size="large" color="#3D5A80" />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   const semAgenda = plano.itensSemanal.length === 0;
 
@@ -193,6 +201,7 @@ export default function FinanceiroScreen() {
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F5F7FA' },
+  carregandoWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
   toggleWrap: {
     flexDirection: 'row',

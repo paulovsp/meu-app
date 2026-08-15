@@ -153,15 +153,19 @@ export default function CobrancaScreen() {
   const [diaSelecionado, setDiaSelecionado] = useState(null);
   const [atualizandoId, setAtualizandoId] = useState(null);
   const [profissional, setProfissional] = useState(null);
+  const [carregando, setCarregando] = useState(true);
 
   const ano = refDate.getFullYear();
   const mesIndex = refDate.getMonth();
 
   const carregar = useCallback(async () => {
+    setCarregando(true);
     try {
       setRecebimentos(await getRecebimentosDoMes(ano, mesIndex));
     } catch (e) {
       Alert.alert('Erro ao carregar', mensagemDeErro(e));
+    } finally {
+      setCarregando(false);
     }
   }, [ano, mesIndex]);
 
@@ -299,7 +303,11 @@ export default function CobrancaScreen() {
             )}
           </View>
 
-          {listaDoDia.length === 0 ? (
+          {carregando ? (
+            <View style={s.carregandoWrap}>
+              <ActivityIndicator size="large" color="#3D5A80" />
+            </View>
+          ) : listaDoDia.length === 0 ? (
             <Vazio
               texto={
                 diaSelecionado
@@ -412,4 +420,5 @@ const s = StyleSheet.create({
 
   vazio: { alignItems: 'center', paddingVertical: 24, gap: 10 },
   vazioTexto: { fontSize: 13, color: '#999', textAlign: 'center', lineHeight: 19 },
+  carregandoWrap: { alignItems: 'center', paddingVertical: 24 },
 });

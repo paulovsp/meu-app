@@ -14,6 +14,7 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const ASSEMBLYAI_API_KEY = Deno.env.get('ASSEMBLYAI_API_KEY')!;
 const ASSEMBLYAI_WEBHOOK_SECRET = Deno.env.get('ASSEMBLYAI_WEBHOOK_SECRET')!;
+const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!;
 
 const ASSEMBLYAI_TRANSCRIPT_URL = 'https://api.assemblyai.com/v2/transcript';
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
@@ -79,7 +80,7 @@ Deno.serve(async (req) => {
 
     if (statusRecebido === 'error') {
       await supabaseAdmin.from('sessions').update({ transcricao_status: 'erro' }).eq('id', sessao.id);
-      await enviarPush(userId, sessao.id, 'Não foi possível transcrever', 'Toque para tentar novamente.', supabaseAdmin);
+      await enviarNotificacaoTranscricao(userId, sessao.id, 'Não foi possível transcrever', 'Toque para tentar novamente.', supabaseAdmin);
       return json({ ok: true });
     }
 
@@ -94,7 +95,7 @@ Deno.serve(async (req) => {
 
     if (transcript.status === 'error') {
       await supabaseAdmin.from('sessions').update({ transcricao_status: 'erro' }).eq('id', sessao.id);
-      await enviarPush(userId, sessao.id, 'Não foi possível transcrever', String(transcript.error || ''), supabaseAdmin);
+      await enviarNotificacaoTranscricao(userId, sessao.id, 'Não foi possível transcrever', String(transcript.error || ''), supabaseAdmin);
       return json({ ok: true });
     }
 
@@ -143,7 +144,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    await enviarPush(userId, sessao.id, 'Transcrição pronta', 'A transcrição da sua sessão já está disponível.', supabaseAdmin);
+    await enviarNotificacaoTranscricao(userId, sessao.id, 'Transcrição pronta', 'A transcrição da sua sessão já está disponível.', supabaseAdmin);
 
     return json({ ok: true });
   } catch (err) {
@@ -151,7 +152,10 @@ Deno.serve(async (req) => {
   }
 });
 
-async function enviarPush(
+// Manda pelos canais que a pessoa escolheu (item D.10: app e e-mail
+// independentes) — nenhum dos dois é crítico, o status também aparece ao
+// abrir a sessão, então falha de envio nunca interrompe o fluxo.
+async function enviarNotificacaoTranscricao(
   userId: string | undefined,
   sessionId: string,
   title: string,
@@ -159,26 +163,53 @@ async function enviarPush(
   supabaseAdmin: ReturnType<typeof createClient>,
 ) {
   if (!userId) return;
-  try {
-    const { data: perfil } = await supabaseAdmin
-      .from('profiles')
-      .select('expo_push_token, notif_transcricao_push')
-      .eq('id', userId)
-      .single();
-    if (perfil?.notif_transcricao_push === false) return;
-    const token = perfil?.expo_push_token;
-    if (!token) return;
-    await fetch(EXPO_PUSH_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        to: token,
-        title,
-        body: bodyMsg,
-        data: { sessionId },
-      }),
-    });
-  } catch (_) {
-    // Push é reforço, não crítico — a pessoa também vê o status ao abrir a sessão.
+  const { data: perfil } = await supabaseAdmin
+    .from('profiles')
+    .select('email, expo_push_token, notif_transcricao_push, notif_transcricao_email')
+    .eq('id', userId)
+    .single();
+  if (!perfil) return;
+
+  if (perfil.notif_transcricao_push !== false && perfil.expo_push_token) {
+    try {
+      await fetch(EXPO_PUSH_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: perfil.expo_push_token,
+          title,
+          body: bodyMsg,
+          data: { sessionId },
+        }),
+      });
+    } catch (_) {
+      // Push é reforço — falha aqui não deve derrubar o resto do fluxo.
+    }
+  }
+
+  if (perfil.notif_transcricao_email === true && perfil.email) {
+    try {
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${RESEND_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: 'Dr.Sig <naoresponda@drsig.com.br>',
+          to: [perfil.email],
+          subject: title,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1A1A2E;">
+              <h2>${title}</h2>
+              <p>${bodyMsg}</p>
+              <p>Abra o app Dr.Sig para conferir.</p>
+            </div>
+          `,
+        }),
+      });
+    } catch (_) {
+      // E-mail também é reforço, mesmo critério do push.
+    }
   }
 }

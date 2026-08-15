@@ -49,19 +49,27 @@ export default function FiscalScreen() {
   const [recebimentos, setRecebimentos] = useState([]);
   const [user, setUser] = useState(null);
   const [emitindo, setEmitindo] = useState(null);
+  const [carregando, setCarregando] = useState(true);
 
   const ano = refDate.getFullYear();
   const mesIndex = refDate.getMonth();
   const mesLabel = capitalizar(MESES_LABEL[mesIndex]);
 
   const carregar = useCallback(async () => {
-    try {
-      setRecebimentos(await getRecebimentosDoMes(ano, mesIndex));
-    } catch (e) {
-      Alert.alert('Erro ao carregar', mensagemDeErro(e));
+    setCarregando(true);
+    const [recebimentosResultado, perfilResultado] = await Promise.allSettled([
+      getRecebimentosDoMes(ano, mesIndex),
+      supabase.from('profiles').select('*').eq('id', session.user.id).single(),
+    ]);
+    if (recebimentosResultado.status === 'fulfilled') {
+      setRecebimentos(recebimentosResultado.value);
+    } else {
+      Alert.alert('Erro ao carregar', mensagemDeErro(recebimentosResultado.reason));
     }
-    const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
-    setUser(data || null);
+    if (perfilResultado.status === 'fulfilled') {
+      setUser(perfilResultado.value.data || null);
+    }
+    setCarregando(false);
   }, [ano, mesIndex, session.user.id]);
 
   useEffect(() => { carregar(); }, [carregar]);
@@ -144,7 +152,11 @@ export default function FiscalScreen() {
 
         <View style={s.secao}>
           <Text style={s.secaoTitulo}>Recibos/Notas por analisante</Text>
-          {recebimentos.length === 0 ? (
+          {carregando ? (
+            <View style={s.carregandoWrap}>
+              <ActivityIndicator size="large" color="#3D5A80" />
+            </View>
+          ) : recebimentos.length === 0 ? (
             <Vazio texto={'Nenhum analisante com cobrança definida para este mês.'} />
           ) : (
             recebimentos.map((item) => (
@@ -306,4 +318,5 @@ const s = StyleSheet.create({
 
   vazio: { alignItems: 'center', paddingVertical: 24, gap: 10 },
   vazioTexto: { fontSize: 13, color: '#999', textAlign: 'center', lineHeight: 19 },
+  carregandoWrap: { alignItems: 'center', paddingVertical: 24 },
 });

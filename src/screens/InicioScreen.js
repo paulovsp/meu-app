@@ -42,26 +42,25 @@ const COLORS = {
   btnShadow:   '#1A2D45',
 };
 
-// Cor do badge do ícone por botão — item E.11 ("ícones sem graça",
-// monocromáticos). Nova Sessão/Novo Registro/Recebíveis usam a cor
-// combinada com o usuário; o resto cai em "outros" (#6B7A8F). O badge do
-// Recebíveis usa ícone escuro em vez de branco porque #D9A441 é claro
-// demais pro branco cumprir o contraste mínimo AA (WCAG 1.4.11, 3:1).
-const COR_OUTROS = '#6B7A8F';
+// Paleta própria por botão (item E.11/B.6) — cada tela tem sua cor e seu
+// ícone, tirados de uma paleta quente/fria equilibrada em vez de todo mundo
+// caindo no mesmo cinza genérico "outros". O badge do Recebíveis usa ícone
+// escuro em vez de branco porque #D9A441 é claro demais pro branco cumprir
+// o contraste mínimo AA (WCAG 1.4.11, 3:1).
 const CLINICA_BUTTONS = [
-  { id: 'session',  icon: 'mic-outline',       label: 'Nova Sessão',    screen: 'NewSession', corBadge: '#3D5A80' },
-  { id: 'record',   icon: 'clipboard-outline', label: 'Novo Registro',  screen: 'AddRecord',  corBadge: '#4C9F8F' },
-  { id: 'patients', icon: 'person-outline',    label: 'Analisantes',    screen: 'Patients',   corBadge: COR_OUTROS },
-  { id: 'search',   icon: 'chatbubbles-outline', label: 'Busca Dr.Sig', screen: 'Busca',      corBadge: COR_OUTROS },
+  { id: 'session',  icon: 'mic-outline',      label: 'Nova Sessão',   screen: 'NewSession', corBadge: '#3D5A80' },
+  { id: 'record',   icon: 'clipboard-outline', label: 'Novo Registro', screen: 'AddRecord',  corBadge: '#4C9F8F' },
+  { id: 'patients', icon: 'people-outline',    label: 'Analisantes',   screen: 'Patients',   corBadge: '#C97B4A' },
+  { id: 'search',   icon: 'sparkles-outline',  label: 'Busca Dr.Sig',  screen: 'Busca',      corBadge: '#7B6FA6' },
 ];
 
 // Agenda saiu daqui e virou o widget da aba Início — no lugar entrou
 // Pagamentos (despesas do consultório, tela nova).
 const ADMIN_BUTTONS = [
-  { id: 'pagamentos', icon: 'wallet-outline',       label: 'Pagamentos', screen: 'Pagamentos', corBadge: COR_OUTROS },
-  { id: 'financeiro', icon: 'cash-outline',         label: 'Financeiro',  screen: 'Financeiro', corBadge: COR_OUTROS },
-  { id: 'cobranca',   icon: 'notifications-outline',label: 'Recebíveis',  screen: 'Cobranca',   corBadge: '#D9A441', corIcone: '#1C1C1E' },
-  { id: 'fiscal',     icon: 'receipt-outline',       label: 'Fiscal',      screen: 'Fiscal',    corBadge: COR_OUTROS },
+  { id: 'pagamentos', icon: 'wallet-outline',     label: 'Pagamentos', screen: 'Pagamentos', corBadge: '#4C8FA6' },
+  { id: 'financeiro', icon: 'stats-chart-outline', label: 'Financeiro',  screen: 'Financeiro', corBadge: '#5B8C5A' },
+  { id: 'cobranca',   icon: 'cash-outline',        label: 'Recebíveis',  screen: 'Cobranca',   corBadge: '#D9A441', corIcone: '#1C1C1E' },
+  { id: 'fiscal',     icon: 'receipt-outline',     label: 'Fiscal',      screen: 'Fiscal',    corBadge: '#A65C4C' },
 ];
 
 // Ordem das 3 abas no deslize — Início é a primeira/padrão. Usado tanto
@@ -354,13 +353,17 @@ export default function InicioScreen({ navigation }) {
             </View>
 
             <TouchableOpacity
-              style={s.arquivoBtn}
+              style={s.arquivoMolduraGrossa}
               activeOpacity={0.75}
               onPress={() => navigation.navigate('ArquivoRelatorios')}
             >
-              <Ionicons name="folder-outline" size={20} color={COLORS.btnBlue} />
-              <Text style={s.arquivoBtnText}>Arquivo e Relatórios</Text>
-              <Ionicons name="chevron-forward" size={18} color={COLORS.textLight} />
+              <View style={s.arquivoMolduraFina}>
+                <View style={s.arquivoBtn}>
+                  <Ionicons name="folder-outline" size={24} color={COLORS.btnBlue} />
+                  <Text style={s.arquivoBtnText}>Arquivo e Relatórios</Text>
+                  <Ionicons name="chevron-forward" size={20} color={COLORS.textLight} />
+                </View>
+              </View>
             </TouchableOpacity>
           </Animated.View>
         ) : (
@@ -373,7 +376,7 @@ export default function InicioScreen({ navigation }) {
                 onPress={() => navigation.navigate(btn.screen)}
               >
                 <View style={[s.cellIconBadge, { backgroundColor: btn.corBadge }]}>
-                  <Ionicons name={btn.icon} size={26} color={btn.corIcone || '#FFFFFF'} />
+                  <Ionicons name={btn.icon} size={32} color={btn.corIcone || '#FFFFFF'} />
                 </View>
                 <Text style={s.cellLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{btn.label}</Text>
               </TouchableOpacity>
@@ -605,21 +608,33 @@ const s = StyleSheet.create({
     marginBottom: 16,
   },
 
+  // Moldura em 3 linhas (grossa + fina + fina), mesmo padrão dos widgets
+  // Afazeres/Agenda logo acima.
+  arquivoMolduraGrossa: {
+    marginHorizontal: 20,
+    borderRadius: 18,
+    borderWidth: 3,
+    borderColor: COLORS.btnBlue,
+    padding: 3,
+  },
+  arquivoMolduraFina: {
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: COLORS.btnBlue,
+    padding: 2,
+  },
   arquivoBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
     backgroundColor: COLORS.surface,
-    marginHorizontal: 20,
-    borderRadius: 14,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    borderWidth: 1.5,
-    borderColor: COLORS.btnBlue,
+    borderRadius: 13,
+    paddingVertical: 20,
+    paddingHorizontal: 18,
   },
   arquivoBtnText: {
     flex: 1,
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '700',
     color: COLORS.textDark,
   },
@@ -634,13 +649,15 @@ const s = StyleSheet.create({
   },
   cell: {
     width: CELL_W,
-    aspectRatio: 0.92,
+    aspectRatio: 1.05,
     backgroundColor: COLORS.btnBlue,
-    borderRadius: 20,
-    paddingVertical: 20,
-    paddingHorizontal: 18,
+    borderRadius: 22,
+    paddingVertical: 22,
+    paddingHorizontal: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 2.5,
+    borderColor: 'rgba(255,255,255,0.35)',
     shadowColor: COLORS.btnShadow,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.28,
@@ -651,19 +668,19 @@ const s = StyleSheet.create({
   // emoji) garante que cada glifo tenha exatamente o mesmo bounding box,
   // eliminando a inconsistência de alinhamento entre ícones diferentes.
   cellIconBadge: {
-    width: 46,
-    height: 46,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.14)',
+    width: 60,
+    height: 60,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.16)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 14,
+    marginBottom: 16,
   },
   cellLabel: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '700',
     color: '#FFFFFF',
-    lineHeight: 19,
+    lineHeight: 21,
     textAlign: 'center',
   },
 });

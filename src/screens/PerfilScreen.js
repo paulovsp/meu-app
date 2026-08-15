@@ -13,7 +13,7 @@ import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { validarCPF, dataBRParaISO, dataISOParaBR } from '../services/validacao';
 import { mensagemDeErro } from '../services/erros';
-import { enviarFotoPerfil } from '../services/avatar';
+import { enviarFotoPerfil, enviarFotoCapa } from '../services/avatar';
 import { exportarDadosUsuario } from '../services/exportacaoDados';
 import {
   formatarSaldoBRL, chamarRenovarCreditos, PLANOS_CREDITO_MENSAL_BRL, PLANO_LABEL,
@@ -48,8 +48,11 @@ export default function PerfilScreen({ navigation }) {
   const [bioAtiva, setBioAtiva] = useState(false);
   const [bioProcessando, setBioProcessando] = useState(false);
   const [enviandoFoto, setEnviandoFoto] = useState(false);
+  const [enviandoCapa, setEnviandoCapa] = useState(false);
   const [notifTranscricaoPush, setNotifTranscricaoPush] = useState(true);
+  const [notifTranscricaoEmail, setNotifTranscricaoEmail] = useState(false);
   const [notifAtrasoEmail, setNotifAtrasoEmail] = useState(true);
+  const [notifAtrasoPush, setNotifAtrasoPush] = useState(false);
   const [notifSalvando, setNotifSalvando] = useState(null);
   const [exportando, setExportando] = useState(false);
   const [modalSenhaVisivel, setModalSenhaVisivel] = useState(false);
@@ -73,11 +76,29 @@ export default function PerfilScreen({ navigation }) {
 
   const carregar = useCallback(async () => {
     setCarregando(true);
-    const { data: u, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', session.user.id)
-      .single();
+    const hoje = new Date();
+
+    // As 3 buscas abaixo são independentes entre si — antes rodavam uma
+    // depois da outra (perfil, DEPOIS plano, DEPOIS estatísticas), somando
+    // o tempo das três. Disparadas juntas com Promise.all, o tempo total
+    // vira o da mais lenta, não a soma — é isso que fazia o Perfil demorar
+    // tanto pra abrir.
+    const [perfilResultado, planoResultado, statsResultado] = await Promise.all([
+      supabase.from('profiles').select('*').eq('id', session.user.id).single(),
+      getPlanoFinanceiro(hoje).catch((e) => ({ __erro: e })),
+      // Promise.allSettled (não Promise.all) — uma consulta falhando não pode
+      // zerar as OUTRAS estatísticas que carregaram normalmente. Cada card
+      // mostra o que conseguiu buscar; erros individuais só vão pro console.
+      Promise.allSettled([
+        getPrecoMedioSessao(),
+        getContagemPacientes(),
+        getContagemSessoesSemRelato(),
+        getResumoHorariosSemanais(),
+        getRecebimentosDoMes(hoje.getFullYear(), hoje.getMonth()),
+      ]),
+    ]);
+
+    const { data: u, error } = perfilResultado;
     if (error) {
       console.error('Erro ao carregar profile (Perfil):', error.message, error);
       Alert.alert('Erro', `Não foi possível carregar seu perfil.\n\n${error.message}`);
@@ -96,7 +117,9 @@ export default function PerfilScreen({ navigation }) {
       setContadorEmail(u.contador_email || '');
       setContadorTelefone(u.contador_telefone || '');
       setNotifTranscricaoPush(u.notif_transcricao_push !== false);
+      setNotifTranscricaoEmail(u.notif_transcricao_email === true);
       setNotifAtrasoEmail(u.notif_atraso_email !== false);
+      setNotifAtrasoPush(u.notif_atraso_push === true);
 
       // Checagem silenciosa de renovação mensal de créditos — se houver
       // renovação pendente, já reflete o saldo/data novos sem recarregar tudo.
@@ -110,31 +133,35 @@ export default function PerfilScreen({ navigation }) {
         }
       });
     }
-    try {
-      setPlano(await getPlanoFinanceiro(new Date()));
-    } catch (e) {
-      Alert.alert('Erro ao carregar', mensagemDeErro(e));
+
+    if (planoResultado?.__erro) {
+      Alert.alert('Erro ao carregar', mensagemDeErro(planoResultado.__erro));
+    } else {
+      setPlano(planoResultado);
     }
-    try {
-      const hoje = new Date();
-      const [precoMedio, totalPacientes, sessoesSemRelato, horarios, recebimentos] = await Promise.all([
-        getPrecoMedioSessao(),
-        getContagemPacientes(),
-        getContagemSessoesSemRelato(),
-        getResumoHorariosSemanais(),
-        getRecebimentosDoMes(hoje.getFullYear(), hoje.getMonth()),
-      ]);
-      setEstatisticas({
-        precoMedio,
-        totalPacientes,
-        sessoesSemRelato,
-        pagamentosEmAberto: recebimentos.filter((r) => !r.recebido).length,
-        horariosOcupados: horarios.ocupados,
-        horariosTotal: horarios.total,
-      });
-    } catch (e) {
-      console.error('Erro ao carregar estatísticas de atividade:', e?.message || e);
-    }
+
+    const [precoMedio, totalPacientes, sessoesSemRelato, horarios, recebimentos] = statsResultado;
+    [
+      ['getPrecoMedioSessao', precoMedio],
+      ['getContagemPacientes', totalPacientes],
+      ['getContagemSessoesSemRelato', sessoesSemRelato],
+      ['getResumoHorariosSemanais', horarios],
+      ['getRecebimentosDoMes', recebimentos],
+    ].forEach(([nome, resultado]) => {
+      if (resultado.status === 'rejected') {
+        console.error(`Erro ao carregar estatística (${nome}):`, resultado.reason?.message || resultado.reason);
+      }
+    });
+    setEstatisticas((atual) => ({
+      precoMedio: precoMedio.status === 'fulfilled' ? precoMedio.value : atual.precoMedio,
+      totalPacientes: totalPacientes.status === 'fulfilled' ? totalPacientes.value : atual.totalPacientes,
+      sessoesSemRelato: sessoesSemRelato.status === 'fulfilled' ? sessoesSemRelato.value : atual.sessoesSemRelato,
+      pagamentosEmAberto: recebimentos.status === 'fulfilled'
+        ? recebimentos.value.filter((r) => !r.recebido).length
+        : atual.pagamentosEmAberto,
+      horariosOcupados: horarios.status === 'fulfilled' ? horarios.value.ocupados : atual.horariosOcupados,
+      horariosTotal: horarios.status === 'fulfilled' ? horarios.value.total : atual.horariosTotal,
+    }));
     setCarregando(false);
   }, [session.user.id]);
 
@@ -212,7 +239,7 @@ export default function PerfilScreen({ navigation }) {
     }
   }
 
-  async function escolherFoto(deCamera) {
+  async function escolherFoto(deCamera, alvo) {
     const perm = deCamera
       ? await ImagePicker.requestCameraPermissionsAsync()
       : await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -220,10 +247,12 @@ export default function PerfilScreen({ navigation }) {
       Alert.alert('Permissão negada', deCamera ? 'Precisamos de acesso à câmera.' : 'Precisamos de acesso à galeria.');
       return;
     }
+    // Perfil é quadrado (avatar circular); capa é retangular, na proporção
+    // do cabeçalho, pra a foto preencher a caixa inteira sem cortar errado.
     const opcoes = {
       mediaTypes: ['images'],
       allowsEditing: true,
-      aspect: [1, 1],
+      aspect: alvo === 'capa' ? [16, 9] : [1, 1],
       quality: 0.6,
     };
     const result = deCamera
@@ -232,6 +261,19 @@ export default function PerfilScreen({ navigation }) {
     if (result.canceled) return;
     const uri = result.assets?.[0]?.uri;
     if (!uri) return;
+
+    if (alvo === 'capa') {
+      setEnviandoCapa(true);
+      try {
+        const novaUrl = await enviarFotoCapa(uri);
+        setUser((atual) => (atual ? { ...atual, capa_url: novaUrl } : atual));
+      } catch (err) {
+        Alert.alert('Erro ao enviar foto', mensagemDeErro(err));
+      } finally {
+        setEnviandoCapa(false);
+      }
+      return;
+    }
 
     setEnviandoFoto(true);
     try {
@@ -247,8 +289,16 @@ export default function PerfilScreen({ navigation }) {
   function trocarFoto() {
     Alert.alert('Foto de perfil', 'Escolha de onde pegar a foto.', [
       { text: 'Cancelar', style: 'cancel' },
-      { text: 'Galeria', onPress: () => escolherFoto(false) },
-      { text: 'Câmera', onPress: () => escolherFoto(true) },
+      { text: 'Galeria', onPress: () => escolherFoto(false, 'perfil') },
+      { text: 'Câmera', onPress: () => escolherFoto(true, 'perfil') },
+    ]);
+  }
+
+  function trocarCapa() {
+    Alert.alert('Foto de fundo', 'Escolha de onde pegar a foto.', [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Galeria', onPress: () => escolherFoto(false, 'capa') },
+      { text: 'Câmera', onPress: () => escolherFoto(true, 'capa') },
     ]);
   }
 
@@ -437,34 +487,65 @@ export default function PerfilScreen({ navigation }) {
     <SafeAreaView style={st.safe} edges={['bottom']}>
       <ScrollView contentContainerStyle={st.scrollInner}>
         {/* ── Cabeçalho ── */}
-        <View style={st.headerCard}>
-          <TouchableOpacity
-            style={st.avatar}
-            onPress={trocarFoto}
-            disabled={enviandoFoto}
-            activeOpacity={0.8}
-          >
-            {user.avatar_url ? (
-              <Image source={{ uri: user.avatar_url }} style={st.avatarImg} />
-            ) : (
-              <Text style={st.avatarText}>
-                {(user.nome || '?')
-                  .split(' ')
-                  .map(p => p[0])
-                  .join('')
-                  .slice(0, 2)
-                  .toUpperCase()}
-              </Text>
-            )}
-            {enviandoFoto && (
-              <View style={st.avatarLoadingOverlay}>
-                <ActivityIndicator color="#FFFFFF" size="small" />
+        <View style={st.headerMolduraGrossa}>
+          <View style={st.headerMolduraFina}>
+            <TouchableOpacity
+              style={st.headerCard}
+              onPress={trocarCapa}
+              disabled={enviandoCapa}
+              activeOpacity={0.9}
+            >
+              {user.capa_url ? (
+                <Image source={{ uri: user.capa_url }} style={st.headerCapaImg} resizeMode="cover" />
+              ) : (
+                <View style={st.headerCapaVazia} />
+              )}
+              <View style={st.headerOverlay} />
+
+              {enviandoCapa && (
+                <View style={st.headerCapaLoadingOverlay}>
+                  <ActivityIndicator color="#FFFFFF" />
+                </View>
+              )}
+              <View style={st.headerCapaHint}>
+                <Text style={st.headerCapaHintText}>📷 Toque pra trocar o fundo</Text>
               </View>
-            )}
-          </TouchableOpacity>
-          <Text style={st.avatarHint}>Toque pra trocar a foto</Text>
-          <Text style={st.nomeHeader}>{user.nome || 'Sem nome'}</Text>
-          {user.crp ? <Text style={st.crpHeader}>{user.crp}</Text> : null}
+
+              <View style={st.headerConteudo} pointerEvents="box-none">
+                <TouchableOpacity
+                  style={st.avatarMolduraGrossa}
+                  onPress={trocarFoto}
+                  disabled={enviandoFoto}
+                  activeOpacity={0.8}
+                >
+                  <View style={st.avatarMolduraFina}>
+                    <View style={st.avatar}>
+                      {user.avatar_url ? (
+                        <Image source={{ uri: user.avatar_url }} style={st.avatarImg} />
+                      ) : (
+                        <Text style={st.avatarText}>
+                          {(user.nome || '?')
+                            .split(' ')
+                            .map(p => p[0])
+                            .join('')
+                            .slice(0, 2)
+                            .toUpperCase()}
+                        </Text>
+                      )}
+                      {enviandoFoto && (
+                        <View style={st.avatarLoadingOverlay}>
+                          <ActivityIndicator color="#FFFFFF" size="small" />
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                </TouchableOpacity>
+                <Text style={st.avatarHint}>Toque na foto pra trocar</Text>
+                <Text style={st.nomeHeader}>{user.nome || 'Sem nome'}</Text>
+                {user.crp ? <Text style={st.crpHeader}>{user.crp}</Text> : null}
+              </View>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* ── Sua atividade ── */}
@@ -808,33 +889,66 @@ export default function PerfilScreen({ navigation }) {
             </TouchableOpacity>
 
             <Text style={st.sectionTitle}>🔔 Notificações</Text>
-            <View style={st.bioRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={st.bioLabel}>Transcrição pronta</Text>
-                <Text style={st.bioSub}>Aviso no app quando a transcrição de uma sessão terminar (ou falhar).</Text>
+            <View style={st.notifMatrizCard}>
+              <View style={st.notifMatrizHeader}>
+                <Text style={st.notifMatrizHeaderTipo} />
+                <Text style={st.notifMatrizHeaderCanal}>App</Text>
+                <Text style={st.notifMatrizHeaderCanal}>E-mail</Text>
               </View>
-              {notifSalvando === 'notif_transcricao_push' ? (
-                <ActivityIndicator color="#3D5A80" />
-              ) : (
-                <Switch
-                  value={notifTranscricaoPush}
-                  onValueChange={(v) => alternarNotif('notif_transcricao_push', v, setNotifTranscricaoPush)}
-                />
-              )}
-            </View>
-            <View style={st.bioRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={st.bioLabel}>Recebimento em atraso</Text>
-                <Text style={st.bioSub}>E-mail avisando quando um pagamento mensal passar do vencimento.</Text>
+
+              <View style={st.notifMatrizLinha}>
+                <View style={st.notifMatrizTipo}>
+                  <Text style={st.bioLabel}>Transcrição pronta</Text>
+                  <Text style={st.bioSub}>Quando a transcrição de uma sessão terminar (ou falhar).</Text>
+                </View>
+                <View style={st.notifMatrizCanalCol}>
+                  {notifSalvando === 'notif_transcricao_push' ? (
+                    <ActivityIndicator color="#3D5A80" />
+                  ) : (
+                    <Switch
+                      value={notifTranscricaoPush}
+                      onValueChange={(v) => alternarNotif('notif_transcricao_push', v, setNotifTranscricaoPush)}
+                    />
+                  )}
+                </View>
+                <View style={st.notifMatrizCanalCol}>
+                  {notifSalvando === 'notif_transcricao_email' ? (
+                    <ActivityIndicator color="#3D5A80" />
+                  ) : (
+                    <Switch
+                      value={notifTranscricaoEmail}
+                      onValueChange={(v) => alternarNotif('notif_transcricao_email', v, setNotifTranscricaoEmail)}
+                    />
+                  )}
+                </View>
               </View>
-              {notifSalvando === 'notif_atraso_email' ? (
-                <ActivityIndicator color="#3D5A80" />
-              ) : (
-                <Switch
-                  value={notifAtrasoEmail}
-                  onValueChange={(v) => alternarNotif('notif_atraso_email', v, setNotifAtrasoEmail)}
-                />
-              )}
+
+              <View style={[st.notifMatrizLinha, st.notifMatrizLinhaUltima]}>
+                <View style={st.notifMatrizTipo}>
+                  <Text style={st.bioLabel}>Recebimento em atraso</Text>
+                  <Text style={st.bioSub}>Quando um pagamento mensal passar do vencimento.</Text>
+                </View>
+                <View style={st.notifMatrizCanalCol}>
+                  {notifSalvando === 'notif_atraso_push' ? (
+                    <ActivityIndicator color="#3D5A80" />
+                  ) : (
+                    <Switch
+                      value={notifAtrasoPush}
+                      onValueChange={(v) => alternarNotif('notif_atraso_push', v, setNotifAtrasoPush)}
+                    />
+                  )}
+                </View>
+                <View style={st.notifMatrizCanalCol}>
+                  {notifSalvando === 'notif_atraso_email' ? (
+                    <ActivityIndicator color="#3D5A80" />
+                  ) : (
+                    <Switch
+                      value={notifAtrasoEmail}
+                      onValueChange={(v) => alternarNotif('notif_atraso_email', v, setNotifAtrasoEmail)}
+                    />
+                  )}
+                </View>
+              </View>
             </View>
 
             <TouchableOpacity style={st.exportarBtn} onPress={exportarDados} disabled={exportando}>
@@ -926,6 +1040,25 @@ const st = StyleSheet.create({
     borderWidth: 1, borderColor: '#E8E4DD',
   },
   trocarSenhaBtnText: { fontSize: 15, fontWeight: '700', color: '#3D5A80' },
+  notifMatrizCard: {
+    backgroundColor: '#FFFFFF', borderRadius: 14, marginBottom: 20,
+    borderWidth: 1, borderColor: '#E8E4DD', overflow: 'hidden',
+  },
+  notifMatrizHeader: {
+    flexDirection: 'row', alignItems: 'center', paddingTop: 12, paddingHorizontal: 16,
+  },
+  notifMatrizHeaderTipo: { flex: 1 },
+  notifMatrizHeaderCanal: {
+    width: 64, textAlign: 'center', fontSize: 11, fontWeight: '700', color: '#A5A19A',
+  },
+  notifMatrizLinha: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 14, paddingHorizontal: 16,
+    borderBottomWidth: 1, borderBottomColor: '#F0EEE9',
+  },
+  notifMatrizLinhaUltima: { borderBottomWidth: 0 },
+  notifMatrizTipo: { flex: 1, paddingRight: 8 },
+  notifMatrizCanalCol: { width: 64, alignItems: 'center' },
   modalOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'center', alignItems: 'center', padding: 24,
@@ -957,12 +1090,13 @@ const st = StyleSheet.create({
   erroTitulo: { fontSize: 17, fontWeight: '700', color: '#1C1C1E', textAlign: 'center' },
   erroTexto: { fontSize: 14, color: '#6B6860', textAlign: 'center', lineHeight: 20 },
 
-  // Header
-  headerCard: {
-    backgroundColor: '#3D5A80',
-    borderRadius: 20,
-    padding: 28,
-    alignItems: 'center',
+  // Header — moldura em 3 linhas (grossa + fina + fina) ao redor de todo o
+  // cabeçalho (foto de fundo) e, dentro dele, ao redor do avatar também,
+  // pra criar contraste/limite nítido entre as duas imagens (item 9).
+  headerMolduraGrossa: {
+    borderRadius: 24,
+    borderWidth: 3.5, borderColor: '#3D5A80',
+    padding: 3,
     marginBottom: 24,
     shadowColor: '#1A2D45',
     shadowOffset: { width: 0, height: 4 },
@@ -970,12 +1104,52 @@ const st = StyleSheet.create({
     shadowRadius: 12,
     elevation: 6,
   },
+  headerMolduraFina: {
+    borderRadius: 21,
+    borderWidth: 1, borderColor: '#3D5A80',
+    padding: 2,
+  },
+  headerCard: {
+    borderRadius: 19,
+    overflow: 'hidden',
+    minHeight: 200,
+  },
+  headerCapaImg: { ...StyleSheet.absoluteFillObject },
+  headerCapaVazia: { ...StyleSheet.absoluteFillObject, backgroundColor: '#3D5A80' },
+  headerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(26,45,69,0.38)',
+  },
+  headerCapaLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  headerCapaHint: {
+    position: 'absolute', top: 10, right: 12,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4,
+  },
+  headerCapaHintText: { fontSize: 10, color: '#FFFFFF', fontWeight: '600' },
+  headerConteudo: {
+    padding: 28,
+    alignItems: 'center',
+  },
+  avatarMolduraGrossa: {
+    borderRadius: 42,
+    borderWidth: 3, borderColor: '#FFFFFF',
+    padding: 2,
+    marginBottom: 6,
+  },
+  avatarMolduraFina: {
+    borderRadius: 39,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.7)',
+    padding: 1,
+  },
   avatar: {
     width: 72, height: 72, borderRadius: 36,
     backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center', alignItems: 'center',
-    marginBottom: 6,
-    borderWidth: 3, borderColor: '#FFFFFF',
     overflow: 'hidden',
   },
   avatarImg: { width: '100%', height: '100%' },
@@ -988,10 +1162,13 @@ const st = StyleSheet.create({
     fontSize: 24, fontWeight: '700', color: '#FFFFFF',
   },
   avatarHint: {
-    fontSize: 11, color: 'rgba(255,255,255,0.7)', marginBottom: 8,
+    fontSize: 11, color: 'rgba(255,255,255,0.85)', marginBottom: 8,
   },
-  nomeHeader: { fontSize: 22, fontWeight: '700', color: '#FFFFFF' },
-  crpHeader: { fontSize: 13, color: 'rgba(255,255,255,0.75)', marginTop: 4 },
+  nomeHeader: {
+    fontSize: 22, fontWeight: '700', color: '#FFFFFF',
+    textShadowColor: 'rgba(0,0,0,0.4)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3,
+  },
+  crpHeader: { fontSize: 13, color: 'rgba(255,255,255,0.9)', marginTop: 4 },
 
   // Seção
   sectionTitle: {

@@ -34,42 +34,58 @@ export default function MiniAgendaBox({ navigation }) {
 
   return (
     <TouchableOpacity
-      style={s.caixa}
+      style={s.molduraGrossa}
       activeOpacity={0.75}
       onPress={() => navigation.navigate('Agenda')}
     >
-      <View style={s.header}>
-        <Ionicons name="calendar-outline" size={16} color={COLORS.borderAzul} />
-        <Text style={s.titulo}>Agenda de hoje</Text>
-      </View>
+      <View style={s.molduraFina}>
+        <View style={s.caixa}>
+          <View style={s.header}>
+            <Ionicons name="calendar-outline" size={18} color={COLORS.borderAzul} />
+            <Text style={s.titulo}>Agenda de hoje</Text>
+          </View>
 
-      {visiveis.length === 0 ? (
-        <Text style={s.vazio}>Nenhum horário hoje</Text>
-      ) : (
-        visiveis.map((c) => (
-          <Text key={c.id} style={s.linha} numberOfLines={1}>
-            {c.start_time?.slice(0, 5)} · {c.patient_nome || c.titulo || 'Compromisso'}
-          </Text>
-        ))
-      )}
-      {restantes > 0 && <Text style={s.maisTexto}>+{restantes} mais</Text>}
+          {visiveis.length === 0 ? (
+            <Text style={s.vazio}>Nenhum horário hoje</Text>
+          ) : (
+            visiveis.map((c) => (
+              <Text key={c.id} style={s.linha} numberOfLines={1}>
+                {c.start_time?.slice(0, 5)} · {c.patient_nome || c.titulo || 'Compromisso'}
+              </Text>
+            ))
+          )}
+          {restantes > 0 && <Text style={s.maisTexto}>+{restantes} mais</Text>}
+        </View>
+      </View>
     </TouchableOpacity>
   );
 }
 
 const s = StyleSheet.create({
+  molduraGrossa: {
+    flex: 1,
+    borderRadius: 20,
+    borderWidth: 3,
+    borderColor: COLORS.borderAzul,
+    padding: 3,
+  },
+  molduraFina: {
+    flex: 1,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: COLORS.borderAzul,
+    padding: 2,
+  },
   caixa: {
     flex: 1,
     backgroundColor: COLORS.surface,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: COLORS.borderAzul,
-    padding: 14,
-    minHeight: 130,
+    borderRadius: 15,
+    padding: 16,
+    minHeight: 150,
   },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
-  titulo: { fontSize: 13, fontWeight: '700', color: COLORS.textDark },
-  linha: { fontSize: 12.5, color: COLORS.textDark, marginBottom: 4 },
-  vazio: { fontSize: 12.5, color: COLORS.textMid, fontStyle: 'italic' },
-  maisTexto: { fontSize: 11.5, color: COLORS.textMid, marginTop: 2, fontWeight: '600' },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 10 },
+  titulo: { fontSize: 14, fontWeight: '700', color: COLORS.textDark },
+  linha: { fontSize: 13.5, color: COLORS.textDark, marginBottom: 6 },
+  vazio: { fontSize: 13.5, color: COLORS.textMid, fontStyle: 'italic' },
+  maisTexto: { fontSize: 12.5, color: COLORS.textMid, marginTop: 2, fontWeight: '600' },
 });

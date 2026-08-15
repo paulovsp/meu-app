@@ -31,3 +31,29 @@ export async function enviarFotoPerfil(uri) {
 
   return urlComVersao;
 }
+
+/** Mesma lógica de `enviarFotoPerfil`, mas pra foto de fundo do cabeçalho
+ * ("<user_id>/capa.jpg", coluna profiles.capa_url) — mesmo bucket, mesmas
+ * policies de storage (cobrem qualquer arquivo da pasta do usuário). */
+export async function enviarFotoCapa(uri) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const userId = session.user.id;
+  const path = `${userId}/capa.jpg`;
+
+  const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+  const { error: erroUpload } = await supabase.storage
+    .from('avatars')
+    .upload(path, decode(base64), { contentType: 'image/jpeg', upsert: true });
+  if (erroUpload) throw erroUpload;
+
+  const { data: pub } = supabase.storage.from('avatars').getPublicUrl(path);
+  const urlComVersao = `${pub.publicUrl}?v=${Date.now()}`;
+
+  const { error: erroUpdate } = await supabase
+    .from('profiles')
+    .update({ capa_url: urlComVersao })
+    .eq('id', userId);
+  if (erroUpdate) throw erroUpdate;
+
+  return urlComVersao;
+}

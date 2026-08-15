@@ -48,10 +48,12 @@ export async function verificarEEnviarAlertaAtraso() {
   const { data: { session } } = await supabase.auth.getSession();
   const { data: perfil } = await supabase
     .from('profiles')
-    .select('notif_atraso_email')
+    .select('notif_atraso_email, notif_atraso_push')
     .eq('id', session.user.id)
     .single();
-  if (perfil?.notif_atraso_email === false) return;
+  // Os dois canais são independentes (item D.10) — só pula o envio se AMBOS
+  // estiverem desligados; qual canal usar é decidido dentro da Edge Function.
+  if (perfil?.notif_atraso_email === false && perfil?.notif_atraso_push !== true) return;
 
   const idsAtrasados = atrasados.map((a) => a.patient_id);
   const { data: statusAlertas, error: errStatus } = await supabase

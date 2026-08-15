@@ -56,10 +56,15 @@ export default function MensagensPersonalizadasScreen() {
         if (error) {
           Alert.alert('Erro ao carregar', mensagemDeErro(error));
         } else {
-          setPixKey(data?.pix_key || '');
-          setCobranca(data?.template_cobranca || '');
-          setReciboPaciente(data?.template_recibo_paciente || '');
-          setReciboContador(data?.template_recibo_contador || '');
+          const chavePix = data?.pix_key || '';
+          setPixKey(chavePix);
+          // Sem template salvo ainda: pré-preenche com o texto padrão de
+          // verdade (editável), não só um placeholder que some ao tocar no
+          // campo — assim dá pra ajustar só um trecho, em vez de "reaparecer
+          // vazio" e ter que reescrever tudo do zero.
+          setCobranca(data?.template_cobranca || templatePadraoCobranca(!!chavePix));
+          setReciboPaciente(data?.template_recibo_paciente || templatePadraoReciboPaciente());
+          setReciboContador(data?.template_recibo_contador || templatePadraoReciboContador());
         }
         setCarregando(false);
       });
@@ -107,7 +112,7 @@ export default function MensagensPersonalizadasScreen() {
           variaveis={VARIAVEIS_COBRANCA}
           valor={cobranca}
           onChange={setCobranca}
-          onRestaurarPadrao={() => setCobranca('')}
+          onRestaurarPadrao={() => setCobranca(templatePadraoCobranca(!!pixKey))}
           textoPadrao={templatePadraoCobranca(!!pixKey)}
         />
 
@@ -117,7 +122,7 @@ export default function MensagensPersonalizadasScreen() {
           variaveis={VARIAVEIS_RECIBO_PACIENTE}
           valor={reciboPaciente}
           onChange={setReciboPaciente}
-          onRestaurarPadrao={() => setReciboPaciente('')}
+          onRestaurarPadrao={() => setReciboPaciente(templatePadraoReciboPaciente())}
           textoPadrao={templatePadraoReciboPaciente()}
         />
 
@@ -127,7 +132,7 @@ export default function MensagensPersonalizadasScreen() {
           variaveis={VARIAVEIS_RECIBO_CONTADOR}
           valor={reciboContador}
           onChange={setReciboContador}
-          onRestaurarPadrao={() => setReciboContador('')}
+          onRestaurarPadrao={() => setReciboContador(templatePadraoReciboContador())}
           textoPadrao={templatePadraoReciboContador()}
         />
 

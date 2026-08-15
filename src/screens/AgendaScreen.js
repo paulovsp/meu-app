@@ -8,6 +8,7 @@ import {
   Alert,
   Dimensions,
   Animated,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -118,6 +119,7 @@ export default function AgendaScreen({ navigation }) {
   const [availability, setAvailability] = useState([]);
   const [appointments, setAppointments] = useState([]);
   const [temTranscricaoMap, setTemTranscricaoMap] = useState({});
+  const [carregando, setCarregando] = useState(true);
 
   const inicioSemana = useMemo(() => getInicioSemana(dataRef), [dataRef]);
 
@@ -128,6 +130,7 @@ export default function AgendaScreen({ navigation }) {
   );
 
   async function carregarDadosAgenda() {
+    setCarregando(true);
     try {
       const disponibilidades = await getAvailabilitySlots();
       setAvailability(disponibilidades || []);
@@ -155,6 +158,8 @@ export default function AgendaScreen({ navigation }) {
       setAppointments(agendamentosSemana || []);
     } catch (e) {
       Alert.alert('Erro ao carregar agenda', mensagemDeErro(e));
+    } finally {
+      setCarregando(false);
     }
   }
 
@@ -610,8 +615,16 @@ export default function AgendaScreen({ navigation }) {
       </TouchableOpacity>
 
       <Animated.View style={[{ flex: 1 }, animatedStyle]} {...panHandlers}>
-        {modoView === 'semanal' && renderSemanal()}
-        {modoView === 'diario' && renderDiario()}
+        {carregando ? (
+          <View style={styles.carregandoWrap}>
+            <ActivityIndicator size="large" color="#1976D2" />
+          </View>
+        ) : (
+          <>
+            {modoView === 'semanal' && renderSemanal()}
+            {modoView === 'diario' && renderDiario()}
+          </>
+        )}
       </Animated.View>
     </SafeAreaView>
   );
@@ -707,6 +720,7 @@ const styles = StyleSheet.create({
   },
   badgeSplitMeio: { flex: 1 },
   semHorarios: { fontSize: 10, color: '#AAAAAA', textAlign: 'center', marginTop: 10 },
+  carregandoWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
   // ── Diário (item 8: visual clean, mais espaço para informação) ──
   diarioContainer: { flex: 1 },

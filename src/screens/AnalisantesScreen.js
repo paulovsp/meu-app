@@ -15,13 +15,20 @@ export default function AnalisantesScreen() {
   const [pacientes, setPacientes] = useState([]);
   const [modalidades, setModalidades] = useState({});
   const [removendoId, setRemovendoId] = useState(null);
+  const [carregando, setCarregando] = useState(true);
 
   async function carregar() {
     try {
-      setPacientes(await listarPacientes());
-      setModalidades(await getModalidadesPorPaciente());
+      const [lista, modalidadesLista] = await Promise.all([
+        listarPacientes(),
+        getModalidadesPorPaciente(),
+      ]);
+      setPacientes(lista);
+      setModalidades(modalidadesLista);
     } catch (e) {
       Alert.alert('Erro ao carregar', mensagemDeErro(e));
+    } finally {
+      setCarregando(false);
     }
   }
 
@@ -132,7 +139,11 @@ export default function AnalisantesScreen() {
         </TouchableOpacity>
       </View>
 
-      {pacientes.length === 0 ? (
+      {carregando ? (
+        <View style={styles.empty}>
+          <ActivityIndicator size="large" color="#3D5A80" />
+        </View>
+      ) : pacientes.length === 0 ? (
         <View style={styles.empty}>
           <Text style={styles.emptyIcon}>👤</Text>
           <Text style={styles.emptyText}>Nenhum analisante cadastrado</Text>

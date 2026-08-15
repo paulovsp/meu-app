@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  TextInput, Alert, ActivityIndicator, Image, Switch, Modal,
+  TextInput, Alert, ActivityIndicator, Image, Switch, Modal, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import {
   getPlanoFinanceiro, getRecebimentosDoMes, getPrecoMedioSessao,
-  getContagemPacientes, getContagemSessoesSemRelato, getResumoHorariosSemanais,
+  getContagemAnalisantesESupervisionandos, getContagemSessoesSemRelato, getResumoHorariosSemanais,
 } from '../services/database';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -17,6 +17,7 @@ import { enviarFotoPerfil, enviarFotoCapa } from '../services/avatar';
 import { exportarDadosUsuario } from '../services/exportacaoDados';
 import {
   formatarSaldoBRL, chamarRenovarCreditos, PLANOS_CREDITO_MENSAL_BRL, PLANO_LABEL,
+  PACOTES_CREDITO_AVULSO_BRL, criarCheckoutCreditos,
 } from '../services/creditosIA';
 import { excluirConta, alterarEmailLogin, alterarSenha } from '../services/conta';
 import {
@@ -39,7 +40,7 @@ export default function PerfilScreen({ navigation }) {
   const [carregando, setCarregando] = useState(true);
   const [plano, setPlano] = useState(null);
   const [estatisticas, setEstatisticas] = useState({
-    precoMedio: 0, totalPacientes: 0, sessoesSemRelato: 0, pagamentosEmAberto: 0,
+    precoMedio: 0, totalAnalisantes: 0, totalSupervisionandos: 0, sessoesSemRelato: 0, pagamentosEmAberto: 0,
     horariosOcupados: 0, horariosTotal: 0,
   });
   const [editando, setEditando] = useState(false);
@@ -55,6 +56,7 @@ export default function PerfilScreen({ navigation }) {
   const [notifAtrasoPush, setNotifAtrasoPush] = useState(false);
   const [notifSalvando, setNotifSalvando] = useState(null);
   const [exportando, setExportando] = useState(false);
+  const [abrindoCheckout, setAbrindoCheckout] = useState(false);
   const [modalSenhaVisivel, setModalSenhaVisivel] = useState(false);
   const [senhaAtual, setSenhaAtual] = useState('');
   const [novaSenha, setNovaSenha] = useState('');
@@ -91,7 +93,7 @@ export default function PerfilScreen({ navigation }) {
       // mostra o que conseguiu buscar; erros individuais só vão pro console.
       Promise.allSettled([
         getPrecoMedioSessao(),
-        getContagemPacientes(),
+        getContagemAnalisantesESupervisionandos(),
         getContagemSessoesSemRelato(),
         getResumoHorariosSemanais(),
         getRecebimentosDoMes(hoje.getFullYear(), hoje.getMonth()),
@@ -140,10 +142,10 @@ export default function PerfilScreen({ navigation }) {
       setPlano(planoResultado);
     }
 
-    const [precoMedio, totalPacientes, sessoesSemRelato, horarios, recebimentos] = statsResultado;
+    const [precoMedio, contagemAnalisantes, sessoesSemRelato, horarios, recebimentos] = statsResultado;
     [
       ['getPrecoMedioSessao', precoMedio],
-      ['getContagemPacientes', totalPacientes],
+      ['getContagemAnalisantesESupervisionandos', contagemAnalisantes],
       ['getContagemSessoesSemRelato', sessoesSemRelato],
       ['getResumoHorariosSemanais', horarios],
       ['getRecebimentosDoMes', recebimentos],
@@ -154,7 +156,8 @@ export default function PerfilScreen({ navigation }) {
     });
     setEstatisticas((atual) => ({
       precoMedio: precoMedio.status === 'fulfilled' ? precoMedio.value : atual.precoMedio,
-      totalPacientes: totalPacientes.status === 'fulfilled' ? totalPacientes.value : atual.totalPacientes,
+      totalAnalisantes: contagemAnalisantes.status === 'fulfilled' ? contagemAnalisantes.value.analisantes : atual.totalAnalisantes,
+      totalSupervisionandos: contagemAnalisantes.status === 'fulfilled' ? contagemAnalisantes.value.supervisionandos : atual.totalSupervisionandos,
       sessoesSemRelato: sessoesSemRelato.status === 'fulfilled' ? sessoesSemRelato.value : atual.sessoesSemRelato,
       pagamentosEmAberto: recebimentos.status === 'fulfilled'
         ? recebimentos.value.filter((r) => !r.recebido).length
@@ -168,6 +171,29 @@ export default function PerfilScreen({ navigation }) {
   useEffect(() => {
     carregar();
   }, [carregar]);
+
+  async function iniciarCheckoutCreditos(valorBRL) {
+    setAbrindoCheckout(true);
+    try {
+      const initPoint = await criarCheckoutCreditos(valorBRL);
+      if (initPoint) await Linking.openURL(initPoint);
+    } catch (e) {
+      Alert.alert('Erro ao gerar link de pagamento', mensagemDeErro(e));
+    } finally {
+      setAbrindoCheckout(false);
+    }
+  }
+
+  function abrirRecargaCreditos() {
+    Alert.alert(
+      'Adicionar créditos',
+      'Escolha o valor da recarga — você será levada ao checkout do Mercado Pago.',
+      PACOTES_CREDITO_AVULSO_BRL.map((valor) => ({
+        text: `R$ ${valor}`,
+        onPress: () => iniciarCheckoutCreditos(valor),
+      }))
+    );
+  }
 
   useEffect(() => {
     (async () => {
@@ -569,12 +595,15 @@ export default function PerfilScreen({ navigation }) {
             </Text>
             <Text style={st.statLabel}>Ganhos do mês</Text>
           </View>
-          <View style={[st.statCard, Number(user.creditos_ia) <= 0 && st.statCardAlerta]}>
+          <TouchableOpacity
+            style={[st.statCard, Number(user.creditos_ia) <= 0 && st.statCardAlerta]}
+            onPress={abrirRecargaCreditos}
+          >
             <Text style={[st.statNumber, Number(user.creditos_ia) <= 0 && st.statNumberAlerta]}>
               {formatarSaldoBRL(Number(user.creditos_ia ?? 0))}
             </Text>
             <Text style={st.statLabel}>Créditos de IA</Text>
-          </View>
+          </TouchableOpacity>
         </View>
         <View style={st.statsRow}>
           <View style={st.statCard}>
@@ -583,20 +612,32 @@ export default function PerfilScreen({ navigation }) {
             </Text>
             <Text style={st.statLabel}>Preço médio da sessão</Text>
           </View>
-          <View style={st.statCard}>
-            <Text style={st.statNumber}>{estatisticas.totalPacientes}</Text>
-            <Text style={st.statLabel}>Analisante{estatisticas.totalPacientes === 1 ? '' : 's'}</Text>
-          </View>
+          <TouchableOpacity
+            style={st.statCard}
+            onPress={() => navigation.navigate('Patients', { aba: 'analisantes' })}
+          >
+            <Text style={st.statNumber}>{estatisticas.totalAnalisantes}</Text>
+            <Text style={st.statLabel}>Analisante{estatisticas.totalAnalisantes === 1 ? '' : 's'}</Text>
+          </TouchableOpacity>
         </View>
         <View style={st.statsRow}>
-          <View style={st.statCard}>
+          <TouchableOpacity
+            style={st.statCard}
+            onPress={() => navigation.navigate('Patients', { aba: 'supervisionandos' })}
+          >
+            <Text style={st.statNumber}>{estatisticas.totalSupervisionandos}</Text>
+            <Text style={st.statLabel}>Supervisionando{estatisticas.totalSupervisionandos === 1 ? '' : 's'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={st.statCard} onPress={() => navigation.navigate('SessoesStatus')}>
             <Text style={st.statNumber}>{estatisticas.sessoesSemRelato}</Text>
             <Text style={st.statLabel}>Sessões sem relatos</Text>
-          </View>
-          <View style={st.statCard}>
+          </TouchableOpacity>
+        </View>
+        <View style={st.statsRow}>
+          <TouchableOpacity style={st.statCard} onPress={() => navigation.navigate('Cobranca')}>
             <Text style={st.statNumber}>{estatisticas.pagamentosEmAberto}</Text>
             <Text style={st.statLabel}>Pagamentos em aberto</Text>
-          </View>
+          </TouchableOpacity>
         </View>
 
         {/* ── Dados cadastrais ── */}
@@ -835,12 +876,14 @@ export default function PerfilScreen({ navigation }) {
 
               <TouchableOpacity
                 style={st.assinaturaBtn}
-                onPress={() => Alert.alert(
-                  'Adicionar créditos',
-                  'Pra adicionar mais créditos ou mudar de plano, entre em contato com quem administra sua assinatura.'
-                )}
+                onPress={abrirRecargaCreditos}
+                disabled={abrindoCheckout}
               >
-                <Text style={st.assinaturaBtnTexto}>Adicionar créditos</Text>
+                {abrindoCheckout ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={st.assinaturaBtnTexto}>Adicionar créditos</Text>
+                )}
               </TouchableOpacity>
             </View>
 

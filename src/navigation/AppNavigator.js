@@ -52,6 +52,7 @@ import DetalheCompromissoScreen from '../screens/DetalheCompromissoScreen';
 // Início — afazeres, arquivo e relatórios
 import AfazeresScreen from '../screens/AfazeresScreen';
 import ArquivoRelatoriosScreen from '../screens/ArquivoRelatoriosScreen';
+import SessoesStatusScreen from '../screens/SessoesStatusScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -239,6 +240,12 @@ function AppStackNavigator() {
         name="DetalheCompromisso"
         component={DetalheCompromissoScreen}
         options={{ title: 'Compromisso' }}
+      />
+
+      <Stack.Screen
+        name="SessoesStatus"
+        component={SessoesStatusScreen}
+        options={{ headerShown: false }}
       />
     </Stack.Navigator>
   );

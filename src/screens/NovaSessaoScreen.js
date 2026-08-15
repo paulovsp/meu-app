@@ -113,6 +113,10 @@ export default function NovaSessaoScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const prePatientId = route?.params?.patientId || null;
+  // Presente quando a sessão nasce de um compromisso da Agenda (ver
+  // DetalheCompromissoScreen.js `iniciarSessao`) — liga a sessão ao
+  // compromisso pra tela "Sessões sem relato" conseguir cruzar os dois.
+  const appointmentId = route?.params?.appointmentId || null;
 
   useBloqueioAssinatura(navigation);
 
@@ -333,7 +337,7 @@ export default function NovaSessaoScreen() {
       if (!uri) throw new Error('URI do áudio não encontrado após gravação.');
 
       setProgressoTranscricao('Salvando sessão...');
-      const sid = await addSession(paciente.id, tipo, plataforma?.id || null, null);
+      const sid = await addSession(paciente.id, tipo, plataforma?.id || null, null, appointmentId);
       sessionIdRef.current = sid;
 
       const introducao = gerarIntroducaoSessao({
@@ -386,7 +390,7 @@ export default function NovaSessaoScreen() {
       // A sessão já foi criada em encerrarETranscrever (precisa existir
       // antes de disparar a transcrição) — aqui só atualiza com o texto
       // digitado manualmente (fallback de quando o disparo assíncrono falha).
-      const sid = sessionIdRef.current || await addSession(paciente.id, tipo, plataforma?.id || null, null);
+      const sid = sessionIdRef.current || await addSession(paciente.id, tipo, plataforma?.id || null, null, appointmentId);
 
       const introducao = gerarIntroducaoSessao({
         tipo,

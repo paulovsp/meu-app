@@ -10,13 +10,18 @@ import { desativarLoginBiometrico } from '../services/biometria';
 const { width: SW } = Dimensions.get('window');
 const PANEL_W = Math.round(SW * 0.78);
 
-export default function MenuLateral({ visible, onClose, navigation, clinicaButtons, adminButtons }) {
+export default function MenuLateral({ visible, onClose, navigation, clinicaButtons, adminButtons, contextual }) {
   const { sairLocalmente } = useAuth();
   const [excluindo, setExcluindo] = useState(false);
 
   function irPara(screen) {
     onClose();
     navigation.navigate(screen);
+  }
+
+  function executarContextual(onPress) {
+    onClose();
+    onPress();
   }
 
   function sair() {
@@ -71,6 +76,19 @@ export default function MenuLateral({ visible, onClose, navigation, clinicaButto
         <View style={s.painel}>
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.painelConteudo}>
             <Text style={s.titulo}>Dr.Sig</Text>
+
+            {contextual?.itens?.length > 0 && (
+              <>
+                <Text style={s.secaoLabel}>{contextual.titulo || 'Nesta tela'}</Text>
+                {contextual.itens.map((item, i) => (
+                  <TouchableOpacity key={i} style={s.item} onPress={() => executarContextual(item.onPress)}>
+                    <Ionicons name={item.icon || 'ellipse-outline'} size={20} color="#3D5A80" />
+                    <Text style={s.itemTexto}>{item.label}</Text>
+                  </TouchableOpacity>
+                ))}
+                <View style={s.divisoria} />
+              </>
+            )}
 
             <Text style={s.secaoLabel}>Clínica</Text>
             {clinicaButtons.map((btn) => (

@@ -1,7 +1,7 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useLayoutEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Linking, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Calendar } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -14,6 +14,8 @@ import { mensagemDeErro } from '../services/erros';
 import { montarMensagemCobranca } from '../services/mensagens';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import MenuLateral from '../components/MenuLateral';
+import { CLINICA_BUTTONS, ADMIN_BUTTONS } from '../constants/menuBotoes';
 
 const MESES_LABEL = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -146,6 +148,7 @@ function LinhaRecebimento({ item, status, onToggle, onWhatsapp, onEmail, atualiz
 }
 
 export default function CobrancaScreen() {
+  const navigation = useNavigation();
   const { session } = useAuth();
   const hoje = new Date();
   const [refDate, setRefDate] = useState(new Date(hoje.getFullYear(), hoje.getMonth(), 1));
@@ -154,6 +157,17 @@ export default function CobrancaScreen() {
   const [atualizandoId, setAtualizandoId] = useState(null);
   const [profissional, setProfissional] = useState(null);
   const [carregando, setCarregando] = useState(true);
+  const [menuAberto, setMenuAberto] = useState(false);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity onPress={() => setMenuAberto(true)} style={{ paddingHorizontal: 12 }}>
+          <Ionicons name="menu-outline" size={26} color="#1A1A2E" />
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation]);
 
   const ano = refDate.getFullYear();
   const mesIndex = refDate.getMonth();
@@ -339,6 +353,20 @@ export default function CobrancaScreen() {
           </View>
         )}
       </ScrollView>
+
+      <MenuLateral
+        visible={menuAberto}
+        onClose={() => setMenuAberto(false)}
+        navigation={navigation}
+        clinicaButtons={CLINICA_BUTTONS}
+        adminButtons={ADMIN_BUTTONS}
+        contextual={{
+          titulo: 'Recebíveis',
+          itens: [
+            { icon: 'today-outline', label: 'Ir para o mês atual', onPress: () => setRefDate(new Date(hoje.getFullYear(), hoje.getMonth(), 1)) },
+          ],
+        }}
+      />
     </SafeAreaView>
   );
 }

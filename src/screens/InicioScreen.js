@@ -18,6 +18,7 @@ import MenuLateral from '../components/MenuLateral';
 import BannerAssinaturaInativa from '../components/BannerAssinaturaInativa';
 import MiniAfazeresBox from '../components/MiniAfazeresBox';
 import MiniAgendaBox from '../components/MiniAgendaBox';
+import { CLINICA_BUTTONS, ADMIN_BUTTONS } from '../constants/menuBotoes';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -47,21 +48,8 @@ const COLORS = {
 // caindo no mesmo cinza genérico "outros". O badge do Recebíveis usa ícone
 // escuro em vez de branco porque #D9A441 é claro demais pro branco cumprir
 // o contraste mínimo AA (WCAG 1.4.11, 3:1).
-const CLINICA_BUTTONS = [
-  { id: 'session',  icon: 'mic-outline',      label: 'Nova Sessão',   screen: 'NewSession', corBadge: '#3D5A80' },
-  { id: 'record',   icon: 'clipboard-outline', label: 'Novo Registro', screen: 'AddRecord',  corBadge: '#4C9F8F' },
-  { id: 'patients', icon: 'people-outline',    label: 'Analisantes',   screen: 'Patients',   corBadge: '#C97B4A' },
-  { id: 'search',   icon: 'sparkles-outline',  label: 'Busca Dr.Sig',  screen: 'Busca',      corBadge: '#7B6FA6' },
-];
-
-// Agenda saiu daqui e virou o widget da aba Início — no lugar entrou
-// Pagamentos (despesas do consultório, tela nova).
-const ADMIN_BUTTONS = [
-  { id: 'pagamentos', icon: 'wallet-outline',     label: 'Pagamentos', screen: 'Pagamentos', corBadge: '#4C8FA6' },
-  { id: 'financeiro', icon: 'stats-chart-outline', label: 'Financeiro',  screen: 'Financeiro', corBadge: '#5B8C5A' },
-  { id: 'cobranca',   icon: 'cash-outline',        label: 'Recebíveis',  screen: 'Cobranca',   corBadge: '#D9A441', corIcone: '#1C1C1E' },
-  { id: 'fiscal',     icon: 'receipt-outline',     label: 'Fiscal',      screen: 'Fiscal',    corBadge: '#A65C4C' },
-];
+// CLINICA_BUTTONS/ADMIN_BUTTONS agora moraram pra src/constants/menuBotoes.js
+// (reutilizados pelo MenuLateral.js em outras telas, não só aqui).
 
 // Ordem das 3 abas no deslize — Início é a primeira/padrão. Usado tanto
 // pelo deslize quanto pelo toggle de cima.

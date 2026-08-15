@@ -17,7 +17,7 @@ export async function inserirPaciente({
   nome, nascimento, data_inicio, data_paralizacao, telefone, email, cpf,
   horario, preco_sessao, preco_moeda, modalidade, endereco,
   contato_emergencia, como_chegou, info_relevantes, dia_pagamento, tipo_cobranca,
-  valor_mensal_fixo,
+  valor_mensal_fixo, eh_analisante, eh_supervisionando,
 }) {
   const { supabase } = require('./supabase');
   const userId = await getUserId();
@@ -33,6 +33,8 @@ export async function inserirPaciente({
       info_relevantes: info_relevantes || null, dia_pagamento: dia_pagamento || null,
       tipo_cobranca: tipo_cobranca || 'mensal',
       valor_mensal_fixo: tipo_cobranca === 'mensal_fixo' ? (valor_mensal_fixo || null) : null,
+      eh_analisante: eh_analisante !== false,
+      eh_supervisionando: eh_supervisionando === true,
     })
     .select()
     .single();
@@ -44,7 +46,7 @@ export async function editarPaciente({
   id, nome, nascimento, data_inicio, data_paralizacao, telefone, email, cpf,
   horario, preco_sessao, preco_moeda, modalidade, endereco,
   contato_emergencia, como_chegou, info_relevantes, dia_pagamento, tipo_cobranca,
-  valor_mensal_fixo,
+  valor_mensal_fixo, eh_analisante, eh_supervisionando,
 }) {
   const { supabase } = require('./supabase');
   const { error } = await supabase
@@ -59,6 +61,8 @@ export async function editarPaciente({
       info_relevantes: info_relevantes || null, dia_pagamento: dia_pagamento || null,
       tipo_cobranca: tipo_cobranca || 'mensal',
       valor_mensal_fixo: tipo_cobranca === 'mensal_fixo' ? (valor_mensal_fixo || null) : null,
+      eh_analisante: eh_analisante !== false,
+      eh_supervisionando: eh_supervisionando === true,
     })
     .eq('id', id);
   if (error) throw error;
@@ -115,13 +119,14 @@ export async function getResumoAgendaHoje() {
   return { total, concluidas };
 }
 
-export async function addSession(patientId, type, platform, category) {
+export async function addSession(patientId, type, platform, category, appointmentId = null) {
   const { supabase } = require('./supabase');
   const { data, error } = await supabase
     .from('sessions')
     .insert({
       patient_id: patientId, type: type || null, online_platform: platform || null,
       date: new Date().toISOString(), transcript: '', audio_uri: null, category: category || null,
+      appointment_id: appointmentId || null,
     })
     .select()
     .single();
@@ -721,6 +726,41 @@ export async function getAppointmentsByDateRange(startDate, endDate) {
   return anexarParticipantesAosAppointments(data.map(achatarAppointmentComPaciente));
 }
 
+/** Compromissos passados (últimos 90 dias, status já resolvido — não
+ * "agendado") cruzados com a sessão vinculada (se houver, via
+ * `sessions.appointment_id` — ver migration 0042), pra tela "Sessões sem
+ * relato". Sessões criadas antes dessa migration não têm o vínculo e
+ * simplesmente não aparecem aqui associadas a um compromisso — a contagem
+ * "sem relato" do Perfil (getContagemSessoesSemRelato) não depende disso. */
+export async function listarStatusSessoes() {
+  const { supabase } = require('./supabase');
+  const desde = new Date();
+  desde.setDate(desde.getDate() - 90);
+  const desdeISO = desde.toISOString().slice(0, 10);
+  const { data, error } = await supabase
+    .from('appointments')
+    .select('id, date, start_time, status, patient_id, patients(nome), sessions(id, transcript, transcricao_status)')
+    .neq('status', 'agendado')
+    .gte('date', desdeISO)
+    .order('date', { ascending: false })
+    .order('start_time', { ascending: false });
+  if (error) throw error;
+  return (data || []).map((a) => {
+    const sessao = Array.isArray(a.sessions) ? a.sessions[0] : a.sessions;
+    return {
+      appointmentId: a.id,
+      date: a.date,
+      startTime: a.start_time,
+      status: a.status,
+      patientId: a.patient_id,
+      patientNome: a.patients?.nome ?? null,
+      sessionId: sessao?.id ?? null,
+      temTranscricao: !!(sessao?.transcript || '').trim(),
+      transcricaoStatus: sessao?.transcricao_status ?? null,
+    };
+  });
+}
+
 export async function getAppointmentsByDate(date) {
   const { supabase } = require('./supabase');
   const { data, error } = await supabase
@@ -1043,11 +1083,17 @@ export async function getPrecoMedioSessao() {
   return precos.reduce((soma, v) => soma + v, 0) / precos.length;
 }
 
-export async function getContagemPacientes() {
+/** Contagens separadas — um paciente pode contar nas duas ao mesmo tempo
+ * (ver migration 0041, `eh_analisante`/`eh_supervisionando` não são exclusivos). */
+export async function getContagemAnalisantesESupervisionandos() {
   const { supabase } = require('./supabase');
-  const { count, error } = await supabase.from('patients').select('*', { count: 'exact', head: true });
-  if (error) throw error;
-  return count || 0;
+  const [analisantes, supervisionandos] = await Promise.all([
+    supabase.from('patients').select('*', { count: 'exact', head: true }).eq('eh_analisante', true),
+    supabase.from('patients').select('*', { count: 'exact', head: true }).eq('eh_supervisionando', true),
+  ]);
+  if (analisantes.error) throw analisantes.error;
+  if (supervisionandos.error) throw supervisionandos.error;
+  return { analisantes: analisantes.count || 0, supervisionandos: supervisionandos.count || 0 };
 }
 
 /** Sessões (de qualquer analisante) sem transcrição/relato preenchido —

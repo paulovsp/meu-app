@@ -12,6 +12,8 @@ import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { mensagemDeErro } from '../services/erros';
 import { assinaturaEstaAtiva, MENSAGEM_ASSINATURA_INATIVA } from '../services/assinatura';
+import MenuLateral from '../components/MenuLateral';
+import { CLINICA_BUTTONS, ADMIN_BUTTONS } from '../constants/menuBotoes';
 
 function Vazio({ texto }) {
   return (
@@ -50,10 +52,21 @@ export default function FiscalScreen() {
   const [user, setUser] = useState(null);
   const [emitindo, setEmitindo] = useState(null);
   const [carregando, setCarregando] = useState(true);
+  const [menuAberto, setMenuAberto] = useState(false);
 
   const ano = refDate.getFullYear();
   const mesIndex = refDate.getMonth();
   const mesLabel = capitalizar(MESES_LABEL[mesIndex]);
+
+  React.useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity onPress={() => setMenuAberto(true)} style={{ paddingHorizontal: 12 }}>
+          <Ionicons name="menu-outline" size={26} color="#1A1A2E" />
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation]);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -213,6 +226,20 @@ export default function FiscalScreen() {
           </Text>
         </View>
       </ScrollView>
+
+      <MenuLateral
+        visible={menuAberto}
+        onClose={() => setMenuAberto(false)}
+        navigation={navigation}
+        clinicaButtons={CLINICA_BUTTONS}
+        adminButtons={ADMIN_BUTTONS}
+        contextual={{
+          titulo: 'Fiscal',
+          itens: [
+            { icon: 'today-outline', label: 'Ir para o mês atual', onPress: () => setRefDate(new Date(hoje.getFullYear(), hoje.getMonth(), 1)) },
+          ],
+        }}
+      />
     </SafeAreaView>
   );
 }

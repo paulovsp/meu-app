@@ -116,7 +116,10 @@ export default function NovoRegistroScreen() {
     carregar();
   }, []);
 
-  // envolve o texto selecionado com marcadores de formatação (markdown simples)
+  // envolve o texto selecionado com tags HTML de formatação — o conteúdo é
+  // salvo como HTML porque é assim que DetalheRegistroScreen.js já renderiza
+  // (WebView com CSS pra b/i/u/s), então o texto sai formatado de verdade
+  // ao reabrir o registro, não como marcação markdown solta.
   function aplicarMarcador(marcadorEsq, marcadorDir = marcadorEsq) {
     const { start, end } = selecao;
     if (start === end) {
@@ -357,16 +360,16 @@ export default function NovoRegistroScreen() {
           {/* ─── barra de formatação ─── */}
           <View style={s.toolbar}>
             <View style={s.toolbarRow}>
-              <TouchableOpacity style={s.fmtBtn} onPress={() => aplicarMarcador('**')}>
+              <TouchableOpacity style={s.fmtBtn} onPress={() => aplicarMarcador('<b>', '</b>')}>
                 <Text style={[s.fmtBtnText, { fontWeight: '900' }]}>B</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={s.fmtBtn} onPress={() => aplicarMarcador('_')}>
+              <TouchableOpacity style={s.fmtBtn} onPress={() => aplicarMarcador('<i>', '</i>')}>
                 <Text style={[s.fmtBtnText, { fontStyle: 'italic' }]}>I</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={s.fmtBtn} onPress={() => aplicarMarcador('__')}>
+              <TouchableOpacity style={s.fmtBtn} onPress={() => aplicarMarcador('<u>', '</u>')}>
                 <Text style={[s.fmtBtnText, { textDecorationLine: 'underline' }]}>U</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={s.fmtBtn} onPress={() => aplicarMarcador('~~')}>
+              <TouchableOpacity style={s.fmtBtn} onPress={() => aplicarMarcador('<s>', '</s>')}>
                 <Text style={[s.fmtBtnText, { textDecorationLine: 'line-through' }]}>S</Text>
               </TouchableOpacity>
             </View>

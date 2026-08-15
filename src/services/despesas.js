@@ -79,27 +79,37 @@ export async function getResumoAssinaturaECreditosDoMes(ano, mes) {
 
   const { data: perfil, error: erroPerfil } = await supabase
     .from('profiles')
-    .select('assinatura_plano, assinatura_valor_mensal_equivalente')
+    .select('assinatura_plano, assinatura_valor_mensal_equivalente, assinatura_ciclo_inicio, assinatura_expira_em')
     .eq('id', userId)
     .single();
   if (erroPerfil) throw erroPerfil;
 
-  const inicio = new Date(ano, mes - 1, 1).toISOString();
-  const fim = new Date(ano, mes, 1).toISOString();
+  const inicio = new Date(ano, mes - 1, 1);
+  const fim = new Date(ano, mes, 1);
   const { data: usos, error: erroUsos } = await supabase
     .from('uso_ia')
     .select('custo_estimado')
     .eq('user_id', userId)
-    .gte('criado_em', inicio)
-    .lt('criado_em', fim)
+    .gte('criado_em', inicio.toISOString())
+    .lt('criado_em', fim.toISOString())
     .gt('custo_estimado', 0);
   if (erroUsos) throw erroUsos;
 
   const creditosGastosUsd = (usos || []).reduce((soma, u) => soma + Number(u.custo_estimado || 0), 0);
 
+  // `assinatura_valor_mensal_equivalente` é um snapshot do plano ATUAL do
+  // profile, não um histórico por mês — sem esta checagem, a linha
+  // "Assinatura" aparecia igual em qualquer mês navegado (inclusive
+  // passado/futuro fora do ciclo pago), mesmo quando não havia assinatura
+  // ativa naquele período. Só mostra o valor se o mês consultado tiver
+  // sobreposição com o ciclo pago [ciclo_inicio, expira_em).
+  const cicloInicio = perfil?.assinatura_ciclo_inicio ? new Date(perfil.assinatura_ciclo_inicio) : null;
+  const expiraEm = perfil?.assinatura_expira_em ? new Date(perfil.assinatura_expira_em) : null;
+  const assinaturaAtivaNoMes = !!(cicloInicio && expiraEm && cicloInicio < fim && expiraEm > inicio);
+
   return {
     plano: perfil?.assinatura_plano || null,
-    assinaturaValorBRL: Number(perfil?.assinatura_valor_mensal_equivalente || 0),
+    assinaturaValorBRL: assinaturaAtivaNoMes ? Number(perfil?.assinatura_valor_mensal_equivalente || 0) : 0,
     creditosGastosBRL: usdParaBRL(creditosGastosUsd),
   };
 }

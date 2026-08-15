@@ -41,6 +41,12 @@ export default function FormularioAnalisanteScreen() {
   const pacienteExistente = route.params?.paciente ?? null;
   const editando = pacienteExistente !== null;
 
+  // ── Analisante e/ou Supervisionando (não exclusivos, ao menos um marcado) ──
+  const [ehAnalisante, setEhAnalisante] = useState(
+    pacienteExistente ? pacienteExistente.eh_analisante !== false : true
+  );
+  const [ehSupervisionando, setEhSupervisionando] = useState(pacienteExistente?.eh_supervisionando === true);
+
   const [nome, setNome]           = useState(pacienteExistente?.nome ?? '');
   const [nascimento, setNascimento] = useState(dataISOParaBR(pacienteExistente?.nascimento) || pacienteExistente?.nascimento || '');
   const [dataInicio, setDataInicio] = useState(dataISOParaBR(pacienteExistente?.data_inicio) || pacienteExistente?.data_inicio || '');
@@ -123,6 +129,18 @@ export default function FormularioAnalisanteScreen() {
     } finally {
       setBuscandoCotacao(false);
     }
+  }
+
+  // Não deixa desmarcar os dois — sem nenhum vínculo marcado o cadastro
+  // desaparece das duas listas (AnalisantesScreen.js) sem nenhum aviso.
+  function alternarEhAnalisante(valor) {
+    if (!valor && !ehSupervisionando) return;
+    setEhAnalisante(valor);
+  }
+
+  function alternarEhSupervisionando(valor) {
+    if (!valor && !ehAnalisante) return;
+    setEhSupervisionando(valor);
   }
 
   function adicionarHorario() {
@@ -298,6 +316,8 @@ export default function FormularioAnalisanteScreen() {
         patientId = pacienteExistente.id;
         await editarPaciente({
           id: patientId,
+          eh_analisante: ehAnalisante,
+          eh_supervisionando: ehSupervisionando,
           nome: nome.trim(),
           nascimento: nascimentoISO,
           data_inicio: dataInicioISO,
@@ -318,6 +338,8 @@ export default function FormularioAnalisanteScreen() {
         });
       } else {
         patientId = await inserirPaciente({
+          eh_analisante: ehAnalisante,
+          eh_supervisionando: ehSupervisionando,
           nome: nome.trim(),
           nascimento: nascimentoISO,
           data_inicio: dataInicioISO,
@@ -476,6 +498,33 @@ export default function FormularioAnalisanteScreen() {
             autoCapitalize="words"
             returnKeyType="next"
           />
+        </View>
+
+        <View style={styles.fieldGroup}>
+          <Text style={styles.label}>Vínculo</Text>
+          <Text style={styles.hint}>
+            Pode marcar os dois se a pessoa for analisante e também estiver em supervisão.
+          </Text>
+          <View style={styles.modalidadeContainer}>
+            <TouchableOpacity
+              style={[styles.modalidadeOption, ehAnalisante && styles.modalidadeOptionAtivo]}
+              onPress={() => alternarEhAnalisante(!ehAnalisante)}
+            >
+              <Text style={styles.modalidadeOptionIcon}>🗣️</Text>
+              <Text style={[styles.modalidadeOptionText, ehAnalisante && styles.modalidadeOptionTextAtivo]}>
+                Analisante
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modalidadeOption, ehSupervisionando && styles.modalidadeOptionAtivo]}
+              onPress={() => alternarEhSupervisionando(!ehSupervisionando)}
+            >
+              <Text style={styles.modalidadeOptionIcon}>🎓</Text>
+              <Text style={[styles.modalidadeOptionText, ehSupervisionando && styles.modalidadeOptionTextAtivo]}>
+                Supervisionando
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.fieldGroup}>

@@ -4,18 +4,29 @@ import {
   FlatList, Alert, ActivityIndicator
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { listarPacientes, deletarPaciente, getModalidadesPorPaciente } from '../services/database';
 import { mensagemDeErro } from '../services/erros';
 import { calcularAnosEMeses, formatarAnosEMeses } from '../services/validacao';
+import MenuLateral from '../components/MenuLateral';
+import { CLINICA_BUTTONS, ADMIN_BUTTONS } from '../constants/menuBotoes';
 
 export default function AnalisantesScreen() {
   const navigation = useNavigation();
+  const route = useRoute();
   const insets = useSafeAreaInsets();
   const [pacientes, setPacientes] = useState([]);
   const [modalidades, setModalidades] = useState({});
   const [removendoId, setRemovendoId] = useState(null);
   const [carregando, setCarregando] = useState(true);
+  // Permite abrir direto na aba certa (ex: vindo do card "Supervisionandos" do Perfil).
+  const [aba, setAba] = useState(route.params?.aba === 'supervisionandos' ? 'supervisionandos' : 'analisantes');
+  const [menuAberto, setMenuAberto] = useState(false);
+
+  const listaFiltrada = pacientes.filter((p) =>
+    aba === 'analisantes' ? p.eh_analisante !== false : p.eh_supervisionando === true
+  );
 
   async function carregar() {
     try {
@@ -133,9 +144,29 @@ export default function AnalisantesScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
-        <Text style={styles.title}>Analisantes</Text>
-        <TouchableOpacity style={styles.addBtn} onPress={() => irParaFormulario()}>
-          <Text style={styles.addBtnText}>+ Novo</Text>
+        <Text style={styles.title}>{aba === 'analisantes' ? 'Analisantes' : 'Supervisionandos'}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+          <TouchableOpacity style={styles.addBtn} onPress={() => irParaFormulario()}>
+            <Text style={styles.addBtnText}>+ Novo</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setMenuAberto(true)}>
+            <Ionicons name="menu-outline" size={26} color="#1A1A2E" />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <View style={styles.abas}>
+        <TouchableOpacity
+          style={[styles.abaBtn, aba === 'analisantes' && styles.abaBtnAtiva]}
+          onPress={() => setAba('analisantes')}
+        >
+          <Text style={[styles.abaBtnText, aba === 'analisantes' && styles.abaBtnTextAtiva]}>Analisantes</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.abaBtn, aba === 'supervisionandos' && styles.abaBtnAtiva]}
+          onPress={() => setAba('supervisionandos')}
+        >
+          <Text style={[styles.abaBtnText, aba === 'supervisionandos' && styles.abaBtnTextAtiva]}>Supervisionandos</Text>
         </TouchableOpacity>
       </View>
 
@@ -143,22 +174,40 @@ export default function AnalisantesScreen() {
         <View style={styles.empty}>
           <ActivityIndicator size="large" color="#3D5A80" />
         </View>
-      ) : pacientes.length === 0 ? (
+      ) : listaFiltrada.length === 0 ? (
         <View style={styles.empty}>
           <Text style={styles.emptyIcon}>👤</Text>
-          <Text style={styles.emptyText}>Nenhum analisante cadastrado</Text>
+          <Text style={styles.emptyText}>
+            {aba === 'analisantes' ? 'Nenhum analisante cadastrado' : 'Nenhum supervisionando cadastrado'}
+          </Text>
           <TouchableOpacity style={styles.emptyBtn} onPress={() => irParaFormulario()}>
-            <Text style={styles.emptyBtnText}>Cadastrar primeiro analisante</Text>
+            <Text style={styles.emptyBtnText}>
+              {aba === 'analisantes' ? 'Cadastrar primeiro analisante' : 'Cadastrar primeiro supervisionando'}
+            </Text>
           </TouchableOpacity>
         </View>
       ) : (
         <FlatList
-          data={pacientes}
+          data={listaFiltrada}
           keyExtractor={(item) => item.id.toString()}
           renderItem={renderItem}
           contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 16 }]}
         />
       )}
+
+      <MenuLateral
+        visible={menuAberto}
+        onClose={() => setMenuAberto(false)}
+        navigation={navigation}
+        clinicaButtons={CLINICA_BUTTONS}
+        adminButtons={ADMIN_BUTTONS}
+        contextual={{
+          titulo: aba === 'analisantes' ? 'Analisantes' : 'Supervisionandos',
+          itens: [
+            { icon: 'person-add-outline', label: 'Novo cadastro', onPress: () => irParaFormulario() },
+          ],
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -173,6 +222,17 @@ const styles = StyleSheet.create({
   title:        { fontSize: 26, fontWeight: 'bold', color: '#1A1A2E' },
   addBtn:       { backgroundColor: '#3D5A80', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8 },
   addBtnText:   { color: '#fff', fontWeight: 'bold', fontSize: 14 },
+  abas: {
+    flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingTop: 12,
+    backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#eee', paddingBottom: 12,
+  },
+  abaBtn: {
+    flex: 1, paddingVertical: 10, borderRadius: 20, alignItems: 'center',
+    backgroundColor: '#F5F7FA', borderWidth: 1, borderColor: '#E0E4EA',
+  },
+  abaBtnAtiva:  { backgroundColor: '#3D5A80', borderColor: '#3D5A80' },
+  abaBtnText:   { fontSize: 13, fontWeight: '700', color: '#555' },
+  abaBtnTextAtiva: { color: '#fff' },
   list:         { padding: 16, gap: 12 },
   card: {
     backgroundColor: '#fff', borderRadius: 14, padding: 14,

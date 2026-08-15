@@ -9,6 +9,7 @@
 // perguntas de colegas). Em vez de forçar "A:"/"P:", cada trecho vira
 // "Locutor X: texto", preservando os rótulos que a AssemblyAI já dá.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { calcularCobrancaIA } from '../_shared/precificacaoIA.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -17,10 +18,6 @@ const ASSEMBLYAI_WEBHOOK_SECRET = Deno.env.get('ASSEMBLYAI_WEBHOOK_SECRET')!;
 
 const ASSEMBLYAI_TRANSCRIPT_URL = 'https://api.assemblyai.com/v2/transcript';
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
-
-// Mesmo preço/hora do ia-transcrever-webhook (Universal-3.5 Pro) — ajustar
-// os dois juntos se a AssemblyAI mudar o preço.
-const PRECO_POR_HORA_USD = 0.21;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -96,7 +93,7 @@ Deno.serve(async (req) => {
       .eq('id', curso.id);
 
     const duracaoSegundos = Number(transcript.audio_duration) || 0;
-    const custo = (duracaoSegundos / 3600) * PRECO_POR_HORA_USD;
+    const custo = calcularCobrancaIA(duracaoSegundos);
 
     const { data: assinaturaAtiva } = await supabaseAdmin.rpc('assinatura_ativa', { uid: userId });
 

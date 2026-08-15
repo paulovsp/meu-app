@@ -9,6 +9,7 @@
 // `duracaoSegundos` que o app manda em `ia-transcrever` nunca é usado pra
 // cobrança (é falsificável, vem do cliente).
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { calcularCobrancaIA } from '../_shared/precificacaoIA.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -18,11 +19,6 @@ const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!;
 
 const ASSEMBLYAI_TRANSCRIPT_URL = 'https://api.assemblyai.com/v2/transcript';
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
-
-// US$ 0,21 por hora de áudio (Universal-3.5 Pro, jul/2026 — diarização
-// inclusa, sem sobretaxa separada; ajustar aqui se o preço da AssemblyAI
-// mudar).
-const PRECO_POR_HORA_USD = 0.21;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -112,7 +108,7 @@ Deno.serve(async (req) => {
       .eq('id', sessao.id);
 
     const duracaoSegundos = Number(transcript.audio_duration) || 0;
-    const custo = (duracaoSegundos / 3600) * PRECO_POR_HORA_USD;
+    const custo = calcularCobrancaIA(duracaoSegundos);
 
     // Se a assinatura foi cancelada entre o disparo e a conclusão da
     // transcrição, o texto já processado ainda é salvo acima (dado clínico

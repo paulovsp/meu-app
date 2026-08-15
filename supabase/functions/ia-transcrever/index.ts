@@ -91,7 +91,7 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         audio_url: upload_url,
-        speech_models: ['universal-3-5-pro', 'universal-2'],
+        speech_models: ['universal-3-5-pro'],
         language_code: 'pt',
         speaker_labels: true,
         webhook_url: webhookUrl,

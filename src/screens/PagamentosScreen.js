@@ -1,16 +1,18 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useLayoutEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView,
   Modal, Alert, ActivityIndicator, Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import {
   listarDespesas, adicionarDespesa, removerDespesa,
   getResumoAssinaturaECreditosDoMes, CATEGORIAS_DESPESA, labelCategoria,
 } from '../services/despesas';
 import { mensagemDeErro } from '../services/erros';
+import MenuLateral from '../components/MenuLateral';
+import { CLINICA_BUTTONS, ADMIN_BUTTONS } from '../constants/menuBotoes';
 
 const COLORS = {
   bg: '#F7F6F3',
@@ -36,6 +38,7 @@ function hojeISO() {
 }
 
 export default function PagamentosScreen() {
+  const navigation = useNavigation();
   const hoje = new Date();
   const [ano, setAno] = useState(hoje.getFullYear());
   const [mes, setMes] = useState(hoje.getMonth() + 1); // 1-12
@@ -44,6 +47,17 @@ export default function PagamentosScreen() {
   const [carregando, setCarregando] = useState(true);
   const [modalVisivel, setModalVisivel] = useState(false);
   const [salvando, setSalvando] = useState(false);
+  const [menuAberto, setMenuAberto] = useState(false);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity onPress={() => setMenuAberto(true)} style={{ paddingHorizontal: 12 }}>
+          <Ionicons name="menu-outline" size={26} color="#1A1A2E" />
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation]);
 
   const [categoria, setCategoria] = useState('outros');
   const [descricao, setDescricao] = useState('');
@@ -261,6 +275,20 @@ export default function PagamentosScreen() {
           </ScrollView>
         </View>
       </Modal>
+
+      <MenuLateral
+        visible={menuAberto}
+        onClose={() => setMenuAberto(false)}
+        navigation={navigation}
+        clinicaButtons={CLINICA_BUTTONS}
+        adminButtons={ADMIN_BUTTONS}
+        contextual={{
+          titulo: 'Pagamentos',
+          itens: [
+            { icon: 'add-circle-outline', label: 'Nova despesa', onPress: () => abrirModal() },
+          ],
+        }}
+      />
     </SafeAreaView>
   );
 }

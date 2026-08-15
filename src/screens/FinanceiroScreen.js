@@ -1,11 +1,13 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useLayoutEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Animated, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { getPlanoFinanceiro, formatarMoeda } from '../services/database';
 import { mensagemDeErro } from '../services/erros';
 import { useSwipeHorizontal } from '../hooks/useSwipeHorizontal';
+import MenuLateral from '../components/MenuLateral';
+import { CLINICA_BUTTONS, ADMIN_BUTTONS } from '../constants/menuBotoes';
 
 const DIAS_LABEL = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
@@ -55,8 +57,20 @@ function Vazio({ texto }) {
 }
 
 export default function FinanceiroScreen() {
+  const navigation = useNavigation();
   const [periodo, setPeriodo] = useState('mensal');
   const [plano, setPlano] = useState(null);
+  const [menuAberto, setMenuAberto] = useState(false);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity onPress={() => setMenuAberto(true)} style={{ paddingHorizontal: 12 }}>
+          <Ionicons name="menu-outline" size={26} color="#1A1A2E" />
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation]);
 
   useFocusEffect(
     useCallback(() => {
@@ -195,6 +209,22 @@ export default function FinanceiroScreen() {
         )}
         </Animated.View>
       </ScrollView>
+
+      <MenuLateral
+        visible={menuAberto}
+        onClose={() => setMenuAberto(false)}
+        navigation={navigation}
+        clinicaButtons={CLINICA_BUTTONS}
+        adminButtons={ADMIN_BUTTONS}
+        contextual={{
+          titulo: 'Financeiro',
+          itens: PERIODOS.map((p) => ({
+            icon: periodo === p.valor ? 'radio-button-on-outline' : 'radio-button-off-outline',
+            label: `Ver ${p.label.toLowerCase()}`,
+            onPress: () => setPeriodo(p.valor),
+          })),
+        }}
+      />
     </SafeAreaView>
   );
 }

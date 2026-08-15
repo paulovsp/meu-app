@@ -252,6 +252,44 @@ Deno.serve(async (req) => {
       if (!resp.ok) return json({ error: `Erro ao buscar pagamento (${resp.status}).` }, 502);
       const pagamento = await resp.json();
 
+      // Recarga avulsa de créditos de IA (gerada por mercadopago-criar-checkout-creditos,
+      // com o usuário já logado no app) — diferente da assinatura, aqui o
+      // checkout já nasce com o id da conta no `external_reference`, então
+      // credita direto por id, sem precisar casar por e-mail nem passar
+      // pela lógica de ciclo/plano de assinatura.
+      const referenciaCreditos = String(pagamento?.external_reference || '');
+      if (referenciaCreditos.startsWith('creditos:')) {
+        const userIdCreditos = referenciaCreditos.slice('creditos:'.length);
+        if (pagamento.status === 'approved' && userIdCreditos) {
+          const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+          const { data: perfil } = await supabaseAdmin
+            .from('profiles')
+            .select('creditos_ia')
+            .eq('id', userIdCreditos)
+            .maybeSingle();
+          if (perfil) {
+            const creditoUsd = (Number(pagamento.transaction_amount) || 0) / TAXA_REFERENCIA_USD_BRL;
+            await supabaseAdmin
+              .from('profiles')
+              .update({ creditos_ia: Number(perfil.creditos_ia) + creditoUsd })
+              .eq('id', userIdCreditos);
+            await supabaseAdmin.from('uso_ia').insert({
+              user_id: userIdCreditos,
+              tipo: 'recarga_avulsa',
+              provedor: 'sistema',
+              modelo: 'creditos_mercadopago',
+              unidades: null,
+              custo_estimado: -creditoUsd,
+            });
+          }
+        }
+        if (notificacaoId) {
+          await createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
+            .from('mercadopago_eventos_processados').insert({ id: notificacaoId, tipo });
+        }
+        return json({ ok: true, recargaCreditos: true });
+      }
+
       const email = pagamento?.payer?.email;
       if (!email) return json({ ok: true, semEmail: true });
 

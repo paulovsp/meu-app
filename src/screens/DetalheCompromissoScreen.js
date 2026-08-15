@@ -214,6 +214,7 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
       patientId: compromisso.patient_id,
       patientNome: compromisso.patient_nome,
       platform: compromisso.modality,
+      appointmentId: compromisso.id,
     });
   }
 

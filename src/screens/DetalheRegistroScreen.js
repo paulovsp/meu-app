@@ -83,6 +83,17 @@ export default function DetalheRegistroScreen() {
     }
   };
 
+  // Registros criados antes da correção do editor (NovoRegistroScreen.js)
+  // ainda têm marcação markdown solta (**negrito**, _itálico_, __sublinhado__,
+  // ~~tachado~~) salva como texto literal — sem essa conversão apareceriam os
+  // asteriscos/underscores crus na tela. Registros novos já vêm com tags HTML
+  // reais e passam por aqui sem sofrer nenhuma mudança.
+  const conteudoHtml = (record.content || '')
+    .replace(/~~([\s\S]+?)~~/g, '<s>$1</s>')
+    .replace(/\*\*([\s\S]+?)\*\*/g, '<b>$1</b>')
+    .replace(/__([\s\S]+?)__/g, '<u>$1</u>')
+    .replace(/_([\s\S]+?)_/g, '<i>$1</i>');
+
   const injectedJS = `
     setTimeout(() => {
       window.ReactNativeWebView.postMessage(
@@ -171,12 +182,14 @@ export default function DetalheRegistroScreen() {
                         padding: 0;
                         word-wrap: break-word;
                         overflow-wrap: break-word;
+                        white-space: pre-wrap;
                         -webkit-text-size-adjust: 100%;
                       }
                       p { margin-bottom: 10px; }
                       b, strong { font-weight: 700; }
                       i, em { font-style: italic; }
                       u { text-decoration: underline; }
+                      s, strike { text-decoration: line-through; }
                       ul, ol { padding-left: 24px; margin-bottom: 10px; }
                       li { margin-bottom: 4px; line-height: 1.5; }
                       br { line-height: 0.8; }
@@ -184,7 +197,7 @@ export default function DetalheRegistroScreen() {
                     </style>
                   </head>
                   <body>
-                    ${record.content}
+                    ${conteudoHtml}
                   </body>
                   </html>
                 `

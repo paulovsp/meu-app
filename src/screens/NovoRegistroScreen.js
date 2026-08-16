@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { isSupported as ocrSuportado, extractTextFromImage } from 'expo-text-extractor';
+import { RichEditor, RichToolbar, actions as richActions } from 'react-native-pell-rich-editor';
 import {
   listarPacientes, addRecord,
 } from '../services/database';
@@ -97,13 +98,12 @@ export default function NovoRegistroScreen() {
   const [salvando, setSalvando] = useState(false);
   const [processando, setProcessando] = useState('');
 
-  // ─── editor de texto livre ───
+  // ─── editor de texto rico (WYSIWYG de verdade, via WebView) ───
   const [conteudo, setConteudo] = useState('');
-  const [selecao, setSelecao] = useState({ start: 0, end: 0 });
   const [corTexto, setCorTexto] = useState(CORES_TEXTO[0].valor);
   const [tamanhoTexto, setTamanhoTexto] = useState(TAMANHOS[1].valor);
 
-  const inputRef = useRef(null);
+  const richText = useRef(null);
 
   useEffect(() => {
     async function carregar() {
@@ -116,36 +116,27 @@ export default function NovoRegistroScreen() {
     carregar();
   }, []);
 
-  // envolve o texto selecionado com tags HTML de formatação — o conteúdo é
-  // salvo como HTML porque é assim que DetalheRegistroScreen.js já renderiza
-  // (WebView com CSS pra b/i/u/s), então o texto sai formatado de verdade
-  // ao reabrir o registro, não como marcação markdown solta.
-  function aplicarMarcador(marcadorEsq, marcadorDir = marcadorEsq) {
-    const { start, end } = selecao;
-    if (start === end) {
-      Alert.alert(
-        'Selecione o texto',
-        'Toque e arraste para selecionar o trecho que deseja formatar, depois toque no botão novamente.'
-      );
-      return;
-    }
-    const antes = conteudo.slice(0, start);
-    const meio = conteudo.slice(start, end);
-    const depois = conteudo.slice(end);
-    const novoTexto = `${antes}${marcadorEsq}${meio}${marcadorDir}${depois}`;
-    setConteudo(novoTexto);
+  function escaparHtml(texto) {
+    return texto
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
   }
 
   // ─── importar texto de imagem — OCR no próprio aparelho (Google ML Kit
   // no Android, Apple Vision no iOS via expo-text-extractor), sem enviar a
   // imagem pra lugar nenhum: sem custo, sem provedor, funciona offline. ───
+  // Insere direto no editor rico (na posição do cursor) como HTML — precisa
+  // escapar e converter quebras de linha em <br>, senão o texto reconhecido
+  // vira uma linha só dentro do editor.
   function anexarTexto(linhas) {
     const texto = (linhas || []).join('\n').trim();
     if (!texto) {
       Alert.alert('Sem texto', 'Não encontrei texto útil nessa imagem.');
       return;
     }
-    setConteudo(prev => (prev.trim() ? `${prev}\n\n${texto}` : texto));
+    const html = escaparHtml(texto).split('\n').join('<br>');
+    richText.current?.insertHTML(html);
   }
 
   async function processarImagem(uri) {
@@ -351,36 +342,56 @@ export default function NovoRegistroScreen() {
           <Text style={s.label}>Conteúdo</Text>
           <View style={s.editorHintBox}>
             <Text style={s.editorHintText}>
-              Escreva livremente abaixo. Para aplicar negrito, itálico, sublinhado ou
-              tachado: selecione o trecho de texto desejado (toque e arraste) e depois
-              toque no botão correspondente. Tamanho e cor se aplicam a todo o texto.
+              Escreva livremente abaixo. Selecione um trecho e toque num botão da
+              barra de formatação (negrito, itálico, sublinhado, tachado ou listas)
+              pra aplicar só naquele trecho. Tamanho e cor de texto ficam na barra
+              logo abaixo do editor.
             </Text>
           </View>
 
-          {/* ─── barra de formatação ─── */}
-          <View style={s.toolbar}>
-            <View style={s.toolbarRow}>
-              <TouchableOpacity style={s.fmtBtn} onPress={() => aplicarMarcador('<b>', '</b>')}>
-                <Text style={[s.fmtBtnText, { fontWeight: '900' }]}>B</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={s.fmtBtn} onPress={() => aplicarMarcador('<i>', '</i>')}>
-                <Text style={[s.fmtBtnText, { fontStyle: 'italic' }]}>I</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={s.fmtBtn} onPress={() => aplicarMarcador('<u>', '</u>')}>
-                <Text style={[s.fmtBtnText, { textDecorationLine: 'underline' }]}>U</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={s.fmtBtn} onPress={() => aplicarMarcador('<s>', '</s>')}>
-                <Text style={[s.fmtBtnText, { textDecorationLine: 'line-through' }]}>S</Text>
-              </TouchableOpacity>
-            </View>
+          {/* ─── editor rico de verdade (WebView + execCommand) ───
+              Bold/itálico/etc. aplicam na seleção real do editor, não
+              dependem do estado de seleção instável do TextInput do RN —
+              é o que fazia negrito "não funcionar" no editor antigo. */}
+          <RichEditor
+            ref={richText}
+            style={s.editorInput}
+            placeholder="Escreva aqui o conteúdo do registro..."
+            initialContentHTML=""
+            useContainer
+            onChange={setConteudo}
+            editorStyle={{
+              backgroundColor: '#fff',
+              color: corTexto,
+              contentCSSText: `font-size:${tamanhoTexto}px; min-height:280px; padding:4px;`,
+            }}
+          />
 
+          <RichToolbar
+            editor={richText}
+            actions={[
+              richActions.setBold,
+              richActions.setItalic,
+              richActions.setUnderline,
+              richActions.setStrikethrough,
+              richActions.insertBulletsList,
+              richActions.insertOrderedList,
+              richActions.undo,
+              richActions.redo,
+            ]}
+            iconTint="#1A1A2E"
+            selectedIconTint="#3D5A80"
+            style={s.richToolbar}
+          />
+
+          <View style={s.toolbar}>
             <View style={s.toolbarRow}>
               <Text style={s.toolbarLabel}>Tamanho:</Text>
               {TAMANHOS.map(tm => (
                 <TouchableOpacity
                   key={tm.valor}
                   style={[s.sizeBtn, tamanhoTexto === tm.valor && s.fmtBtnActive]}
-                  onPress={() => setTamanhoTexto(tm.valor)}
+                  onPress={() => { setTamanhoTexto(tm.valor); richText.current?.setFontSize(tm.valor); }}
                 >
                   <Text style={s.fmtBtnText}>{tm.nome}</Text>
                 </TouchableOpacity>
@@ -397,26 +408,11 @@ export default function NovoRegistroScreen() {
                     { backgroundColor: c.valor },
                     corTexto === c.valor && s.colorDotActive,
                   ]}
-                  onPress={() => setCorTexto(c.valor)}
+                  onPress={() => { setCorTexto(c.valor); richText.current?.setForeColor(c.valor); }}
                 />
               ))}
             </View>
           </View>
-
-          <TextInput
-            ref={inputRef}
-            style={[
-              s.editorInput,
-              { color: corTexto, fontSize: tamanhoTexto },
-            ]}
-            placeholder="Escreva aqui o conteúdo do registro..."
-            placeholderTextColor="#bbb"
-            multiline
-            textAlignVertical="top"
-            value={conteudo}
-            onChangeText={setConteudo}
-            onSelectionChange={(e) => setSelecao(e.nativeEvent.selection)}
-          />
         </View>
 
         <TouchableOpacity style={s.saveBtn} onPress={salvar} disabled={salvando}>
@@ -544,6 +540,14 @@ const s = StyleSheet.create({
   },
   editorHintText: { fontSize: 12, color: '#3D5A80', lineHeight: 17 },
 
+  richToolbar: {
+    backgroundColor: '#F5F7FA',
+    borderWidth: 1,
+    borderColor: '#E0E4EA',
+    borderRadius: 10,
+    marginTop: 8,
+  },
+
   toolbar: {
     backgroundColor: '#fff',
     borderRadius: 10,
@@ -551,7 +555,7 @@ const s = StyleSheet.create({
     borderColor: '#E0E4EA',
     padding: 10,
     gap: 10,
-    marginBottom: 10,
+    marginTop: 10,
   },
   toolbarRow: {
     flexDirection: 'row',

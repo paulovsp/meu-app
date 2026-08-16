@@ -29,7 +29,7 @@ export async function getCursoById(id) {
 async function getDespesaVinculada(cursoId) {
   const { data, error } = await supabase
     .from('despesas_consultorio')
-    .select('id')
+    .select('id, data')
     .eq('curso_id', cursoId)
     .maybeSingle();
   if (error) throw error;
@@ -41,11 +41,16 @@ async function sincronizarDespesaDoCurso(curso) {
   const temCusto = Number(curso.custo) > 0;
 
   if (temCusto && despesaExistente) {
+    // Se o curso não tem data preenchida, mantém a data que a despesa já
+    // tinha — sem isso, editar só o custo (sem mexer na data) reatribuía
+    // "hoje" a cada edição e a despesa "sumia" do mês em que o usuário
+    // estava olhando em Pagamentos (parecia não sincronizar, na real
+    // sincronizava pro mês errado).
     await editarDespesa(despesaExistente.id, {
       categoria: 'cursos',
       descricao: curso.titulo,
       valor: Number(curso.custo),
-      data: curso.data || new Date().toISOString().slice(0, 10),
+      data: curso.data || despesaExistente.data,
       recorrente: false,
     });
   } else if (temCusto && !despesaExistente) {

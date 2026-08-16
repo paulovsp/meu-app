@@ -188,10 +188,13 @@ export default function PerfilScreen({ navigation }) {
     Alert.alert(
       'Adicionar créditos',
       'Escolha o valor da recarga — você será levada ao checkout do Mercado Pago.',
-      PACOTES_CREDITO_AVULSO_BRL.map((valor) => ({
-        text: `R$ ${valor}`,
-        onPress: () => iniciarCheckoutCreditos(valor),
-      }))
+      [
+        ...PACOTES_CREDITO_AVULSO_BRL.map((valor) => ({
+          text: `R$ ${valor}`,
+          onPress: () => iniciarCheckoutCreditos(valor),
+        })),
+        { text: 'Cancelar', style: 'cancel' },
+      ]
     );
   }
 

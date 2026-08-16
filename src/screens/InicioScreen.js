@@ -82,9 +82,16 @@ const GRID_ROWS = 2;
 const ESPACO_ACIMA_DA_GRADE =
   (HEADER_H + FREUD_OVERFLOW - TOGGLE_OVERLAP) + TOGGLE_H + 14 /* scrollContent.paddingTop */;
 const ESPACO_ABAIXO_DA_GRADE = 20; // scrollContent.paddingBottom
-const CELL_H = Math.max(
-  140,
-  (SH - ESPACO_ACIMA_DA_GRADE - ESPACO_ABAIXO_DA_GRADE - GRID_ROW_GAP * (GRID_ROWS - 1)) / GRID_ROWS
+// Teto de altura — sem isso, em telas bem altas a conta acima dava
+// células enormes e quase vazias (só um ícone pequeno "flutuando" no
+// meio de um botão gigante). 190 dá espaço confortável pro ícone +
+// rótulo em até 2 linhas sem esticar além disso.
+const CELL_H = Math.min(
+  190,
+  Math.max(
+    140,
+    (SH - ESPACO_ACIMA_DA_GRADE - ESPACO_ABAIXO_DA_GRADE - GRID_ROW_GAP * (GRID_ROWS - 1)) / GRID_ROWS
+  )
 );
 
 // Mesma lógica pra aba Início: Afazeres/Agenda de hoje crescem pra ocupar
@@ -331,12 +338,17 @@ export default function InicioScreen({ navigation }) {
         ))}
       </View>
 
-      {/* Área com gesto de arraste — troca de modo ao arrastar para os lados */}
+      {/* Área com gesto de arraste — troca de modo ao arrastar para os lados.
+          O panHandlers vai num View por FORA do ScrollView (não espalhado
+          nele) — grudar um PanResponder externo direto num ScrollView disputa
+          com o responder nativo de rolagem dele e o gesto fica "preso"
+          (arrasta visualmente mas nunca solta pra trocar de aba), mesmo
+          problema que o padrão usado em Agenda/Financeiro evita. */}
+      <View style={{ flex: 1 }} {...panHandlers}>
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={s.scrollContent}
         showsVerticalScrollIndicator={false}
-        {...panHandlers}
       >
         {modo === 'inicio' ? (
           <Animated.View style={gridAnimatedStyle}>
@@ -398,12 +410,13 @@ export default function InicioScreen({ navigation }) {
                 <View style={[s.cellIconBadge, { backgroundColor: btn.corBadge }]}>
                   <Ionicons name={btn.icon} size={32} color={btn.corIcone || '#FFFFFF'} />
                 </View>
-                <Text style={s.cellLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{btn.label}</Text>
+                <Text style={s.cellLabel} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.85}>{btn.label}</Text>
               </TouchableOpacity>
             ))}
           </Animated.View>
         )}
       </ScrollView>
+      </View>
 
       <MenuLateral
         visible={menuAberto}

@@ -73,11 +73,17 @@ async function enviarEmail(to: string, subject: string, html: string) {
   }
 }
 
-// Confirmação de cadastro sempre volta pra essa página estática (branded,
-// hospedada junto com privacidade.html/termos.html) — não pro deep link
-// direto no app, que não tem `scheme` configurado no app.json e por isso
-// sempre caía em página de erro no navegador (item B.4).
-const CONFIRMACAO_SIGNUP_URL = 'https://app.drsig.com.br/confirmado.html';
+// Confirmação de cadastro agora leva pra escolha de plano (docs/escolher-plano.html),
+// não direto pra confirmado.html — o botão do e-mail passa a cobrir o fluxo
+// completo: confirmar e-mail -> escolher plano -> pagar -> acesso liberado.
+// Continua sendo uma página web (não deep link no app, que não tem `scheme`
+// configurado no app.json e por isso sempre caía em página de erro).
+const ESCOLHER_PLANO_URL = 'https://app.drsig.com.br/escolher-plano.html';
+
+// Site institucional (drsig.com.br, repo separado) — não o domínio
+// app.drsig.com.br, que só hospeda páginas estáticas (termos, privacidade,
+// confirmação) e não tem index.html na raiz.
+const SITE_URL = 'https://drsig.com.br';
 
 function montarLinkVerificacao(tokenHash: string, tipo: string, redirectTo: string) {
   const url = new URL(`${SUPABASE_URL}/auth/v1/verify`);
@@ -121,26 +127,85 @@ Deno.serve(async (req) => {
     let html: string;
 
     if (tipo === 'signup') {
-      // Texto e link definidos pelo Paulo (item B.4) — o botão agora volta
-      // pra uma página web de marca (CONFIRMACAO_SIGNUP_URL), não pro app
-      // direto, porque não há `scheme` de deep link configurado.
-      const linkSignup = montarLinkVerificacao(emailData?.token_hash, tipo, CONFIRMACAO_SIGNUP_URL);
+      // Item pós-teste "rever arquitetura do cadastro": e-mail completo
+      // (boas-vindas + explicação do app + funcionalidades + planos + termos
+      // essenciais + tour + login demo), com o botão levando pro fluxo
+      // completo confirmar -> escolher plano -> pagar -> acesso liberado
+      // (ver mercadopago-criar-checkout-assinatura e docs/escolher-plano.html).
+      const linkSignup = montarLinkVerificacao(emailData?.token_hash, tipo, ESCOLHER_PLANO_URL);
       const saudacao = nome ? `Olá, ${nome}!` : 'Olá!';
       subject = 'Bem-vindo(a) ao Dr.Sig — confirme seu cadastro';
-      html = envelope(
-        'Bem-vindo(a) ao Dr.Sig',
-        `
-          <p>${saudacao}</p>
-          <p>Seja bem-vindo(a) ao Dr.Sig — prontuário e agenda para quem exerce psicoterapia. O Dr.Sig te ajuda a organizar o acompanhamento dos seus analisantes: sessões, prontuário, agenda e cobrança, tudo num só lugar.</p>
-          <p>Para começar, confirme seu cadastro:</p>
-          <p><a href="${linkSignup}" style="background:#3D5A80;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;display:inline-block;">Confirmar minha conta</a></p>
-          <p style="color:#888;font-size:13px;">Esse link expira em algumas horas. Se você não criou essa conta, ignore este e-mail.</p>
-          <p>Depois de confirmar, é só abrir o app Dr.Sig no seu celular e fazer login com o e-mail e senha que você cadastrou.</p>
-          <p>Qualquer dúvida, fale com a gente: <a href="mailto:drsig@drsig.com.br" style="color:#3D5A80;">drsig@drsig.com.br</a><br/>
-          Saiba mais em: <a href="https://app.drsig.com.br" style="color:#3D5A80;">app.drsig.com.br</a></p>
-          <p style="margin-top:24px;font-style:italic;color:#6B6860;">— Equipe Dr.Sig<br/>O consultório e a escuta, no mesmo lugar.</p>
-        `
-      );
+      html = `
+        <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #1A1A2E; line-height: 1.55;">
+          <p style="font-size:22px;font-weight:800;font-style:italic;color:#3D5A80;margin:0 0 4px;">Dr.Sig</p>
+          <p style="font-size:11px;font-weight:700;color:#5B7FA6;letter-spacing:1.5px;text-transform:uppercase;margin:0 0 24px;">O seu assistente clínico</p>
+
+          <h1 style="font-size:20px;margin:0 0 14px;">${saudacao} Seja bem-vindo(a).</h1>
+          <p>O Dr.Sig é o consultório digital de quem exerce psicoterapia: organiza a agenda, o prontuário e o financeiro do seu acompanhamento — inclusive de analisantes e supervisionandos — tudo em um único lugar, pensado pra sua rotina clínica.</p>
+
+          <h2 style="font-size:15px;color:#3D5A80;margin:26px 0 10px;">O que você pode fazer no app</h2>
+          <ul style="padding-left:20px;margin:0 0 20px;font-size:14px;">
+            <li><strong>Agenda</strong> — horários recorrentes, visão diária e semanal, com zoom pra ajustar o tamanho dos blocos.</li>
+            <li><strong>Sessões e prontuário</strong> — registre atendimentos, grave e transcreva sessões automaticamente (com autorização do analisante) e edite anotações com formatação de texto.</li>
+            <li><strong>Busca Dr.Sig</strong> — pergunte em linguagem natural sobre o histórico de um analisante e receba relatórios prontos (resumo de sessões, frequência, pagamento).</li>
+            <li><strong>Analisantes e Supervisionandos</strong> — cadastro completo, com os dois vínculos podendo coexistir na mesma pessoa.</li>
+            <li><strong>Financeiro e Recebíveis</strong> — acompanhe pagamentos em aberto e recebidos, com cobrança mensal, por sessão ou mensal fixo.</li>
+            <li><strong>Fiscal</strong> — gere recibos em PDF e envie automaticamente pro analisante e pro seu contador.</li>
+            <li><strong>Cursos</strong> — mantenha um histórico da sua formação continuada, com opção de gravar e transcrever aulas.</li>
+            <li><strong>Pagamentos</strong> — controle as despesas administrativas do seu próprio consultório.</li>
+          </ul>
+
+          <h2 style="font-size:15px;color:#3D5A80;margin:26px 0 10px;">Planos, sem fidelidade</h2>
+          <table style="width:100%;border-collapse:collapse;font-size:13.5px;margin-bottom:8px;">
+            <tr style="background:#F5F7FA;">
+              <td style="padding:8px 10px;border:1px solid #E2E6EC;"><strong>Mensal</strong></td>
+              <td style="padding:8px 10px;border:1px solid #E2E6EC;">R$ 89/mês</td>
+            </tr>
+            <tr>
+              <td style="padding:8px 10px;border:1px solid #E2E6EC;"><strong>Semestral</strong></td>
+              <td style="padding:8px 10px;border:1px solid #E2E6EC;">R$ 414 a cada 6 meses (~R$ 69/mês)</td>
+            </tr>
+            <tr style="background:#F5F7FA;">
+              <td style="padding:8px 10px;border:1px solid #E2E6EC;"><strong>Anual</strong></td>
+              <td style="padding:8px 10px;border:1px solid #E2E6EC;">R$ 588/ano (~R$ 49/mês)</td>
+            </tr>
+          </table>
+          <p style="font-size:12.5px;color:#6B6860;">Cancele quando quiser, sem multa. Pagamento via Mercado Pago (cartão ou Pix).</p>
+
+          <p style="text-align:center;margin:28px 0;">
+            <a href="${linkSignup}" style="background:#3D5A80;color:#fff;padding:14px 26px;border-radius:10px;text-decoration:none;display:inline-block;font-weight:700;font-size:15px;">Confirmar minha conta e ver os planos</a>
+          </p>
+          <p style="color:#888;font-size:12.5px;text-align:center;margin-top:-18px;">Esse link expira em algumas horas. Se você não criou essa conta, ignore este e-mail.</p>
+
+          <div style="background:#F5F7FA;border-left:3px solid #3D5A80;padding:14px 16px;border-radius:4px;margin:24px 0;">
+            <strong style="font-size:14px;">Quer conhecer o app na prática antes de decidir?</strong>
+            <p style="margin:8px 0 0;font-size:13.5px;">
+              Preparamos uma conta de demonstração já com analisantes, supervisionandos, agenda e sessões de exemplo —
+              dá pra explorar tudo sem mexer nos seus próprios dados:
+            </p>
+            <p style="margin:10px 0 0;font-size:13.5px;">
+              E-mail: <strong>oseusig@gmail.com</strong><br/>
+              Senha: <strong>Viena1900</strong>
+            </p>
+          </div>
+
+          <h2 style="font-size:15px;color:#3D5A80;margin:26px 0 10px;">Informações legais</h2>
+          <p style="font-size:12.5px;color:#6B6860;">
+            O Dr.Sig é oferecido por <strong>Dr.Sig Soluções Digitais</strong> (Paulo Von Schwerin Pimentel LTDA,
+            CNPJ 68.542.896/0001-74). Leia os
+            <a href="https://app.drsig.com.br/termos.html" style="color:#3D5A80;">Termos de Uso</a> e a
+            <a href="https://app.drsig.com.br/privacidade.html" style="color:#3D5A80;">Política de Privacidade</a>
+            antes de usar o app.
+          </p>
+
+          <p style="font-size:13.5px;margin-top:20px;">
+            Qualquer dúvida, fale com a gente: <a href="mailto:drsig@drsig.com.br" style="color:#3D5A80;">drsig@drsig.com.br</a><br/>
+            Saiba mais em: <a href="${SITE_URL}" style="color:#3D5A80;">drsig.com.br</a>
+          </p>
+
+          <p style="margin-top:24px;font-style:italic;color:#6B6860;font-size:13px;">— Equipe Dr.Sig<br/>O consultório e a escuta, no mesmo lugar.</p>
+        </div>
+      `;
     } else if (tipo === 'email_change') {
       subject = 'Confirme seu novo e-mail no Dr.Sig';
       html = envelope(

@@ -139,6 +139,44 @@ async function validarAssinatura(req: Request): Promise<boolean> {
   return v1Calculado === v1Recebido;
 }
 
+// Assinatura gerada por mercadopago-criar-checkout-assinatura (usuário já
+// tem conta e já está autenticado — ver comentário lá) — aplica direto por
+// id, sem precisar casar por e-mail nem passar por `pagamentos_pendentes`.
+async function aplicarAssinaturaPorId(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  userId: string,
+  estado: {
+    assinatura_status: string;
+    assinatura_expira_em: string | null;
+    mp_preapproval_id: string | null;
+    assinatura_plano?: Plano;
+    assinatura_ciclo_inicio?: string;
+    assinatura_valor_mensal_equivalente?: number;
+  },
+) {
+  const patch: Record<string, unknown> = { assinatura_status: estado.assinatura_status };
+  if (estado.assinatura_expira_em) patch.assinatura_expira_em = estado.assinatura_expira_em;
+  if (estado.mp_preapproval_id) patch.mp_preapproval_id = estado.mp_preapproval_id;
+  if (estado.assinatura_plano) patch.assinatura_plano = estado.assinatura_plano;
+  if (estado.assinatura_ciclo_inicio) patch.assinatura_ciclo_inicio = estado.assinatura_ciclo_inicio;
+  if (estado.assinatura_valor_mensal_equivalente != null) {
+    patch.assinatura_valor_mensal_equivalente = estado.assinatura_valor_mensal_equivalente;
+  }
+  if (estado.assinatura_status === 'ativa') patch.assinatura_renovacao_notificada_em = null;
+  await supabaseAdmin.from('profiles').update(patch).eq('id', userId);
+}
+
+function parseReferenciaAssinatura(externalReference: string): { plano: Plano; userId: string } | null {
+  if (!externalReference.startsWith('assinatura:')) return null;
+  const partes = externalReference.split(':');
+  const plano = partes[1] as Plano;
+  const userId = partes[2];
+  if (!PLANOS_VALIDOS_REFERENCIA.includes(plano) || !userId) return null;
+  return { plano, userId };
+}
+
+const PLANOS_VALIDOS_REFERENCIA: Plano[] = ['mensal', 'semestral', 'anual'];
+
 async function aplicarNaContaOuPendente(
   supabaseAdmin: ReturnType<typeof createClient>,
   email: string,
@@ -290,6 +328,29 @@ Deno.serve(async (req) => {
         return json({ ok: true, recargaCreditos: true });
       }
 
+      // Assinatura semestral/anual (pagamento único, gerada por
+      // mercadopago-criar-checkout-assinatura) — plano e conta já vêm no
+      // external_reference, sem precisar adivinhar o plano pelo valor nem
+      // casar por e-mail.
+      const referenciaAssinatura = parseReferenciaAssinatura(String(pagamento?.external_reference || ''));
+      if (referenciaAssinatura && referenciaAssinatura.plano !== 'mensal') {
+        if (pagamento.status === 'approved') {
+          const cicloInicio = new Date();
+          await aplicarAssinaturaPorId(supabaseAdmin, referenciaAssinatura.userId, {
+            assinatura_status: 'ativa',
+            assinatura_expira_em: calcularCicloFim(referenciaAssinatura.plano, cicloInicio).toISOString(),
+            mp_preapproval_id: null,
+            assinatura_plano: referenciaAssinatura.plano,
+            assinatura_ciclo_inicio: cicloInicio.toISOString(),
+            assinatura_valor_mensal_equivalente: VALOR_MENSAL_EQUIVALENTE[referenciaAssinatura.plano],
+          });
+        }
+        if (notificacaoId) {
+          await supabaseAdmin.from('mercadopago_eventos_processados').insert({ id: notificacaoId, tipo });
+        }
+        return json({ ok: true, assinaturaPorId: true });
+      }
+
       const email = pagamento?.payer?.email;
       if (!email) return json({ ok: true, semEmail: true });
 
@@ -366,6 +427,36 @@ Deno.serve(async (req) => {
       });
       if (!resp.ok) return json({ error: `Erro ao buscar assinatura (${resp.status}).` }, 502);
       const preapproval = await resp.json();
+
+      // Assinatura mensal gerada por mercadopago-criar-checkout-assinatura —
+      // conta já vem no external_reference, aplica direto por id.
+      const referenciaAssinaturaMensal = parseReferenciaAssinatura(String(preapproval?.external_reference || ''));
+      if (referenciaAssinaturaMensal) {
+        if (preapproval.status === 'authorized') {
+          const cicloInicio = preapproval.date_created ? new Date(preapproval.date_created) : new Date();
+          const expiraEm = preapproval.next_payment_date
+            ? new Date(preapproval.next_payment_date)
+            : calcularCicloFim('mensal', cicloInicio);
+          await aplicarAssinaturaPorId(supabaseAdmin, referenciaAssinaturaMensal.userId, {
+            assinatura_status: 'ativa',
+            assinatura_expira_em: expiraEm.toISOString(),
+            mp_preapproval_id: recursoId,
+            assinatura_plano: 'mensal',
+            assinatura_ciclo_inicio: cicloInicio.toISOString(),
+            assinatura_valor_mensal_equivalente: VALOR_MENSAL_EQUIVALENTE.mensal,
+          });
+        } else if (['cancelled', 'paused'].includes(preapproval.status)) {
+          await aplicarAssinaturaPorId(supabaseAdmin, referenciaAssinaturaMensal.userId, {
+            assinatura_status: 'cancelada',
+            assinatura_expira_em: null,
+            mp_preapproval_id: recursoId,
+          });
+        }
+        if (notificacaoId) {
+          await supabaseAdmin.from('mercadopago_eventos_processados').insert({ id: notificacaoId, tipo });
+        }
+        return json({ ok: true, assinaturaPorId: true });
+      }
 
       const email = preapproval?.payer_email;
       if (!email) return json({ ok: true, semEmail: true });

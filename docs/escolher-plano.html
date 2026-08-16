@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Escolher plano — Dr.Sig</title>
+<style>
+  body { font-family: -apple-system, Arial, sans-serif; background: #F5F7FA; margin: 0; padding: 24px; color: #1A1A2E; line-height: 1.5; }
+  .card { max-width: 560px; margin: 0 auto; background: #fff; border-radius: 20px; padding: 32px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); }
+  h1 { font-size: 22px; margin: 0 0 8px; }
+  .lede { color: #6B6860; font-size: 14.5px; margin: 0 0 28px; }
+  .planos { display: flex; flex-direction: column; gap: 14px; }
+  .plano {
+    border: 2px solid #E8E4DD; border-radius: 16px; padding: 18px 20px;
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    cursor: pointer; background: #FAFBFC; transition: border-color .15s, background .15s;
+  }
+  .plano:hover { border-color: #3D5A80; background: #F5F7FA; }
+  .plano.destaque { border-color: #3D5A80; background: #F0F4F8; }
+  .plano-nome { font-size: 16px; font-weight: 700; color: #1A1A2E; display: flex; align-items: center; gap: 8px; }
+  .selo { background: #3D5A80; color: #fff; font-size: 10.5px; font-weight: 700; padding: 3px 8px; border-radius: 20px; text-transform: uppercase; letter-spacing: .03em; }
+  .plano-preco { font-size: 19px; font-weight: 800; color: #3D5A80; white-space: nowrap; }
+  .plano-preco small { font-size: 12px; font-weight: 600; color: #6B6860; }
+  .plano-detalhe { font-size: 12.5px; color: #6B6860; margin-top: 3px; }
+  .plano-conteudo { flex: 1; }
+  .btn-assinar {
+    background: #3D5A80; color: #fff; border: none; border-radius: 10px;
+    padding: 10px 16px; font-size: 13.5px; font-weight: 700; cursor: pointer; white-space: nowrap;
+  }
+  .btn-assinar:disabled { opacity: 0.6; cursor: default; }
+  .rodape { margin-top: 26px; text-align: center; }
+  .rodape a { color: #6B6860; font-size: 13.5px; text-decoration: underline; }
+  .erro { background: #FCEBEA; color: #C0392B; padding: 12px 14px; border-radius: 10px; font-size: 13.5px; margin-bottom: 20px; display: none; }
+  .aviso-sem-token { text-align: center; padding: 20px 0; }
+  .aviso-sem-token p { color: #6B6860; font-size: 14.5px; }
+  .nota { font-size: 12px; color: #A5A19A; margin-top: 22px; line-height: 1.6; }
+  .carregando-tela { text-align: center; padding: 60px 0; color: #6B6860; }
+</style>
+</head>
+<body>
+<div class="card" id="card">
+  <div class="carregando-tela">Carregando…</div>
+</div>
+
+<script>
+  const SUPABASE_URL = 'https://iahtyvqjgukdgrftpyxm.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_GEYLOEfzFHU0zkdpJCNDVw_cVbO_rS6';
+  const FUNCAO_URL = SUPABASE_URL + '/functions/v1/mercadopago-criar-checkout-assinatura';
+  const card = document.getElementById('card');
+
+  // O Supabase devolve o token no FRAGMENTO da URL (#access_token=...), não
+  // na query string — não trafega pro servidor, só fica no navegador.
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  const accessToken = hashParams.get('access_token');
+
+  const PLANOS = [
+    { id: 'mensal', nome: 'Mensal', preco: 'R$ 89', periodo: '/mês', detalhe: 'Cobrado todo mês, sem fidelidade.' },
+    { id: 'semestral', nome: 'Semestral', preco: 'R$ 414', periodo: '/6 meses', detalhe: 'Equivale a ~R$ 69/mês.', destaque: true, selo: 'Mais escolhido' },
+    { id: 'anual', nome: 'Anual', preco: 'R$ 588', periodo: '/ano', detalhe: 'Equivale a ~R$ 49/mês — melhor preço.' },
+  ];
+
+  function render(html) {
+    card.innerHTML = html;
+  }
+
+  function renderSemToken() {
+    render(
+      '<h1>Este link expirou</h1>' +
+      '<div class="aviso-sem-token">' +
+      '<p>O link de confirmação já foi usado ou não é mais válido. Se sua conta já está confirmada, ' +
+      'é só abrir o app Dr.Sig e fazer login normalmente — você pode escolher um plano a qualquer ' +
+      'momento em <strong>Meu Perfil</strong>.</p>' +
+      '<p>Se precisar de um novo link, escreva pra gente.</p>' +
+      '</div>' +
+      '<div class="rodape"><a href="mailto:drsig@drsig.com.br">drsig@drsig.com.br</a></div>'
+    );
+  }
+
+  function renderPlanos() {
+    const cartoes = PLANOS.map(function (p) {
+      return (
+        '<div class="plano' + (p.destaque ? ' destaque' : '') + '" data-plano="' + p.id + '">' +
+        '<div class="plano-conteudo">' +
+        '<div class="plano-nome">' + p.nome + (p.selo ? ' <span class="selo">' + p.selo + '</span>' : '') + '</div>' +
+        '<div class="plano-detalhe">' + p.detalhe + '</div>' +
+        '</div>' +
+        '<div style="display:flex;align-items:center;gap:14px;">' +
+        '<div class="plano-preco">' + p.preco + '<br/><small>' + p.periodo + '</small></div>' +
+        '<button class="btn-assinar" data-plano-btn="' + p.id + '">Assinar</button>' +
+        '</div>' +
+        '</div>'
+      );
+    }).join('');
+
+    render(
+      '<h1>Sua conta está confirmada 🎉</h1>' +
+      '<p class="lede">Agora escolha um plano pra ter acesso completo — todos sem fidelidade, cancele quando quiser.</p>' +
+      '<div class="erro" id="erro"></div>' +
+      '<div class="planos">' + cartoes + '</div>' +
+      '<div class="rodape"><a href="https://app.drsig.com.br/confirmado.html">Prefiro só explorar o app agora e decidir depois</a></div>' +
+      '<p class="nota">O pagamento é processado com segurança pelo Mercado Pago (cartão ou Pix). ' +
+      'Sem fidelidade: cancele a qualquer momento pelo app ou pelo Mercado Pago.</p>'
+    );
+
+    document.querySelectorAll('[data-plano-btn]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        iniciarCheckout(btn.getAttribute('data-plano-btn'), btn);
+      });
+    });
+  }
+
+  function mostrarErro(msg) {
+    const el = document.getElementById('erro');
+    if (!el) return;
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  async function iniciarCheckout(plano, btnClicado) {
+    document.querySelectorAll('[data-plano-btn]').forEach(function (b) { b.disabled = true; });
+    btnClicado.textContent = 'Abrindo pagamento…';
+    try {
+      const resp = await fetch(FUNCAO_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + accessToken,
+          apikey: SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ plano: plano }),
+      });
+      const dados = await resp.json();
+      if (!resp.ok || !dados.initPoint) {
+        throw new Error(dados.error || 'Não foi possível gerar o link de pagamento.');
+      }
+      window.location.href = dados.initPoint;
+    } catch (err) {
+      mostrarErro(err.message || 'Erro ao iniciar o pagamento. Tente novamente.');
+      document.querySelectorAll('[data-plano-btn]').forEach(function (b) { b.disabled = false; });
+      btnClicado.textContent = 'Assinar';
+    }
+  }
+
+  if (!accessToken) {
+    renderSemToken();
+  } else {
+    renderPlanos();
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Confirmar cadastro — Dr.Sig</title>
+<style>
+  body {
+    font-family: -apple-system, Arial, sans-serif;
+    background: #3D5A80;
+    margin: 0;
+    padding: 24px;
+    color: #1A1A2E;
+    line-height: 1.6;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .card {
+    max-width: 420px;
+    width: 100%;
+    background: #fff;
+    border-radius: 20px;
+    padding: 40px 32px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.18);
+    text-align: center;
+  }
+  h1 { font-size: 21px; margin: 0 0 12px; color: #1A1A2E; }
+  p { font-size: 14.5px; color: #6B6860; margin: 0 0 22px; }
+  button {
+    background: #3D5A80;
+    color: #fff;
+    border: none;
+    font-weight: 700;
+    font-size: 15px;
+    padding: 14px 28px;
+    border-radius: 12px;
+    cursor: pointer;
+    width: 100%;
+  }
+  button:disabled { opacity: 0.6; cursor: default; }
+  a.btn {
+    display: inline-block;
+    background: #3D5A80;
+    color: #fff;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 15px;
+    padding: 14px 28px;
+    border-radius: 12px;
+  }
+  .selo { width: 64px; height: 64px; border-radius: 50%; background: #E6F5EE; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; font-size: 32px; }
+  .erro-selo { background: #FCEBEA; }
+  .erro-msg { background: #FCEBEA; color: #C0392B; padding: 12px 14px; border-radius: 10px; font-size: 13.5px; margin: 0 0 20px; text-align: left; display: none; }
+  .marca { margin-top: 24px; font-size: 12px; color: #B0ADA6; font-style: italic; }
+</style>
+</head>
+<body>
+  <div class="card" id="card">
+    <p style="font-size:22px;font-weight:800;font-style:italic;color:#3D5A80;margin:0 0 4px;">Dr.Sig</p>
+    <h1>Confirmar seu cadastro</h1>
+    <p>Toque no botão abaixo pra confirmar sua conta e continuar pra escolha de plano.</p>
+    <div class="erro-msg" id="erro"></div>
+    <button id="btnConfirmar">Confirmar minha conta</button>
+  </div>
+
+  <script>
+    // Confirmação de cadastro em 2 passos (link do e-mail -> esta página ->
+    // clique real -> chamada ao Supabase) em vez de um GET direto pro
+    // /auth/v1/verify — scanners de segurança de e-mail (Safe Links,
+    // proxies corporativos etc.) seguem automaticamente todo link de um
+    // e-mail assim que ele chega; como o token é de uso único, isso
+    // consumia o token antes da pessoa clicar de verdade. Exigir um clique
+    // real aqui resolve, porque esses scanners não executam JavaScript
+    // nem clicam em botões.
+    var SUPABASE_URL = 'https://iahtyvqjgukdgrftpyxm.supabase.co';
+    var SUPABASE_ANON_KEY = 'sb_publishable_GEYLOEfzFHU0zkdpJCNDVw_cVbO_rS6';
+    var ESCOLHER_PLANO_URL = 'https://app.drsig.com.br/escolher-plano.html';
+
+    var params = new URLSearchParams(window.location.search);
+    var tokenHash = params.get('token_hash');
+    var card = document.getElementById('card');
+    var btn = document.getElementById('btnConfirmar');
+    var erroEl = document.getElementById('erro');
+
+    function mostrarErro(msg) {
+      erroEl.textContent = msg;
+      erroEl.style.display = 'block';
+    }
+
+    function mostrarSemToken() {
+      card.innerHTML =
+        '<div class="selo erro-selo">⚠️</div>' +
+        '<h1>Link incompleto</h1>' +
+        '<p>Este link não tem as informações necessárias pra confirmar sua conta. ' +
+        'Copie o link direto do e-mail, sem alterações, ou peça um novo.</p>' +
+        '<p style="margin-top:20px;"><a href="mailto:drsig@drsig.com.br">drsig@drsig.com.br</a></p>';
+    }
+
+    if (!tokenHash) {
+      mostrarSemToken();
+    } else {
+      btn.addEventListener('click', async function () {
+        btn.disabled = true;
+        btn.textContent = 'Confirmando…';
+        erroEl.style.display = 'none';
+        try {
+          var resp = await fetch(SUPABASE_URL + '/auth/v1/verify', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              apikey: SUPABASE_ANON_KEY,
+            },
+            body: JSON.stringify({ type: 'signup', token_hash: tokenHash }),
+          });
+          var dados = await resp.json();
+          if (!resp.ok || !dados.access_token) {
+            throw new Error(
+              dados.msg || dados.error_description ||
+              'Este link já foi usado ou expirou. Se você já confirmou sua conta antes, é só abrir o app e fazer login — pode pedir um novo e-mail em "Esqueci minha senha" se precisar.'
+            );
+          }
+          var destino = ESCOLHER_PLANO_URL + '#access_token=' + encodeURIComponent(dados.access_token) +
+            '&refresh_token=' + encodeURIComponent(dados.refresh_token || '');
+          window.location.href = destino;
+        } catch (err) {
+          mostrarErro(err.message || 'Não foi possível confirmar. Tente novamente ou peça um novo e-mail.');
+          btn.disabled = false;
+          btn.textContent = 'Tentar de novo';
+        }
+      });
+    }
+  </script>
+</body>
+</html>

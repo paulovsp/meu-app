@@ -73,13 +73,6 @@ async function enviarEmail(to: string, subject: string, html: string) {
   }
 }
 
-// Confirmação de cadastro agora leva pra escolha de plano (docs/escolher-plano.html),
-// não direto pra confirmado.html — o botão do e-mail passa a cobrir o fluxo
-// completo: confirmar e-mail -> escolher plano -> pagar -> acesso liberado.
-// Continua sendo uma página web (não deep link no app, que não tem `scheme`
-// configurado no app.json e por isso sempre caía em página de erro).
-const ESCOLHER_PLANO_URL = 'https://app.drsig.com.br/escolher-plano.html';
-
 // Site institucional (drsig.com.br, repo separado) — não o domínio
 // app.drsig.com.br, que só hospeda páginas estáticas (termos, privacidade,
 // confirmação) e não tem index.html na raiz.
@@ -90,6 +83,21 @@ function montarLinkVerificacao(tokenHash: string, tipo: string, redirectTo: stri
   url.searchParams.set('token', tokenHash);
   url.searchParams.set('type', tipo);
   if (redirectTo) url.searchParams.set('redirect_to', redirectTo);
+  return url.toString();
+}
+
+// O link de "signup" NÃO aponta mais direto pro GET /auth/v1/verify —
+// qualquer scanner de segurança de e-mail (Microsoft Safe Links, proxy
+// corporativo, etc.) segue automaticamente todo link de um e-mail assim
+// que ele chega, e como o token é de uso único, isso consome o token
+// ANTES da pessoa clicar de verdade (erro real visto nos logs: "One-time
+// token not found"). A correção: o link aponta pra uma página nossa
+// (confirmar-cadastro.html) que exige um clique de verdade num botão —
+// só DEPOIS desse clique é que o token é enviado pro Supabase (via POST,
+// não GET, também mais resistente a pré-carregamento automático).
+function montarLinkConfirmacaoCadastro(tokenHash: string) {
+  const url = new URL('https://app.drsig.com.br/confirmar-cadastro.html');
+  url.searchParams.set('token_hash', tokenHash);
   return url.toString();
 }
 
@@ -132,7 +140,7 @@ Deno.serve(async (req) => {
       // essenciais + tour + login demo), com o botão levando pro fluxo
       // completo confirmar -> escolher plano -> pagar -> acesso liberado
       // (ver mercadopago-criar-checkout-assinatura e docs/escolher-plano.html).
-      const linkSignup = montarLinkVerificacao(emailData?.token_hash, tipo, ESCOLHER_PLANO_URL);
+      const linkSignup = montarLinkConfirmacaoCadastro(emailData?.token_hash);
       const saudacao = nome ? `Olá, ${nome}!` : 'Olá!';
       subject = 'Bem-vindo(a) ao Dr.Sig — confirme seu cadastro';
       html = `

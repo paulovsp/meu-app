@@ -35,7 +35,7 @@ import { corTipoEvento, infoTipoEvento, ehTipoGrupo } from '../services/tiposEve
 
 const DIAS_LABEL = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const SCREEN_WIDTH = Dimensions.get('window').width;
-const COL_WIDTH = (SCREEN_WIDTH - 16) / 7;
+const COL_WIDTH_BASE = (SCREEN_WIDTH - 16) / 7;
 const SLOT_HEIGHT_BASE = 34;
 
 const COR_PRESENCIAL = '#A5D6A7'; // verde claro
@@ -125,6 +125,10 @@ export default function AgendaScreen({ navigation }) {
   const [temTranscricaoMap, setTemTranscricaoMap] = useState({});
   const [carregando, setCarregando] = useState(true);
   const [menuAberto, setMenuAberto] = useState(false);
+  // Esconde da visão semanal os dias sem nenhum horário configurado nem
+  // compromisso avulso — pensado pra quem não atende todo dia (ex: sem
+  // sábado/domingo) e não quer ver colunas vazias ocupando espaço.
+  const [ocultarDiasVazios, setOcultarDiasVazios] = useState(false);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -212,8 +216,16 @@ export default function AgendaScreen({ navigation }) {
     max: 2.2,
   });
   const alturaSlotAtual = Math.round(SLOT_HEIGHT_BASE * escalaSemanal);
-  const fontHorarioAtual = Math.max(7, Math.min(13, Math.round(9 * escalaSemanal)));
-  const fontPacienteAtual = Math.max(6, Math.min(11, Math.round(8 * escalaSemanal)));
+  // ⚠️ O teto da fonte da hora (11, não 13 como antes) é o valor máximo que
+  // ainda cabe inteiro dentro da largura fixa da coluna (COL_WIDTH_BASE,
+  // ~53px numa tela de 390px) sem cortar dígito — no zoom médio/alto a
+  // fonte batia nesse teto de 13 mas a coluna não crescia junto, cortando a
+  // hora no meio ("09:0" em vez de "09:00"). A altura do slot continua
+  // crescendo bastante com o zoom (SLOT_HEIGHT_BASE * escala), então o
+  // efeito de "mais espaço" continua nítido mesmo com a fonte um pouco
+  // mais contida.
+  const fontHorarioAtual = Math.max(7, Math.min(11, Math.round(8.5 * escalaSemanal)));
+  const fontPacienteAtual = Math.max(6, Math.min(9.5, Math.round(7.5 * escalaSemanal)));
 
   function slotsDoDiaDaSemana(diaSemana) {
     return availability
@@ -490,7 +502,7 @@ export default function AgendaScreen({ navigation }) {
     const slots = slotsDoDiaDaSemana(diaSemana);
 
     return (
-      <View key={`day-${dataISO}`} style={[styles.colunaDia, { width: COL_WIDTH }]}>
+      <View key={`day-${dataISO}`} style={[styles.colunaDia, { width: COL_WIDTH_BASE }]}>
         {/* ⚠️ NOVO (item 7): tocar no cabeçalho do dia abre a agenda diária */}
         <TouchableOpacity
           style={styles.diaHeader}
@@ -525,12 +537,30 @@ export default function AgendaScreen({ navigation }) {
     );
   }
 
+  function diaTemAlgumHorario(data) {
+    const dataISO = toISO(data);
+    const temSlot = slotsDoDiaDaSemana(data.getDay()).length > 0;
+    const temCompromissoAvulso = appointments.some((a) => a.date === dataISO);
+    return temSlot || temCompromissoAvulso;
+  }
+
   function renderSemanal() {
-    const dias = Array.from({ length: 7 }, (_, index) => {
+    const todosOsDias = Array.from({ length: 7 }, (_, index) => {
       const data = new Date(inicioSemana);
       data.setDate(data.getDate() + index);
       return data;
     });
+
+    const dias = ocultarDiasVazios ? todosOsDias.filter(diaTemAlgumHorario) : todosOsDias;
+
+    if (dias.length === 0) {
+      return (
+        <View style={styles.semanaVaziaBox}>
+          <Ionicons name="calendar-outline" size={32} color="#A5A19A" />
+          <Text style={styles.semanaVaziaTxt}>Nenhum horário nessa semana.</Text>
+        </View>
+      );
+    }
 
     return <View style={styles.semanaContainer}>{dias.map(renderColunaDia)}</View>;
   }
@@ -623,9 +653,22 @@ export default function AgendaScreen({ navigation }) {
             {Math.abs(escalaSemanal - 1) > 0.02 ? `  ·  zoom ${Math.round(escalaSemanal * 100)}%` : ''}
           </Text>
 
-          <TouchableOpacity onPress={() => mudarSemana(1)}>
-            <Text style={styles.navSeta}>›</Text>
-          </TouchableOpacity>
+          <View style={styles.navSemanaDireita}>
+            <TouchableOpacity onPress={() => mudarSemana(1)}>
+              <Text style={styles.navSeta}>›</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setOcultarDiasVazios((v) => !v)}
+              style={styles.ocultarVaziosBtn}
+            >
+              <Ionicons
+                name={ocultarDiasVazios ? 'eye-off' : 'eye-off-outline'}
+                size={16}
+                color={ocultarDiasVazios ? '#3D5A80' : '#8A8578'}
+              />
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 
@@ -719,7 +762,11 @@ const styles = StyleSheet.create({
   navSetaBtn: { padding: 8 },
   navSeta: { fontSize: 30, color: '#1976D2', paddingHorizontal: 12 },
   navTexto: { fontWeight: '600', color: '#333333', textTransform: 'capitalize' },
+  navSemanaDireita: { flexDirection: 'row', alignItems: 'center' },
+  ocultarVaziosBtn: { padding: 8, marginLeft: 2 },
   semanaContainer: { flex: 1, flexDirection: 'row', paddingHorizontal: 8, paddingBottom: 8 },
+  semanaVaziaBox: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, paddingBottom: 40 },
+  semanaVaziaTxt: { fontSize: 14, color: '#A5A19A' },
   colunaDia: {
     backgroundColor: '#F8FAFC',
     borderRadius: 8,

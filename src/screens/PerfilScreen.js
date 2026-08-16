@@ -20,6 +20,7 @@ import {
   PACOTES_CREDITO_AVULSO_BRL, criarCheckoutCreditos,
 } from '../services/creditosIA';
 import { excluirConta, alterarEmailLogin, alterarSenha } from '../services/conta';
+import SeletorCidadeEstado from '../components/SeletorCidadeEstado';
 import {
   biometriaDisponivelNoAparelho, loginBiometricoEstaAtivo,
   ativarLoginBiometrico, desativarLoginBiometrico,
@@ -68,6 +69,7 @@ export default function PerfilScreen({ navigation }) {
   const [dataNascimento, setDataNascimento] = useState('');
   const [cidade, setCidade] = useState('');
   const [uf, setUf] = useState('');
+  const [seletorCidadeAberto, setSeletorCidadeAberto] = useState(false);
   const [crp, setCrp] = useState('');
   const [email, setEmail] = useState('');
   const [telefone, setTelefone] = useState('');
@@ -678,26 +680,21 @@ export default function PerfilScreen({ navigation }) {
               maxLength={10}
             />
 
-            <View style={st.linhaDupla}>
-              <View style={{ flex: 2 }}>
-                <Text style={st.label}>Cidade *</Text>
-                <TextInput
-                  style={st.input}
-                  value={cidade}
-                  onChangeText={setCidade}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={st.label}>UF *</Text>
-                <TextInput
-                  style={st.input}
-                  value={uf}
-                  onChangeText={(t) => setUf(t.toUpperCase().slice(0, 2))}
-                  autoCapitalize="characters"
-                  maxLength={2}
-                />
-              </View>
-            </View>
+            <Text style={st.label}>Cidade e estado *</Text>
+            <TouchableOpacity style={st.input} onPress={() => setSeletorCidadeAberto(true)}>
+              <Text style={cidade ? st.inputSelecionadoTexto : st.inputPlaceholderTexto}>
+                {cidade ? `${cidade} - ${uf}` : 'Toque para selecionar'}
+              </Text>
+            </TouchableOpacity>
+            <SeletorCidadeEstado
+              visible={seletorCidadeAberto}
+              onClose={() => setSeletorCidadeAberto(false)}
+              onConfirmar={({ cidade: c, uf: u }) => {
+                setCidade(c);
+                setUf(u);
+                setSeletorCidadeAberto(false);
+              }}
+            />
 
             <Text style={st.label}>CRP</Text>
             <TextInput style={st.input} value={crp} onChangeText={setCrp} />
@@ -1293,7 +1290,8 @@ const st = StyleSheet.create({
     paddingVertical: 12, fontSize: 15, color: '#1C1C1E',
     borderWidth: 1, borderColor: '#E8E4DD',
   },
-  linhaDupla: { flexDirection: 'row', gap: 12 },
+  inputSelecionadoTexto: { fontSize: 15, color: '#1C1C1E' },
+  inputPlaceholderTexto: { fontSize: 15, color: '#B0ADA6' },
   btnRow: { flexDirection: 'row', gap: 12, marginTop: 20 },
   btn: { flex: 1, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
   btnCancel: { backgroundColor: '#F0F0F0' },

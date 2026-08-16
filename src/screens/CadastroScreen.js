@@ -9,6 +9,7 @@ import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../services/supabase';
 import { validarCPF, dataBRParaISO } from '../services/validacao';
+import SeletorCidadeEstado from '../components/SeletorCidadeEstado';
 
 const COLORS = {
   bg: '#F7F6F3',
@@ -46,6 +47,7 @@ export default function CadastroScreen({ navigation }) {
 
   const [cidade, setCidade] = useState('');
   const [uf, setUf] = useState('');
+  const [seletorCidadeAberto, setSeletorCidadeAberto] = useState(false);
 
   const [crp, setCrp] = useState('');
   const [email, setEmail] = useState('');
@@ -221,28 +223,21 @@ export default function CadastroScreen({ navigation }) {
             maxLength={10}
           />
 
-          <View style={s.linhaDupla}>
-            <View style={{ flex: 2 }}>
-              <Text style={s.label}>Cidade *</Text>
-              <TextInput
-                style={s.input}
-                value={cidade}
-                onChangeText={setCidade}
-                placeholderTextColor="#B0ADA6"
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={s.label}>UF *</Text>
-              <TextInput
-                style={s.input}
-                value={uf}
-                onChangeText={(t) => setUf(t.toUpperCase().slice(0, 2))}
-                placeholderTextColor="#B0ADA6"
-                autoCapitalize="characters"
-                maxLength={2}
-              />
-            </View>
-          </View>
+          <Text style={s.label}>Cidade e estado *</Text>
+          <TouchableOpacity style={s.input} onPress={() => setSeletorCidadeAberto(true)}>
+            <Text style={cidade ? s.inputSelecionadoTexto : s.inputPlaceholderTexto}>
+              {cidade ? `${cidade} - ${uf}` : 'Toque para selecionar'}
+            </Text>
+          </TouchableOpacity>
+          <SeletorCidadeEstado
+            visible={seletorCidadeAberto}
+            onClose={() => setSeletorCidadeAberto(false)}
+            onConfirmar={({ cidade: c, uf: u }) => {
+              setCidade(c);
+              setUf(u);
+              setSeletorCidadeAberto(false);
+            }}
+          />
 
           <Text style={s.label}>CRP / Registro profissional</Text>
           <TextInput
@@ -349,9 +344,10 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E8E4DD',
   },
+  inputSelecionadoTexto: { fontSize: 15, color: COLORS.textDark },
+  inputPlaceholderTexto: { fontSize: 15, color: '#B0ADA6' },
   senhaRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   olhoBtn: { padding: 4 },
-  linhaDupla: { flexDirection: 'row', gap: 12 },
   btn: {
     backgroundColor: COLORS.btnBlue,
     borderRadius: 14,

@@ -783,6 +783,32 @@ export async function listarStatusSessoes() {
   });
 }
 
+/** Compromissos com horário já passado mas ainda 'agendado' (ninguém
+ * confirmou se aconteceu) — nada no app muda esse status sozinho quando o
+ * horário passa, então essa é a lista que alimenta o popup de check-in
+ * (item 7, v13) na Início. Mesmo filtro de janela (90 dias) que
+ * listarStatusSessoes, pra não trazer compromissos muito antigos que
+ * ficaram esquecidos. A checagem fina de "já passou" (que precisa do
+ * horário, não só da data) usa horarioJaPassou — mesma função da Agenda/
+ * DetalheCompromissoScreen — então quem chama filtra o resultado com ela. */
+export async function listarCompromissosAguardandoCheckin() {
+  const { supabase } = require('./supabase');
+  const desde = new Date();
+  desde.setDate(desde.getDate() - 90);
+  const desdeISO = desde.toISOString().slice(0, 10);
+  const hojeISO = new Date().toISOString().slice(0, 10);
+  const { data, error } = await supabase
+    .from('appointments')
+    .select(APPOINTMENT_SELECT_COM_PACIENTE)
+    .eq('status', 'agendado')
+    .gte('date', desdeISO)
+    .lte('date', hojeISO)
+    .order('date', { ascending: true })
+    .order('start_time', { ascending: true });
+  if (error) throw error;
+  return anexarParticipantesAosAppointments(data.map(achatarAppointmentComPaciente));
+}
+
 export async function getAppointmentsByDate(date) {
   const { supabase } = require('./supabase');
   const { data, error } = await supabase

@@ -7,9 +7,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
-import { getResumoAgendaHoje } from '../services/database';
+import { getResumoAgendaHoje, listarCompromissosAguardandoCheckin } from '../services/database';
 import { processarEnviosFiscaisAutomaticos } from '../services/fiscalAutomatico';
 import { obterRecebimentosAtrasados, verificarEEnviarAlertaAtraso } from '../services/alertaAtraso';
+import { horarioJaPassou } from '../services/compromissoStatus';
+import { perguntarCheckin } from '../services/checkinCompromisso';
 import { useSwipeHorizontal } from '../hooks/useSwipeHorizontal';
 import { registrarPushToken } from '../services/pushToken';
 import { supabase } from '../services/supabase';
@@ -213,6 +215,72 @@ export default function InicioScreen({ navigation }) {
     navigation.navigate(btn.screen);
   }
 
+  // Item 7 (v13): nada no app muda um compromisso de 'agendado' pra outro
+  // status sozinho quando o horário passa — sem isso, "Sessões sem relato"
+  // fica praticamente vazia pra sempre, não por estar quebrada, mas porque
+  // ninguém nunca confirma que a sessão aconteceu. Este popup pergunta um
+  // por um, no início do app. Mesmo padrão de "só 1x por sessão do app" do
+  // aviso de atraso logo abaixo — e "Fechar" em qualquer ponto da fila
+  // suspende o resto até o próximo início do app (flag em memória, sem
+  // precisar de tabela nova).
+  const checkinMostradoRef = useRef(false);
+
+  function processarFilaCheckin(fila, indice) {
+    if (indice >= fila.length) return;
+    const compromisso = fila[indice];
+    const tipo = compromisso.tipo || 'sessao_individual';
+    const eventoIndividual = tipo === 'sessao_individual' || tipo === 'supervisao_individual';
+    let navegouPraRelato = false;
+
+    perguntarCheckin(compromisso, {
+      // Só oferece "adicionar relato" pra sessão/supervisão individual —
+      // grupo, evento livre etc. não têm um prontuário único pra gravar.
+      aoRealizada: eventoIndividual
+        ? () => new Promise((resolve) => {
+            Alert.alert(
+              'Adicionar relato?',
+              `Quer adicionar o relato de ${compromisso.patient_nome} agora?`,
+              [
+                { text: 'Depois', onPress: () => resolve() },
+                {
+                  text: 'Adicionar agora',
+                  onPress: () => {
+                    navegouPraRelato = true;
+                    navigation.navigate('NewSession', {
+                      patientId: compromisso.patient_id,
+                      patientNome: compromisso.patient_nome,
+                      platform: compromisso.modality,
+                      appointmentId: compromisso.id,
+                    });
+                    resolve();
+                  },
+                },
+              ]
+            );
+          })
+        : undefined,
+      // Ao navegar pra gravar a sessão, não insiste no resto da fila em
+      // cima da tela nova — o resto só volta a perguntar no próximo início.
+      aoConcluir: (info) => {
+        if (navegouPraRelato || info?.fechado) return;
+        processarFilaCheckin(fila, indice + 1);
+      },
+    });
+  }
+
+  async function perguntarCheckinsPendentes() {
+    if (checkinMostradoRef.current) return;
+    try {
+      const candidatos = await listarCompromissosAguardandoCheckin();
+      const pendentes = candidatos.filter((c) => horarioJaPassou(c.date, c.end_time));
+      if (pendentes.length === 0) return;
+      checkinMostradoRef.current = true;
+      processarFilaCheckin(pendentes, 0);
+    } catch (e) {
+      console.error('Falha ao verificar compromissos pendentes de check-in:', e?.message || e);
+    }
+  }
+
   // Mostra no máximo 1x por sessão do app (não a cada vez que a tela ganha
   // foco de novo, senão vira um popup irritante toda hora que se volta
   // pra Início vindo de outra tela).
@@ -248,6 +316,7 @@ export default function InicioScreen({ navigation }) {
       })();
       processarEnviosFiscaisAutomaticos().catch((e) => console.error('Falha no catch-up fiscal automático:', e?.message || e));
       verificarEEnviarAlertaAtraso().catch((e) => console.error('Falha no alerta de atraso:', e?.message || e));
+      perguntarCheckinsPendentes();
       avisarRecebimentosAtrasados();
       let cancelado = false;
       supabase

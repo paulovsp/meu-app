@@ -8,100 +8,12 @@ import {
   updateAppointmentStatus,
   temTranscricaoParaData,
   getAvailabilitySlotByDayAndTime,
-  parsePreco,
-  converterParaBRL,
-  confirmarPagamentoSessao as confirmarPagamentoSessaoDB,
 } from '../services/database';
-import { dispararFiscalPorSessao } from '../services/fiscalAutomatico';
 import { horarioJaPassou, getEstadoCompromisso, ESTADO_LABEL } from '../services/compromissoStatus';
 import { mensagemDeErro } from '../services/erros';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
 import { infoTipoEvento, ehTipoGrupo } from '../services/tiposEvento';
-
-// Nome a exibir — paciente único (individual), lista de participantes (em
-// grupo) ou o título livre ("Outros"), item J.23.
-function nomeExibicaoCompromisso(compromisso) {
-  const tipo = compromisso.tipo || 'sessao_individual';
-  if (tipo === 'outros') return compromisso.titulo || 'Outros';
-  if (ehTipoGrupo(tipo)) {
-    const nomes = (compromisso.participantes || []).map((p) => p.nome).filter(Boolean);
-    return nomes.length > 0 ? nomes.join(', ') : 'Grupo';
-  }
-  return compromisso.patient_nome || 'Analisante';
-}
-
-// Cobrança "por sessão": pergunta se o pagamento já foi recebido logo após
-// marcar a sessão como realizada. Resolve a Promise só depois que a
-// analisante escolhe uma opção (ou de imediato, se a cobrança for mensal),
-// pra quem chama poder aguardar antes de navegar pra outra tela.
-function perguntarPagamentoSessao(compromisso) {
-  return new Promise((resolve) => {
-    if (compromisso.patient_tipo_cobranca !== 'por_sessao') {
-      resolve();
-      return;
-    }
-    Alert.alert(
-      'Pagamento da sessão',
-      `O pagamento desta sessão de ${compromisso.patient_nome} já foi recebido?`,
-      [
-        { text: 'Ainda não', onPress: () => resolve() },
-        {
-          text: 'Sim, recebido',
-          onPress: async () => {
-            try {
-              const valor = await converterParaBRL(parsePreco(compromisso.patient_preco), compromisso.patient_preco_moeda);
-              await confirmarPagamentoSessaoDB(compromisso.id, compromisso.patient_id, compromisso.date, valor);
-              dispararFiscalPorSessao(compromisso.patient_id, compromisso.date, valor);
-            } catch (e) {
-              Alert.alert('Erro ao confirmar pagamento', mensagemDeErro(e));
-            } finally {
-              resolve();
-            }
-          },
-        },
-      ]
-    );
-  });
-}
-
-// Sessão não aconteceu: precisa saber se foi cancelada com antecedência
-// (cobrança cancelada — não dispara pergunta de pagamento) ou se foi uma
-// falta sem aviso (cobrança segue normalmente — dispara a mesma pergunta
-// de pagamento usada quando a sessão é realizada, já que o combinado é
-// cobrar a falta também).
-function perguntarTipoNaoRealizada(compromisso, recarregar) {
-  Alert.alert(
-    'Foi cancelada ou falta?',
-    `${nomeExibicaoCompromisso(compromisso)} não aconteceu. Foi cancelada com antecedência, ou foi uma falta (sem aviso)?`,
-    [
-      {
-        text: 'Cancelada',
-        onPress: async () => {
-          try {
-            await updateAppointmentStatus(compromisso.id, 'cancelado');
-            await recarregar();
-            Alert.alert('Cancelamento registrado', 'Essa sessão foi marcada como cancelada — a cobrança dela foi cancelada.');
-          } catch (e) {
-            Alert.alert('Erro ao atualizar', mensagemDeErro(e));
-          }
-        },
-      },
-      {
-        text: 'Falta',
-        onPress: async () => {
-          try {
-            await updateAppointmentStatus(compromisso.id, 'nao_realizado');
-            await recarregar();
-            Alert.alert('Falta registrada', 'Essa sessão foi marcada como falta — a cobrança dela segue normalmente.');
-            await perguntarPagamentoSessao(compromisso);
-          } catch (e) {
-            Alert.alert('Erro ao atualizar', mensagemDeErro(e));
-          }
-        },
-      },
-    ]
-  );
-}
+import { nomeExibicaoCompromisso, perguntarPagamentoSessao, perguntarCheckin } from '../services/checkinCompromisso';
 
 export default function DetalheCompromissoScreen({ route, navigation }) {
   const { appointmentId } = route.params;
@@ -130,28 +42,7 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
     const passou = horarioJaPassou(compromisso.date, compromisso.end_time);
     if (compromisso.status === 'agendado' && passou && !alertaMostradoRef.current) {
       alertaMostradoRef.current = true;
-      Alert.alert(
-        'A sessão aconteceu?',
-        `O horário de ${nomeExibicaoCompromisso(compromisso)} já passou. A sessão foi realizada?`,
-        [
-          {
-            text: 'Não foi realizada',
-            onPress: () => perguntarTipoNaoRealizada(compromisso, carregar),
-          },
-          {
-            text: 'Sim, foi realizada',
-            onPress: async () => {
-              try {
-                await updateAppointmentStatus(compromisso.id, 'realizado');
-                await carregar();
-                await perguntarPagamentoSessao(compromisso);
-              } catch (e) {
-                Alert.alert('Erro ao atualizar', mensagemDeErro(e));
-              }
-            },
-          },
-        ]
-      );
+      perguntarCheckin(compromisso, { aoConcluir: carregar });
     }
   }, [compromisso, carregar]);
 

@@ -11,12 +11,12 @@ import {
   FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { isSupported as ocrSuportado, extractTextFromImage } from 'expo-text-extractor';
 import { RichEditor, RichToolbar, actions as richActions } from 'react-native-pell-rich-editor';
 import {
-  listarPacientes, addRecord,
+  listarPacientes, addRecord, editRecord,
 } from '../services/database';
 import { mensagemDeErro } from '../services/erros';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
@@ -64,6 +64,17 @@ function gerarIntroducao(tipoValor, pacienteNome, data) {
   );
 }
 
+// Todo registro salvo por esta tela começa com a introdução automática
+// acima seguida de uma linha em branco — ao abrir pra editar, isso é
+// removido do editor (é regerado do zero ao salvar, com o tipo/nome atuais
+// na hora), senão o texto apareceria duplicado/desatualizado pra quem edita.
+function removerIntroducaoAutomatica(conteudoCompleto) {
+  const texto = conteudoCompleto || '';
+  if (!texto.startsWith('Registro do tipo ')) return texto;
+  const idx = texto.indexOf('\n\n');
+  return idx !== -1 ? texto.slice(idx + 2) : texto;
+}
+
 // ─── paleta de cores de texto disponíveis no editor ──────────────────────
 const CORES_TEXTO = [
   { nome: 'Padrão',   valor: '#1A1A2E' },
@@ -85,21 +96,31 @@ const TAMANHOS = [
 
 export default function NovoRegistroScreen() {
   const navigation = useNavigation();
+  const route = useRoute();
 
   useBloqueioAssinatura(navigation);
 
-  const [step, setStep] = useState('SELECT_PATIENT');
+  // Vindo de DetalheAnalisanteScreen.js (✏️ num registro já existente) ou
+  // de DetalheRegistroScreen.js (editar) — os dois passam { record, patientId }.
+  const registroExistente = route.params?.record ?? null;
+  const patientIdParam = route.params?.patientId ?? null;
+  const editando = registroExistente !== null;
+
+  const [step, setStep] = useState(editando ? 'FORM' : 'SELECT_PATIENT');
   const [pacientes, setPacientes] = useState([]);
   const [paciente, setPaciente] = useState(null);
 
-  const [titulo, setTitulo] = useState('');
-  const [tipo, setTipo] = useState('sessao');
+  const [titulo, setTitulo] = useState(registroExistente?.title || '');
+  // `category` é onde o tipo (sessão/estudo/outro) deveria estar gravado;
+  // `type` é fallback pra registros salvos antes dessa correção, quando o
+  // valor ia parar (por engano) na coluna errada.
+  const [tipo, setTipo] = useState(registroExistente?.category || registroExistente?.type || 'sessao');
 
   const [salvando, setSalvando] = useState(false);
   const [processando, setProcessando] = useState('');
 
   // ─── editor de texto rico (WYSIWYG de verdade, via WebView) ───
-  const [conteudo, setConteudo] = useState('');
+  const [conteudo, setConteudo] = useState(() => removerIntroducaoAutomatica(registroExistente?.content));
   const [corTexto, setCorTexto] = useState(CORES_TEXTO[0].valor);
   const [tamanhoTexto, setTamanhoTexto] = useState(TAMANHOS[1].valor);
 
@@ -108,7 +129,11 @@ export default function NovoRegistroScreen() {
   useEffect(() => {
     async function carregar() {
       try {
-        setPacientes(await listarPacientes());
+        const todos = await listarPacientes();
+        setPacientes(todos);
+        if (editando) {
+          setPaciente(todos.find((p) => p.id === patientIdParam) || null);
+        }
       } catch (e) {
         Alert.alert('Erro ao carregar analisantes', mensagemDeErro(e));
       }
@@ -212,10 +237,26 @@ export default function NovoRegistroScreen() {
 
     setSalvando(true);
     try {
-      const introducao = gerarIntroducao(tipo, paciente.nome, new Date());
+      // Mantém a data original da introdução ao editar (é sobre quando o
+      // registro foi feito, não sobre quando foi corrigido) — só um registro
+      // novo usa a data de agora.
+      const dataIntroducao = editando && registroExistente.date ? new Date(registroExistente.date) : new Date();
+      const introducao = gerarIntroducao(tipo, paciente.nome, dataIntroducao);
       const conteudoFinal = `${introducao}\n\n${conteudo.trim()}`;
-      await addRecord(paciente.id, tipo, titulo.trim(), conteudoFinal, null, null, null, 'livre');
-      Alert.alert('Salvo!', '', [{ text: 'OK', onPress: () => navigation.goBack() }]);
+      if (editando) {
+        await editRecord(registroExistente.id, {
+          type: 'text',
+          title: titulo.trim(),
+          content: conteudoFinal,
+          category: tipo,
+        });
+      } else {
+        // `category` (não `type`) é onde o tipo sessão/estudo/outro deve ir
+        // — é o que DetalheAnalisanteScreen.js lê pra escolher o rótulo/cor
+        // do item na lista.
+        await addRecord(paciente.id, 'text', titulo.trim(), conteudoFinal, null, null, tipo, 'livre');
+      }
+      Alert.alert(editando ? 'Alterações salvas!' : 'Salvo!', '', [{ text: 'OK', onPress: () => navigation.goBack() }]);
     } catch (err) {
       Alert.alert('Erro', mensagemDeErro(err, 'Falha ao salvar.'));
     } finally {
@@ -267,7 +308,7 @@ export default function NovoRegistroScreen() {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={s.backText}>← Voltar</Text>
         </TouchableOpacity>
-        <Text style={s.headerTitle}>Novo Registro</Text>
+        <Text style={s.headerTitle}>{editando ? 'Editar Registro' : 'Novo Registro'}</Text>
         <View style={{ width: 70 }} />
       </View>
 
@@ -357,7 +398,7 @@ export default function NovoRegistroScreen() {
             ref={richText}
             style={s.editorInput}
             placeholder="Escreva aqui o conteúdo do registro..."
-            initialContentHTML=""
+            initialContentHTML={conteudo}
             useContainer
             onChange={setConteudo}
             editorStyle={{
@@ -419,7 +460,7 @@ export default function NovoRegistroScreen() {
           {salvando ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={s.saveBtnText}>💾 Salvar Registro</Text>
+            <Text style={s.saveBtnText}>{editando ? '💾 Salvar alterações' : '💾 Salvar Registro'}</Text>
           )}
         </TouchableOpacity>
 

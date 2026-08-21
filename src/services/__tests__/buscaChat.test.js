@@ -7,14 +7,15 @@
 jest.mock('../database', () => ({
   getSessions: jest.fn(),
   getRecords: jest.fn(),
+  listarPacientes: jest.fn(),
 }));
 jest.mock('../supabase', () => ({
   supabase: { functions: { invoke: jest.fn() } },
 }));
 
-const { getSessions, getRecords } = require('../database');
+const { getSessions, getRecords, listarPacientes } = require('../database');
 const { supabase } = require('../supabase');
-const { montarContextoPaciente, chamarBuscaChat } = require('../buscaChat');
+const { montarContextoPaciente, chamarBuscaChat, identificarPacienteNaPergunta } = require('../buscaChat');
 
 const paciente = {
   id: 'p1',
@@ -82,6 +83,45 @@ describe('montarContextoPaciente — seleção por relevância (item C.6)', () =
     const contexto = await montarContextoPaciente(paciente, 'como ela está indo');
 
     expect(contexto).not.toMatch(/antiquíssima/i);
+  });
+});
+
+describe('identificarPacienteNaPergunta (item 11 — nome com acento)', () => {
+  it('acha o analisante mesmo quando a pergunta digita o nome sem o acento que o cadastro tem', async () => {
+    listarPacientes.mockResolvedValue([{ id: 'x1', nome: 'João Amélio Simões' }]);
+    const achado = await identificarPacienteNaPergunta('como está o joao hoje?');
+    expect(achado?.id).toBe('x1');
+  });
+
+  it('acha o analisante mesmo quando o cadastro tem acento e a pergunta também, com grafias diferentes', async () => {
+    listarPacientes.mockResolvedValue([{ id: 'x2', nome: 'Amelia' }]);
+    const achado = await identificarPacienteNaPergunta('como a amélia está indo?');
+    expect(achado?.id).toBe('x2');
+  });
+
+  it('retorna ambíguo (não escolhe nenhum) quando dois analisantes têm o mesmo primeiro nome', async () => {
+    listarPacientes.mockResolvedValue([
+      { id: 'a1', nome: 'Ana Silva' },
+      { id: 'a2', nome: 'Ana Costa' },
+    ]);
+    const achado = await identificarPacienteNaPergunta('como a ana está?');
+    expect(achado?.ambiguo).toBe(true);
+    expect(achado?.candidatos).toHaveLength(2);
+  });
+
+  it('nome completo desambigua entre dois analisantes de mesmo primeiro nome', async () => {
+    listarPacientes.mockResolvedValue([
+      { id: 'a1', nome: 'Ana Silva' },
+      { id: 'a2', nome: 'Ana Costa' },
+    ]);
+    const achado = await identificarPacienteNaPergunta('como a ana silva está?');
+    expect(achado?.id).toBe('a1');
+  });
+
+  it('retorna null quando nenhum analisante bate com a pergunta', async () => {
+    listarPacientes.mockResolvedValue([{ id: 'x1', nome: 'Carlos' }]);
+    const achado = await identificarPacienteNaPergunta('como estão as coisas em geral?');
+    expect(achado).toBeNull();
   });
 });
 

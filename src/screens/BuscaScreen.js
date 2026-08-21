@@ -78,6 +78,9 @@ export default function BuscaScreen() {
 
   async function resolverContexto(pergunta) {
     const pacienteMencionado = await identificarPacienteNaPergunta(pergunta);
+    if (pacienteMencionado?.ambiguo) {
+      return { ambiguo: true, candidatos: pacienteMencionado.candidatos };
+    }
     const paciente = pacienteMencionado || pacienteAtivoRef.current;
 
     if (!paciente) {
@@ -97,11 +100,20 @@ export default function BuscaScreen() {
     const pergunta = texto.trim();
     if (!pergunta || enviando) return;
 
-    let paciente, contexto;
+    let paciente, contexto, ambiguo, candidatos;
     try {
-      ({ paciente, contexto } = await resolverContexto(pergunta));
+      ({ paciente, contexto, ambiguo, candidatos } = await resolverContexto(pergunta));
     } catch (e) {
       Alert.alert('Erro ao identificar analisante', mensagemDeErro(e));
+      return;
+    }
+
+    if (ambiguo) {
+      const nomes = candidatos.map((c) => c.nome).join(', ');
+      Alert.alert(
+        'Mais de um analisante encontrado',
+        `Encontrei mais de um analisante que combina com esse nome: ${nomes}. Tente escrever o nome completo pra eu saber de quem você está falando.`
+      );
       return;
     }
 

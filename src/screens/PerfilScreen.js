@@ -8,6 +8,7 @@ import * as ImagePicker from 'expo-image-picker';
 import {
   getPlanoFinanceiro, getRecebimentosDoMes, getPrecoMedioSessao,
   getContagemAnalisantesESupervisionandos, getContagemSessoesSemRelato, getResumoHorariosSemanais,
+  filtrarRecebimentosMensais, calcularStatusGeralRecebimentos,
 } from '../services/database';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -41,7 +42,8 @@ export default function PerfilScreen({ navigation }) {
   const [carregando, setCarregando] = useState(true);
   const [plano, setPlano] = useState(null);
   const [estatisticas, setEstatisticas] = useState({
-    precoMedio: 0, totalAnalisantes: 0, totalSupervisionandos: 0, sessoesSemRelato: 0, pagamentosEmAberto: 0,
+    precoMedio: 0, totalAnalisantes: 0, totalSupervisionandos: 0, sessoesSemRelato: 0,
+    pagamentosRecebidos: 0, pagamentosTotal: 0, pagamentosStatusCor: 'verde',
     horariosOcupados: 0, horariosTotal: 0,
   });
   const [editando, setEditando] = useState(false);
@@ -161,9 +163,17 @@ export default function PerfilScreen({ navigation }) {
       totalAnalisantes: contagemAnalisantes.status === 'fulfilled' ? contagemAnalisantes.value.analisantes : atual.totalAnalisantes,
       totalSupervisionandos: contagemAnalisantes.status === 'fulfilled' ? contagemAnalisantes.value.supervisionandos : atual.totalSupervisionandos,
       sessoesSemRelato: sessoesSemRelato.status === 'fulfilled' ? sessoesSemRelato.value : atual.sessoesSemRelato,
-      pagamentosEmAberto: recebimentos.status === 'fulfilled'
-        ? recebimentos.value.filter((r) => !r.recebido).length
-        : atual.pagamentosEmAberto,
+      // Cobrança "por sessão" não entra nessa contagem (item 9) — não tem
+      // dia de vencimento fixo pra comparar com "em aberto"/"em atraso".
+      ...(() => {
+        if (recebimentos.status !== 'fulfilled') return {};
+        const mensais = filtrarRecebimentosMensais(recebimentos.value);
+        return {
+          pagamentosRecebidos: mensais.filter((r) => r.recebido).length,
+          pagamentosTotal: mensais.length,
+          pagamentosStatusCor: calcularStatusGeralRecebimentos(mensais),
+        };
+      })(),
       horariosOcupados: horarios.status === 'fulfilled' ? horarios.value.ocupados : atual.horariosOcupados,
       horariosTotal: horarios.status === 'fulfilled' ? horarios.value.total : atual.horariosTotal,
     }));
@@ -639,9 +649,26 @@ export default function PerfilScreen({ navigation }) {
           </TouchableOpacity>
         </View>
         <View style={st.statsRow}>
-          <TouchableOpacity style={st.statCard} onPress={() => navigation.navigate('Cobranca')}>
-            <Text style={st.statNumber}>{estatisticas.pagamentosEmAberto}</Text>
-            <Text style={st.statLabel}>Pagamentos em aberto</Text>
+          <TouchableOpacity
+            style={[
+              st.statCard,
+              estatisticas.pagamentosStatusCor === 'vermelho' && st.statCardAlerta,
+              estatisticas.pagamentosStatusCor === 'amarelo' && st.statCardAtencao,
+              estatisticas.pagamentosStatusCor === 'verde' && st.statCardOk,
+            ]}
+            onPress={() => navigation.navigate('Cobranca')}
+          >
+            <Text
+              style={[
+                st.statNumber,
+                estatisticas.pagamentosStatusCor === 'vermelho' && st.statNumberAlerta,
+                estatisticas.pagamentosStatusCor === 'amarelo' && st.statNumberAtencao,
+                estatisticas.pagamentosStatusCor === 'verde' && st.statNumberOk,
+              ]}
+            >
+              {estatisticas.pagamentosRecebidos}/{estatisticas.pagamentosTotal}
+            </Text>
+            <Text style={st.statLabel}>Pagamentos recebidos</Text>
           </TouchableOpacity>
         </View>
 
@@ -1230,8 +1257,12 @@ const st = StyleSheet.create({
     borderWidth: 1, borderColor: '#E8E4DD',
   },
   statCardAlerta: { backgroundColor: '#FCEBEA', borderColor: '#F0C4C0' },
+  statCardAtencao: { backgroundColor: '#FFF3E0', borderColor: '#F0D9A8' },
+  statCardOk: { backgroundColor: '#E8F5E9', borderColor: '#B7DDB9' },
   statNumber: { fontSize: 20, fontWeight: '700', color: '#3D5A80' },
   statNumberAlerta: { color: '#C0392B' },
+  statNumberAtencao: { color: '#B4780A' },
+  statNumberOk: { color: '#2E7D32' },
   statLabel: { fontSize: 12, color: '#6B6860', marginTop: 4 },
 
   // Info rows

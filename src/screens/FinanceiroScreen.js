@@ -3,7 +3,9 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Animated, 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { getPlanoFinanceiro, formatarMoeda } from '../services/database';
+import {
+  getPlanoFinanceiro, getRecebimentosDoMes, calcularStatusGeralRecebimentos, formatarMoeda,
+} from '../services/database';
 import { mensagemDeErro } from '../services/erros';
 import { useSwipeHorizontal } from '../hooks/useSwipeHorizontal';
 import MenuLateral from '../components/MenuLateral';
@@ -23,9 +25,17 @@ function labelModalidade(modality) {
   return '🏠💻 Ambos';
 }
 
-function CardTotal({ label, valor }) {
+function CardTotal({ label, valor, cor, flex }) {
   return (
-    <View style={s.cardTotal}>
+    <View
+      style={[
+        s.cardTotal,
+        flex && { flex: 1 },
+        cor === 'vermelho' && s.cardTotalVermelho,
+        cor === 'amarelo' && s.cardTotalAmarelo,
+        cor === 'verde' && s.cardTotalVerde,
+      ]}
+    >
       <Text style={s.cardTotalLabel}>{label}</Text>
       <Text style={s.cardTotalValor}>{formatarMoeda(valor)}</Text>
     </View>
@@ -60,6 +70,10 @@ export default function FinanceiroScreen() {
   const navigation = useNavigation();
   const [periodo, setPeriodo] = useState('mensal');
   const [plano, setPlano] = useState(null);
+  // "Recebido" (item 8) — só faz sentido no período mensal, cruzado com a
+  // tabela `pagamentos` (o previsto sozinho já vem do plano financeiro).
+  const [totalRecebido, setTotalRecebido] = useState(0);
+  const [corRecebimento, setCorRecebimento] = useState('verde');
   const [menuAberto, setMenuAberto] = useState(false);
 
   useLayoutEffect(() => {
@@ -76,7 +90,16 @@ export default function FinanceiroScreen() {
     useCallback(() => {
       (async () => {
         try {
-          setPlano(await getPlanoFinanceiro(new Date()));
+          const hoje = new Date();
+          const [planoResultado, recebimentos] = await Promise.all([
+            getPlanoFinanceiro(hoje),
+            getRecebimentosDoMes(hoje.getFullYear(), hoje.getMonth()),
+          ]);
+          setPlano(planoResultado);
+          setTotalRecebido(
+            recebimentos.filter((r) => r.recebido).reduce((acc, r) => acc + (r.valorPrevisto || 0), 0)
+          );
+          setCorRecebimento(calcularStatusGeralRecebimentos(recebimentos));
         } catch (e) {
           Alert.alert('Erro ao carregar', mensagemDeErro(e));
         }
@@ -173,7 +196,10 @@ export default function FinanceiroScreen() {
 
             {periodo === 'mensal' && (
               <>
-                <CardTotal label="Previsto neste mês" valor={plano.totalMensal} />
+                <View style={s.cardTotalRow}>
+                  <CardTotal label="Previsto neste mês" valor={plano.totalMensal} flex />
+                  <CardTotal label="Recebido" valor={totalRecebido} cor={corRecebimento} flex />
+                </View>
                 <View style={s.secao}>
                   <Text style={s.secaoTitulo}>Por analisante</Text>
                   {plano.itensMensal.map((item) => (
@@ -250,12 +276,16 @@ const s = StyleSheet.create({
 
   scroll: { paddingHorizontal: 16, paddingBottom: 32, gap: 16 },
 
+  cardTotalRow: { flexDirection: 'row', gap: 12 },
   cardTotal: {
     backgroundColor: '#3D5A80',
     borderRadius: 16,
     padding: 20,
     alignItems: 'center',
   },
+  cardTotalVermelho: { backgroundColor: '#C0392B' },
+  cardTotalAmarelo: { backgroundColor: '#B4780A' },
+  cardTotalVerde: { backgroundColor: '#2E7D32' },
   cardTotalLabel: {
     fontSize: 13,
     color: 'rgba(255,255,255,0.75)',

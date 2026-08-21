@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import {
   getSessions, getRecords, deleteSession, deleteRecord, parsePreco, getPatientById, getModalidadeDerivada,
   getHistoricoParalizacoes, marcarParalizacao, marcarRetorno,
+  getAvailabilitySlotsByPatient, liberarHorariosDoPaciente,
 } from '../services/database';
 import { formatarValorMoeda, getCotacaoCacheada } from '../services/currency';
 import { solicitarAutorizacao, getStatusAutorizacao } from '../services/autorizacaoGravacao';
@@ -89,7 +90,11 @@ function getItemTipoLabel(item) {
       ? { icon: '🎙️', label: 'Sessão Transcrita', color: '#4A90D9', bg: '#E8F4FD' }
       : { icon: '📝', label: 'Sessão Anotada',   color: '#F09B4A', bg: '#FFF3E8' };
   }
-  const cat = item.category;
+  // Registros salvos antes da correção do Novo Registro gravavam o tipo
+  // (sessão/estudo/outro) na coluna `type` por engano, em vez de `category`
+  // — sem esse fallback, todo registro antigo caía no rótulo genérico "Nota".
+  const cat = item.category || (['sessao', 'estudo', 'outro'].includes(item.type) ? item.type : null);
+  if (cat === 'sessao') return { icon: '📝', label: 'Sessão Anotada', color: '#F09B4A', bg: '#FFF3E8' };
   if (cat === 'estudo') return { icon: '📚', label: 'Estudo', color: '#7C3AED', bg: '#F0E8FF' };
   if (cat === 'outro')  return { icon: '📌', label: 'Outro',  color: '#888',   bg: '#F0F0F0' };
   if (item.type === 'image') return { icon: '🖼️', label: 'Imagem', color: '#E06B6B', bg: '#FDE8E8' };
@@ -155,7 +160,65 @@ export default function DetalheAnalisanteScreen() {
     }, [pacienteInicial.id])
   );
 
+  // ─── Paralisação/retorno cascateiam pra Agenda (item 3) ───────────────
+  // Ao paralisar: pergunta se os horários reservados devem ficar disponíveis
+  // (e em qual modalidade). Ao voltar: oferece reagendar na hora. O ganho
+  // previsto já sai de Financeiro/Recebíveis/Fiscal sozinho assim que
+  // data_paralizacao é gravada (getSlotsOcupados em database.js ignora
+  // horários de paciente paralisado) — não depende de nenhuma escolha feita
+  // nesses popups, então cancelar/fechar não deixa a conta desincronizada.
+  async function perguntarModalidadeLiberacao(patientId) {
+    Alert.alert(
+      'Liberar como qual modalidade?',
+      'Os horários liberados aparecerão disponíveis com a modalidade escolhida.',
+      [
+        { text: 'Cancelar' },
+        { text: 'Presencial', onPress: () => confirmarLiberacao(patientId, 'presencial') },
+        { text: 'Online', onPress: () => confirmarLiberacao(patientId, 'online') },
+      ]
+    );
+  }
+
+  async function confirmarLiberacao(patientId, modalidade) {
+    try {
+      await liberarHorariosDoPaciente(patientId, modalidade);
+    } catch (e) {
+      Alert.alert('Erro ao liberar horários', mensagemDeErro(e));
+    }
+  }
+
+  async function perguntarLiberacaoHorarios(patientId, nome) {
+    try {
+      const slots = await getAvailabilitySlotsByPatient(patientId);
+      if (!slots || slots.length === 0) return;
+      Alert.alert(
+        'Liberar horários?',
+        `${nome || 'Este analisante'} tem ${slots.length} horário${slots.length === 1 ? '' : 's'} reservado${slots.length === 1 ? '' : 's'} na Agenda. Quer deixá-lo${slots.length === 1 ? '' : 's'} disponível${slots.length === 1 ? '' : 'is'} pra outro agendamento enquanto a análise estiver parada?`,
+        [
+          { text: 'Não, manter reservados', style: 'cancel' },
+          { text: 'Definir modalidade...', onPress: () => perguntarModalidadeLiberacao(patientId) },
+          { text: 'Sim, liberar', onPress: () => confirmarLiberacao(patientId, null) },
+        ]
+      );
+    } catch (e) {
+      // Não bloqueia o fluxo de paralisação — a paralisação já foi salva.
+      console.error('Falha ao checar horários pra liberar:', e?.message || e);
+    }
+  }
+
+  function perguntarReagendamento(pacienteAlvo) {
+    Alert.alert(
+      'Retorno à análise',
+      'Quer reagendar os horários deste analisante agora?',
+      [
+        { text: 'Depois', style: 'cancel' },
+        { text: 'Reagendar agora', onPress: () => navigation.navigate('PatientForm', { paciente: pacienteAlvo }) },
+      ]
+    );
+  }
+
   async function alternarParalizacao() {
+    const estavaAtiva = !paciente.data_paralizacao;
     setAlternandoParalizacao(true);
     try {
       if (paciente.data_paralizacao) {
@@ -169,6 +232,12 @@ export default function DetalheAnalisanteScreen() {
       ]);
       setPaciente(atualizado);
       setHistoricoParalizacoes(historico);
+
+      if (estavaAtiva) {
+        await perguntarLiberacaoHorarios(atualizado.id, atualizado.nome);
+      } else {
+        perguntarReagendamento(atualizado);
+      }
     } catch (e) {
       Alert.alert('Erro', mensagemDeErro(e));
     } finally {

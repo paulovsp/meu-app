@@ -41,22 +41,43 @@ function truncar(texto, max) {
   return limpo.length > max ? `${limpo.slice(0, max)}…` : limpo;
 }
 
+// Sem tirar acento, "joão" digitado como "joao" (ou vice-versa — autocorrigido
+// pelo teclado, por exemplo) nunca casava com o nome cadastrado, e a
+// pergunta caía sem contexto nenhum de paciente — o sintoma era o chatbot
+// parecendo "não integrado ao app". Mesma normalização que `tokenizar` já
+// usa mais abaixo neste arquivo, só que não estava aplicada aqui também.
+function normalizarAcento(texto) {
+  return (texto || '').normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
 /** Acha, por nome, o analisante mencionado na pergunta — casamento simples
  * (nome completo ou primeiro nome, ≥3 letras) contra a lista de pacientes
- * do usuário (consulta leve: só nome/id, sem sessões/registros). Se não
- * achar ninguém, a pergunta segue sem contexto de paciente nenhum. */
+ * do usuário (consulta leve: só nome/id, sem sessões/registros), ignorando
+ * acento dos dois lados. Se achar mais de um candidato possível (dois
+ * analisantes com o mesmo primeiro nome, por exemplo) e nenhum bater pelo
+ * nome completo, prefere não adivinhar — retorna ambíguo em vez de escolher
+ * um dos dois errado. Se não achar ninguém, a pergunta segue sem contexto de
+ * paciente nenhum. */
 export async function identificarPacienteNaPergunta(pergunta) {
   const pacientes = await listarPacientes();
-  const perguntaLower = (pergunta || '').toLowerCase();
-  return (
-    pacientes.find((p) => {
-      const nomeLower = (p.nome || '').trim().toLowerCase();
-      if (!nomeLower) return false;
-      if (perguntaLower.includes(nomeLower)) return true;
-      const primeiroNome = nomeLower.split(/\s+/)[0];
-      return primeiroNome.length >= 3 && perguntaLower.includes(primeiroNome);
-    }) || null
-  );
+  const perguntaNorm = normalizarAcento((pergunta || '').toLowerCase());
+
+  const candidatosNomeCompleto = pacientes.filter((p) => {
+    const nomeNorm = normalizarAcento((p.nome || '').trim().toLowerCase());
+    return nomeNorm && perguntaNorm.includes(nomeNorm);
+  });
+  if (candidatosNomeCompleto.length === 1) return candidatosNomeCompleto[0];
+  if (candidatosNomeCompleto.length > 1) return { ambiguo: true, candidatos: candidatosNomeCompleto };
+
+  const candidatosPrimeiroNome = pacientes.filter((p) => {
+    const nomeNorm = normalizarAcento((p.nome || '').trim().toLowerCase());
+    const primeiroNome = nomeNorm.split(/\s+/)[0] || '';
+    return primeiroNome.length >= 3 && perguntaNorm.includes(primeiroNome);
+  });
+  if (candidatosPrimeiroNome.length === 1) return candidatosPrimeiroNome[0];
+  if (candidatosPrimeiroNome.length > 1) return { ambiguo: true, candidatos: candidatosPrimeiroNome };
+
+  return null;
 }
 
 function tokenizar(texto) {

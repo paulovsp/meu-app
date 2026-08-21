@@ -250,6 +250,15 @@ export async function deleteRecord(id) {
   if (error) throw error;
 }
 
+export async function editRecord(id, { type, title, content, category }) {
+  const { supabase } = require('./supabase');
+  const { error } = await supabase
+    .from('records')
+    .update({ type: type || null, title: title || '', content: content || '', category: category || null })
+    .eq('id', id);
+  if (error) throw error;
+}
+
 // ⚠️ TEMPORÁRIO — só pra importação de dados de teste, não é função do app final.
 export async function importarRegistroComData(patientId, type, title, content, dataISO) {
   const { supabase } = require('./supabase');
@@ -485,6 +494,19 @@ export async function getAvailabilitySlotsByPatient(patientId) {
 export async function deleteAvailabilitySlotsByPatient(patientId) {
   const { supabase } = require('./supabase');
   const { error } = await supabase.from('availability_slots').delete().eq('patient_id', patientId);
+  if (error) throw error;
+}
+
+/** Desocupa os horários de um analisante (fica "livre"/verde na Agenda, sem
+ * apagar o horário em si) — usado quando a análise é paralisada (item 3).
+ * `modalidade` é opcional: se vier 'online'/'presencial', reescreve a
+ * modalidade de todos os horários liberados; se vier null/undefined, cada
+ * horário mantém a modalidade que já tinha. */
+export async function liberarHorariosDoPaciente(patientId, modalidade = null) {
+  const { supabase } = require('./supabase');
+  const payload = { patient_id: null };
+  if (modalidade === 'online' || modalidade === 'presencial') payload.modality = modalidade;
+  const { error } = await supabase.from('availability_slots').update(payload).eq('patient_id', patientId);
   if (error) throw error;
 }
 
@@ -1137,12 +1159,15 @@ export async function getSlotsOcupados() {
   const { supabase } = require('./supabase');
   const { data, error } = await supabase
     .from('availability_slots')
-    .select('*, patients!inner(nome, preco_sessao, preco_moeda, dia_pagamento)')
+    .select('*, patients!inner(nome, preco_sessao, preco_moeda, dia_pagamento, data_paralizacao)')
     .not('patient_id', 'is', null)
     .order('day_of_week', { ascending: true })
     .order('start_time', { ascending: true });
   if (error) throw error;
-  return data.map((row) => {
+  // Analisante com análise paralisada não deve contar como ganho previsto em
+  // Financeiro/Recebíveis/Fiscal (item 3) — o horário continua existindo,
+  // só some do que é "esperado receber" enquanto a paralisação durar.
+  return data.filter((row) => !row.patients?.data_paralizacao).map((row) => {
     const { patients, ...resto } = row;
     return {
       ...resto,
@@ -1442,6 +1467,36 @@ export async function getRecebimentosDoMes(ano, mesIndex) {
   );
 
   return [...recebimentosMensal, ...recebimentosSessao].sort((a, b) => a.nome.localeCompare(b.nome));
+}
+
+/** Só a parte de cobrança mensal/mensal-fixo de `getRecebimentosDoMes` — sem
+ * cobrança "por sessão", que não tem dia de vencimento fixo e não deve
+ * contar como pendência em aberto (itens 8 e 9). */
+export function filtrarRecebimentosMensais(recebimentos) {
+  return (recebimentos || []).filter((r) => r.tipo_cobranca !== 'por_sessao');
+}
+
+/** Cor-resumo (vermelho/amarelo/verde) pra um card que mostra o total de
+ * recebimentos de UM mês contra o que já foi de fato recebido (itens 8 e 9)
+ * — pressupõe que `recebimentos` é do mês atual (o card não faz sentido pra
+ * meses passados/futuros). Vermelho: algum item já passou do dia de
+ * pagamento sem ser recebido. Amarelo: falta receber algo, mas nenhum
+ * atrasado ainda. Verde: tudo que era esperado já foi recebido (ou não
+ * havia nada previsto). */
+export function calcularStatusGeralRecebimentos(recebimentos) {
+  const lista = recebimentos || [];
+  if (lista.length === 0) return 'verde';
+  const hojeDia = new Date().getDate();
+  let temPendente = false;
+  let temAtraso = false;
+  for (const item of lista) {
+    if (item.recebido) continue;
+    temPendente = true;
+    if (item.dia_pagamento && item.dia_pagamento < hojeDia) temAtraso = true;
+  }
+  if (temAtraso) return 'vermelho';
+  if (temPendente) return 'amarelo';
+  return 'verde';
 }
 
 // ===================== FISCAL (config por analisante + pagamento por sessão) ====

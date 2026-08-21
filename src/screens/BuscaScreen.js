@@ -87,10 +87,9 @@ export default function BuscaScreen() {
       return { paciente: null, contexto: null };
     }
     // Recalcula a cada pergunta (não reaproveita o contexto da pergunta
-    // anterior sobre o mesmo paciente) — a seleção de itens relevantes
-    // depende da pergunta atual; reaproveitar prendia perguntas de
-    // acompanhamento ao recorte da primeira pergunta da conversa (item C.6).
-    const contexto = await montarContextoPaciente(paciente, pergunta);
+    // anterior sobre o mesmo paciente) — o histórico pode ter mudado entre
+    // uma pergunta e outra (nova sessão registrada, por exemplo).
+    const contexto = await montarContextoPaciente(paciente);
     pacienteAtivoRef.current = paciente;
     estadoPersistente.pacienteAtivo = paciente;
     return { paciente, contexto };

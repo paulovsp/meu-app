@@ -88,9 +88,13 @@ export default function ArquivoRelatoriosScreen() {
     }
     setGerandoTipo(null);
 
+    const mensagem = custoEstimado > 0
+      ? `${tipoInfo?.label || tipo}\n\nCusto estimado (no pior caso): até ${formatarSaldoBRL(custoEstimado)}.\n\nGerar mesmo assim?`
+      : `${tipoInfo?.label || tipo}\n\nEste relatório é calculado direto no app, sem uso de IA — sem custo. Gerar?`;
+
     Alert.alert(
       'Confirmar geração',
-      `${tipoInfo?.label || tipo}\n\nCusto estimado (no pior caso): até ${formatarSaldoBRL(custoEstimado)}.\n\nGerar mesmo assim?`,
+      mensagem,
       [
         { text: 'Cancelar', style: 'cancel' },
         { text: 'Gerar', onPress: () => executarGeracao(tipo, parametros) },

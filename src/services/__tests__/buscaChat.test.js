@@ -47,28 +47,12 @@ describe('montarContextoPaciente', () => {
   });
 });
 
-describe('montarContextoPaciente — seleção por relevância (item C.6)', () => {
-  it('inclui uma sessão antiga (fora das 30 mais recentes) quando ela bate com palavras da pergunta', async () => {
-    // 40 sessões recentes genéricas + 1 sessão antiga com uma palavra-chave
-    // única — sem seleção por relevância, a antiga nunca apareceria (só as
-    // ~30 mais recentes entravam no contexto).
-    const sessoesRecentes = Array.from({ length: 40 }, (_, i) => ({
-      date: `2026-0${(i % 9) + 1}-01`,
-      type: 'presencial',
-      transcript: 'A: Como você está?\nP: Bem, seguindo normal.',
-    }));
-    getSessions.mockResolvedValue([
-      ...sessoesRecentes,
-      { date: '2018-03-10', type: 'presencial', transcript: 'A: Vamos falar sobre o episódio do zeppelin roxo.\nP: Sim, foi marcante.' },
-    ]);
-    getRecords.mockResolvedValue([]);
-
-    const contexto = await montarContextoPaciente(paciente, 'o que ela disse sobre o zeppelin roxo?');
-
-    expect(contexto).toMatch(/zeppelin/i);
-  });
-
-  it('sem correspondência de palavra nenhuma, cai pro comportamento anterior (mais recentes)', async () => {
+describe('montarContextoPaciente — envia todo o histórico, sem seleção por relevância', () => {
+  it('inclui uma sessão bem antiga mesmo com dezenas de sessões recentes na frente — sem corte de quantidade', async () => {
+    // 40 sessões recentes + 1 sessão antiga sem nenhuma palavra em comum
+    // com as outras — decisão deliberada de não selecionar/truncar por
+    // relevância: a ferramenta manda o máximo de acesso ao material, não
+    // "economiza" adivinhando o que parece relevante pra pergunta.
     const sessoesRecentes = Array.from({ length: 40 }, (_, i) => ({
       date: `2026-0${(i % 9) + 1}-01`,
       type: 'presencial',
@@ -80,9 +64,9 @@ describe('montarContextoPaciente — seleção por relevância (item C.6)', () =
     ]);
     getRecords.mockResolvedValue([]);
 
-    const contexto = await montarContextoPaciente(paciente, 'como ela está indo');
+    const contexto = await montarContextoPaciente(paciente);
 
-    expect(contexto).not.toMatch(/antiquíssima/i);
+    expect(contexto).toMatch(/antiquíssima/i);
   });
 });
 

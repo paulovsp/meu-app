@@ -1,12 +1,19 @@
-// Relatórios por analisante, gerados via IA (mesmo motor da Busca Dr.Sig,
-// Edge Function `ia-busca` — genérica, só recebe um array de mensagens
-// prontas e devolve a resposta, sem saber nada sobre "tipos de relatório").
-// A tabela `relatorios` já existe (migration 0016) e nunca tinha sido usada
-// por nenhum código — arquiva aqui o que a IA gera, por analisante.
+// Relatórios por analisante. Dois tipos (resumo das últimas sessões, resumo
+// geral do caso) usam IA (DeepSeek, via Edge Function `ia-busca` — genérica,
+// só recebe um array de mensagens prontas e devolve a resposta), com o
+// material completo do analisante (sessões + registros, sem corte de
+// quantidade nem de tamanho — ver decisão registrada na conversa que originou
+// esta reescrita: não faz sentido "economizar" no material enviado quando é
+// exatamente o material que o profissional quer que a IA leia).
+// Os outros dois (frequência, pagamento) NUNCA precisaram de IA — são só
+// contagens/somas sobre dados que o app já tem — e agora são gerados 100%
+// localmente, sem custo de IA e sem depender de crédito/assinatura ativa.
+// A tabela `relatorios` (migration 0016) arquiva os dois tipos igual, com
+// custo_estimado = 0 nos locais.
 import { supabase } from './supabase';
 import {
-  getSessions, getRecords, getPatientById, getHistoricoParalizacoes,
-  getAppointmentsByPatient, getPagamentosPorPaciente,
+  getSessions, getRecords, getAppointmentsByPatient, getPagamentosPorPaciente,
+  getHistoricoParalizacoes,
 } from './database';
 
 export const TIPOS_RELATORIO = [
@@ -18,43 +25,112 @@ export const TIPOS_RELATORIO = [
 
 export const OPCOES_ULTIMAS_SESSOES = [1, 2, 3, 5, 10];
 
+const TIPOS_LOCAIS = new Set(['frequencia', 'pagamento']);
+
 const MESES_LABEL = [
   'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
   'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro',
 ];
 
-const SYSTEM_PROMPT =
-  'Você é o assistente clínico do Dr.Sig, um app de prontuário e agenda pra ' +
-  'psicoterapeutas. Gere relatórios claros, objetivos e bem organizados a ' +
-  'partir dos dados fornecidos, em português do Brasil. Nunca invente dados ' +
-  'que não estejam no material fornecido — se faltar informação, diga que ' +
-  'não há registro disso. O relatório é uso interno da profissional, não é ' +
-  'lido pelo analisante.';
+const DIAS_SEMANA_LABEL = [
+  'domingo', 'segunda-feira', 'terça-feira', 'quarta-feira',
+  'quinta-feira', 'sexta-feira', 'sábado',
+];
 
 function formatarData(iso) {
   if (!iso) return '—';
-  const [ano, mes, dia] = iso.split('-');
+  const [ano, mes, dia] = String(iso).slice(0, 10).split('-');
   return `${dia}/${mes}/${ano}`;
 }
 
-async function montarMensagensUltimasSessoes(paciente, quantidade) {
-  const sessoes = (await getSessions(paciente.id)).slice(0, quantidade);
-  if (sessoes.length === 0) {
-    throw new Error('Este analisante ainda não tem sessões registradas.');
-  }
-  const corpo = sessoes
-    .map((sess, i) => `--- Sessão ${i + 1} (${formatarData(sess.date)}) ---\n${sess.transcript || '(sem transcrição)'}`)
-    .join('\n\n');
+function stripHtml(html) {
+  if (!html) return '';
+  return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+// ─── Prompts (redigidos com a profissional, não trocar sem revisão dela) ───
+
+const PROMPT_ULTIMAS_SESSOES =
+  'Você está sendo acessado pelo aplicativo Dr.Sig, sistema de prontuário e agenda para profissionais ' +
+  'de psicanálise. Sua função aqui é gerar um resumo técnico das sessões e registros mais recentes de ' +
+  'um analisante, para uso exclusivo do psicanalista responsável.\n\n' +
+  'Abaixo estão as últimas {N} sessões e registros do analisante, da mais recente para a mais antiga.\n\n' +
+  'Produza um resumo técnico, sob perspectiva psicanalítica ampla, profunda e detalhista, cobrindo:\n' +
+  '1. Material manifesto: os assuntos, fatos e conteúdos efetivamente trazidos pelo analisante nesse período.\n' +
+  '2. Leitura psicodinâmica: movimentos de transferência (quando identificáveis no material), mecanismos ' +
+  'de defesa em operação, repetições, deslocamentos, formações de compromisso — o que o material sugere ' +
+  'sobre o funcionamento psíquico do analisante nesse recorte.\n' +
+  '3. Continuidade e ruptura: o que se mantém e o que muda entre as sessões desse período — retomadas de ' +
+  'tema, mudanças de posição subjetiva, resistências.\n' +
+  '4. Material simbólico e associativo: sonhos, lapsos, atos falhos ou associações relatadas, e possíveis ' +
+  'linhas de sentido entre eles.\n\n' +
+  'Regras inegociáveis: baseie-se estritamente no material fornecido — nunca invente falas, fatos, datas ' +
+  'ou conteúdo ausentes do texto. Não emita diagnóstico psiquiátrico nem classificação nosológica (CID, ' +
+  'DSM ou similar) — fora do escopo desta ferramenta. Se o material for insuficiente para algum ponto, ' +
+  'diga isso em vez de especular. Português, registro técnico-profissional — uso interno do profissional, ' +
+  'nunca lido pelo analisante.';
+
+const PROMPT_RESUMO_GERAL =
+  'Você está sendo acessado pelo aplicativo Dr.Sig, sistema de prontuário e agenda para profissionais ' +
+  'de psicanálise. Sua função aqui é gerar um resumo técnico do caso completo de um analisante, cobrindo ' +
+  'toda a trajetória do processo até o momento presente, para uso exclusivo do profissional responsável.\n\n' +
+  'Abaixo está todo o histórico disponível do analisante — sessões e registros, em ordem cronológica — ' +
+  'além de eventuais registros de paralisação/retorno do processo.\n\n' +
+  'Produza um resumo técnico, sob perspectiva psicanalítica ampla, profunda e detalhista, cobrindo:\n' +
+  '1. Motivo de busca/queixa inicial: o que trouxe o analisante ao processo, na medida do reconstituível.\n' +
+  '2. Trajetória: fases, inflexões, momentos de virada perceptíveis ao longo de todo o período.\n' +
+  '3. Estrutura e funcionamento psíquico: leitura dos mecanismos de defesa predominantes, padrões ' +
+  'transferenciais (quando identificáveis), formações repetitivas, conflitos centrais.\n' +
+  '4. Temas centrais e recorrentes: assuntos e conflitos que atravessam o processo, e como se transformam ' +
+  '(ou não) ao longo do tempo.\n' +
+  '5. Evolução do processo: mudanças no discurso e na postura do analisante diante da própria análise, ao ' +
+  'longo do tempo.\n' +
+  '6. Rupturas do processo: paralisações e retornos, se houver, e o que se infere do contexto em que ' +
+  'ocorreram.\n' +
+  '7. Estado atual: onde o processo parece estar agora — o que está em elaboração, o que permanece ' +
+  'resistente.\n\n' +
+  'Regras inegociáveis: baseie-se estritamente no material fornecido — nunca invente falas, fatos, datas ' +
+  'ou conteúdo ausentes do texto. Não emita diagnóstico psiquiátrico nem classificação nosológica (CID, ' +
+  'DSM ou similar) — fora do escopo desta ferramenta. Se um tópico não tiver material suficiente, diga ' +
+  'isso em vez de especular. Português, registro técnico-profissional — uso interno do profissional, ' +
+  'nunca lido pelo analisante.';
+
+/** Sessões + registros combinados num único item por entrada, sem corte de
+ * tamanho (transcrição/conteúdo completos) — o material é exatamente o que
+ * a profissional produziu, sem seleção nem truncamento. */
+function montarItensCombinados(sessoes, registros) {
   return [
-    { role: 'system', content: SYSTEM_PROMPT },
-    {
-      role: 'user',
-      content:
-        `Analisante: ${paciente.nome}.\n\nAbaixo estão as transcrições/anotações das últimas ` +
-        `${sessoes.length} sessão(ões), da mais recente pra mais antiga. Escreva um resumo clínico ` +
-        `dessas sessões: principais temas trabalhados, movimentos observados, e o que parece relevante ` +
-        `acompanhar na próxima sessão.\n\n${corpo}`,
-    },
+    ...sessoes.map((s) => ({
+      data: s.date,
+      texto:
+        `Sessão (${s.type === 'online' ? 'online' : 'presencial'}) — ${formatarData(s.date)}:\n` +
+        `${s.transcript || '(sem transcrição)'}`,
+    })),
+    ...registros.map((r) => ({
+      data: r.date || r.created_at,
+      texto:
+        `${r.type === 'estudo' ? 'Estudo' : 'Registro'}${r.title ? ` — ${r.title}` : ''} — ` +
+        `${formatarData(r.date || r.created_at)}:\n${stripHtml(r.content) || '(sem conteúdo)'}`,
+    })),
+  ];
+}
+
+async function montarMensagensUltimasSessoes(paciente, quantidade) {
+  const [sessoes, registros] = await Promise.all([getSessions(paciente.id), getRecords(paciente.id)]);
+  const itens = montarItensCombinados(sessoes, registros)
+    .sort((a, b) => new Date(b.data) - new Date(a.data))
+    .slice(0, quantidade);
+
+  if (itens.length === 0) {
+    throw new Error('Este analisante ainda não tem sessões ou registros.');
+  }
+
+  const corpo = itens.map((i) => `--- ${i.texto}`).join('\n\n');
+  const prompt = PROMPT_ULTIMAS_SESSOES.replace('{N}', String(itens.length));
+
+  return [
+    { role: 'system', content: prompt },
+    { role: 'user', content: `Analisante: ${paciente.nome}.\n\n${corpo}` },
   ];
 }
 
@@ -67,82 +143,146 @@ async function montarMensagensResumoGeral(paciente) {
   if (sessoes.length === 0 && registros.length === 0) {
     throw new Error('Este analisante ainda não tem sessões ou registros.');
   }
-  const resumoSessoes = sessoes
-    .map((sess, i) => `Sessão ${i + 1} (${formatarData(sess.date)}): ${(sess.transcript || '').slice(0, 800)}`)
-    .join('\n\n');
-  const resumoRegistros = registros
-    .map((r) => `Registro (${formatarData(r.created_at?.slice(0, 10))}) — ${r.title}: ${(r.content || '').slice(0, 400)}`)
-    .join('\n');
+
+  const itens = montarItensCombinados(sessoes, registros)
+    .sort((a, b) => new Date(a.data) - new Date(b.data));
+  const corpo = itens.map((i) => `--- ${i.texto}`).join('\n\n');
+
   const paralizacoesTexto = paralizacoes.length
     ? paralizacoes.map((p) => `Paralização em ${formatarData(p.data_paralizacao)}${p.data_retorno ? `, retorno em ${formatarData(p.data_retorno)}` : ''}`).join('\n')
     : 'Nenhuma paralização registrada.';
 
   return [
-    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'system', content: PROMPT_RESUMO_GERAL },
     {
       role: 'user',
       content:
         `Analisante: ${paciente.nome}. Início da análise: ${formatarData(paciente.data_inicio)}.\n\n` +
-        `Escreva um resumo geral do caso, cobrindo: motivo de busca/queixa inicial (se identificável), ` +
-        `evolução ao longo do tempo, temas centrais e recorrentes, e o estado atual do processo.\n\n` +
-        `--- Sessões (${sessoes.length}) ---\n${resumoSessoes || '(nenhuma)'}\n\n` +
-        `--- Registros/observações (${registros.length}) ---\n${resumoRegistros || '(nenhum)'}\n\n` +
-        `--- Histórico de paralizações ---\n${paralizacoesTexto}`,
+        `--- Histórico de paralizações ---\n${paralizacoesTexto}\n\n` +
+        `--- Sessões e registros (${itens.length}) ---\n${corpo}`,
     },
   ];
 }
 
-async function montarMensagensFrequencia(paciente) {
+// ─── Relatórios locais (sem IA) ─────────────────────────────────────────
+// Frequência e pagamento são só contagens/somas sobre dados que o app já
+// tem — nunca precisaram de interpretação de texto livre. Gerar via IA só
+// adicionava custo, risco de erro de crédito/assinatura, e uma bengala sem
+// necessidade real.
+
+async function gerarConteudoFrequenciaLocal(paciente) {
   const compromissos = await getAppointmentsByPatient(paciente.id);
   if (compromissos.length === 0) {
     throw new Error('Este analisante ainda não tem compromissos na agenda.');
   }
+
   const contagem = compromissos.reduce((acc, c) => {
     acc[c.status] = (acc[c.status] || 0) + 1;
     return acc;
   }, {});
-  const lista = compromissos
-    .map((c) => `${formatarData(c.date)} ${c.start_time?.slice(0, 5)} — ${c.status}`)
-    .join('\n');
+  const realizados = contagem.realizado || 0;
+  const faltas = contagem.nao_realizado || 0;
+  const cancelados = contagem.cancelado || 0;
+  const agendados = contagem.agendado || 0;
+  const baseComparecimento = realizados + faltas;
+  const taxaComparecimento = baseComparecimento > 0
+    ? Math.round((realizados / baseComparecimento) * 1000) / 10
+    : null;
 
-  return [
-    { role: 'system', content: SYSTEM_PROMPT },
-    {
-      role: 'user',
-      content:
-        `Analisante: ${paciente.nome}.\n\nEscreva um relatório de frequência a partir dos compromissos ` +
-        `abaixo: total de sessões agendadas, realizadas, canceladas e faltas, taxa de comparecimento, e ` +
-        `qualquer padrão notável (ex: dias/horários com mais falta).\n\n` +
-        `Totais por status: ${JSON.stringify(contagem)}\n\n--- Lista completa ---\n${lista}`,
-    },
+  const faltasPorDiaSemana = compromissos
+    .filter((c) => c.status === 'nao_realizado')
+    .reduce((acc, c) => {
+      const diaSemana = new Date(`${c.date}T00:00:00`).getDay();
+      acc[diaSemana] = (acc[diaSemana] || 0) + 1;
+      return acc;
+    }, {});
+  const diaComMaisFaltas = Object.entries(faltasPorDiaSemana).sort((a, b) => b[1] - a[1])[0];
+
+  const linhas = [
+    `Relatório de frequência — ${paciente.nome}`,
+    '',
+    `Total de compromissos: ${compromissos.length}`,
+    `Realizados: ${realizados}`,
+    `Faltas: ${faltas}`,
+    `Cancelados: ${cancelados}`,
+    `Agendados (futuros): ${agendados}`,
+    '',
+    taxaComparecimento != null
+      ? `Taxa de comparecimento (realizados / realizados + faltas): ${taxaComparecimento}%`
+      : 'Taxa de comparecimento: sem base suficiente (nenhuma sessão realizada ou falta registrada ainda).',
   ];
+  if (diaComMaisFaltas && diaComMaisFaltas[1] >= 2) {
+    linhas.push(`Dia da semana com mais faltas: ${DIAS_SEMANA_LABEL[Number(diaComMaisFaltas[0])]} (${diaComMaisFaltas[1]} falta(s)).`);
+  }
+  linhas.push('', '--- Histórico completo ---');
+  compromissos.forEach((c) => {
+    linhas.push(`${formatarData(c.date)} ${c.start_time?.slice(0, 5) || ''} — ${c.status}`);
+  });
+
+  return linhas.join('\n');
 }
 
-async function montarMensagensPagamento(paciente) {
+async function gerarConteudoPagamentoLocal(paciente) {
   const pagamentos = await getPagamentosPorPaciente(paciente.id);
   if (pagamentos.length === 0) {
     throw new Error('Este analisante ainda não tem histórico de pagamentos.');
   }
-  const lista = pagamentos
-    .map((p) => `${MESES_LABEL[p.mes]}/${p.ano} — ${p.recebido ? `recebido em ${formatarData(p.data_recebimento?.slice(0, 10))}` : 'em aberto'}${p.valor ? `, R$ ${p.valor}` : ''}`)
-    .join('\n');
 
-  return [
-    { role: 'system', content: SYSTEM_PROMPT },
-    {
-      role: 'user',
-      content:
-        `Analisante: ${paciente.nome}.\n\nEscreva um relatório de pagamento a partir do histórico abaixo: ` +
-        `pontualidade, meses em aberto, valor total recebido no período, e qualquer padrão de atraso.\n\n${lista}`,
-    },
+  const recebidos = pagamentos.filter((p) => p.recebido);
+  const emAberto = pagamentos.filter((p) => !p.recebido);
+  const valorTotalRecebido = recebidos.reduce((soma, p) => soma + (Number(p.valor) || 0), 0);
+
+  let atrasosDias = [];
+  if (paciente.dia_pagamento) {
+    atrasosDias = recebidos
+      .filter((p) => p.data_recebimento)
+      .map((p) => {
+        const diaRecebimento = new Date(p.data_recebimento).getDate();
+        return diaRecebimento - paciente.dia_pagamento;
+      })
+      .filter((dias) => dias > 0);
+  }
+  const mediaAtrasoDias = atrasosDias.length
+    ? Math.round((atrasosDias.reduce((s, d) => s + d, 0) / atrasosDias.length) * 10) / 10
+    : null;
+
+  const linhas = [
+    `Relatório de pagamento — ${paciente.nome}`,
+    '',
+    `Total de meses no histórico: ${pagamentos.length}`,
+    `Recebidos: ${recebidos.length}`,
+    `Em aberto: ${emAberto.length}`,
+    `Valor total recebido no período: R$ ${valorTotalRecebido.toFixed(2).replace('.', ',')}`,
   ];
+  if (mediaAtrasoDias != null) {
+    linhas.push(`Atraso médio (entre os meses pagos com atraso, considerando o dia de pagamento cadastrado): ${mediaAtrasoDias} dia(s).`);
+  } else if (paciente.dia_pagamento) {
+    linhas.push('Nenhum pagamento recebido em atraso identificado.');
+  } else {
+    linhas.push('Este analisante não tem dia de pagamento cadastrado — não é possível calcular pontualidade.');
+  }
+  if (emAberto.length > 0) {
+    linhas.push('', '--- Meses em aberto ---');
+    emAberto.forEach((p) => linhas.push(`${MESES_LABEL[p.mes]}/${p.ano}${p.valor ? ` — R$ ${Number(p.valor).toFixed(2).replace('.', ',')}` : ''}`));
+  }
+  linhas.push('', '--- Histórico completo ---');
+  pagamentos.forEach((p) => {
+    const status = p.recebido ? `recebido em ${formatarData(p.data_recebimento)}` : 'em aberto';
+    linhas.push(`${MESES_LABEL[p.mes]}/${p.ano} — ${status}${p.valor ? `, R$ ${Number(p.valor).toFixed(2).replace('.', ',')}` : ''}`);
+  });
+
+  return linhas.join('\n');
+}
+
+async function gerarConteudoLocal(paciente, tipo) {
+  if (tipo === 'frequencia') return gerarConteudoFrequenciaLocal(paciente);
+  if (tipo === 'pagamento') return gerarConteudoPagamentoLocal(paciente);
+  throw new Error(`Tipo de relatório local desconhecido: ${tipo}`);
 }
 
 async function montarMensagens(paciente, tipo, parametros) {
   if (tipo === 'ultimas_sessoes') return montarMensagensUltimasSessoes(paciente, parametros?.quantidade || 3);
   if (tipo === 'resumo_geral') return montarMensagensResumoGeral(paciente);
-  if (tipo === 'frequencia') return montarMensagensFrequencia(paciente);
-  if (tipo === 'pagamento') return montarMensagensPagamento(paciente);
   throw new Error(`Tipo de relatório desconhecido: ${tipo}`);
 }
 
@@ -151,18 +291,25 @@ async function montarMensagens(paciente, tipo, parametros) {
 // O custo real (com desconto de cache, se houver) sai menor ou igual, nunca maior.
 const PRECO_INPUT_POR_1M = 0.14;
 const PRECO_OUTPUT_POR_1M = 0.28;
-const MAX_TOKENS_RESPOSTA = 3000;
+// Bem maior que o teto genérico da Busca Dr.Sig (chat, resposta curta) —
+// os prompts de resumo pedem uma leitura ampla, profunda e detalhista em
+// várias seções; 3000 tokens cortava a resposta no meio. Ainda bem abaixo
+// do teto de segurança da Edge Function (16000).
+const MAX_TOKENS_RESPOSTA = 8000;
 
 function estimarTokens(texto) {
   return Math.ceil((texto || '').length / 3.5);
 }
 
 /** Estima o custo (pior caso, sem desconto de cache) de gerar este relatório
- * ANTES de chamar a IA de verdade — monta as mesmas mensagens que
- * gerarRelatorio vai usar, só pra medir o tamanho. Lança o mesmo erro de
- * "sem dados" que gerarRelatorio lançaria, se for o caso (analisante sem
- * sessões/registros/etc pro tipo escolhido). */
+ * ANTES de chamar a IA de verdade. Pra frequência/pagamento (locais, sem IA)
+ * sempre retorna 0 — mas ainda valida que há dados suficientes, lançando o
+ * mesmo erro de "sem dados" que gerarRelatorio lançaria. */
 export async function estimarCustoRelatorio(paciente, tipo, parametros = {}) {
+  if (TIPOS_LOCAIS.has(tipo)) {
+    await gerarConteudoLocal(paciente, tipo);
+    return 0;
+  }
   const mensagens = await montarMensagens(paciente, tipo, parametros);
   const tokensEntrada = mensagens.reduce((soma, m) => soma + estimarTokens(m.content), 0);
   const custoEntrada = (tokensEntrada / 1_000_000) * PRECO_INPUT_POR_1M;
@@ -170,29 +317,40 @@ export async function estimarCustoRelatorio(paciente, tipo, parametros = {}) {
   return custoEntrada + custoSaidaMax;
 }
 
-/** Gera um relatório via IA e já arquiva em `relatorios`. Lança erro se a
- * IA falhar (crédito insuficiente, assinatura inativa, etc — mesmo
- * tratamento de erro do restante do app via mensagemDeErro). */
+/** Gera um relatório e já arquiva em `relatorios`. Frequência/pagamento são
+ * gerados localmente (sem IA, sem custo, sem depender de crédito ou
+ * assinatura ativa). Os outros dois passam pela Edge Function `ia-busca` —
+ * lança erro se a IA falhar (crédito insuficiente, assinatura inativa,
+ * etc — mesmo tratamento de erro do restante do app via mensagemDeErro). */
 export async function gerarRelatorio(paciente, tipo, parametros = {}) {
-  const mensagens = await montarMensagens(paciente, tipo, parametros);
+  let conteudo;
+  let custo = 0;
 
-  const { data, error } = await supabase.functions.invoke('ia-busca', { body: { mensagens } });
-  if (error) {
-    let mensagemErro = error.message;
-    try {
-      const corpo = await error.context?.json();
-      if (corpo?.error) mensagemErro = corpo.error;
-      if (corpo?.assinaturaInativa || corpo?.creditosInsuficientes) {
-        const erro2 = new Error(mensagemErro);
-        erro2.assinaturaInativa = corpo.assinaturaInativa;
-        erro2.creditosInsuficientes = corpo.creditosInsuficientes;
-        throw erro2;
-      }
-    } catch (_) {}
-    throw new Error(mensagemErro);
+  if (TIPOS_LOCAIS.has(tipo)) {
+    conteudo = await gerarConteudoLocal(paciente, tipo);
+  } else {
+    const mensagens = await montarMensagens(paciente, tipo, parametros);
+    const { data, error } = await supabase.functions.invoke('ia-busca', {
+      body: { mensagens, maxTokens: MAX_TOKENS_RESPOSTA },
+    });
+    if (error) {
+      let mensagemErro = error.message;
+      try {
+        const corpo = await error.context?.json();
+        if (corpo?.error) mensagemErro = corpo.error;
+        if (corpo?.assinaturaInativa || corpo?.creditosInsuficientes) {
+          const erro2 = new Error(mensagemErro);
+          erro2.assinaturaInativa = corpo.assinaturaInativa;
+          erro2.creditosInsuficientes = corpo.creditosInsuficientes;
+          throw erro2;
+        }
+      } catch (_) {}
+      throw new Error(mensagemErro);
+    }
+    conteudo = data?.resposta || '';
+    custo = data?.custo || 0;
   }
 
-  const conteudo = data?.resposta || '';
   const { data: salvo, error: erroSalvar } = await supabase
     .from('relatorios')
     .insert({
@@ -200,7 +358,7 @@ export async function gerarRelatorio(paciente, tipo, parametros = {}) {
       tipo,
       parametros: JSON.stringify(parametros),
       conteudo,
-      custo_estimado: data?.custo || 0,
+      custo_estimado: custo,
     })
     .select()
     .single();

@@ -44,10 +44,16 @@ Deno.serve(async (req) => {
     const userId = userData.user.id;
 
     const body = await req.json();
-    const { mensagens } = body || {};
+    const { mensagens, maxTokens } = body || {};
     if (!Array.isArray(mensagens) || mensagens.length === 0) {
       return json({ error: 'Mensagens ausentes.' }, 400);
     }
+    // Chamador escolhe o teto de saída (chat = resposta curta, relatório
+    // elaborado = precisa de bem mais espaço pra não cortar no meio) — sempre
+    // dentro de um limite de segurança, pra ninguém disparar um custo de
+    // saída fora do previsto por engano.
+    const MAX_TOKENS_TETO = 16000;
+    const maxTokensReq = Math.min(Number(maxTokens) || 3000, MAX_TOKENS_TETO);
 
     const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
@@ -77,7 +83,7 @@ Deno.serve(async (req) => {
         model: DEEPSEEK_MODEL,
         messages: mensagens,
         temperature: 0.4,
-        max_tokens: 3000,
+        max_tokens: maxTokensReq,
       }),
     });
 

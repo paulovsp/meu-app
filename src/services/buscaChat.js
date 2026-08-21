@@ -1,9 +1,14 @@
 // ─── Busca Dr.Sig: chatbot com acesso ao histórico dos analisantes ──────
 // Não manda nenhum resumo pronto de "todos os pacientes" a cada pergunta —
 // só busca (e envia pra IA) os dados do analisante identificado NA PERGUNTA
-// em si (por nome), nada além disso. E antes de gastar crédito de verdade,
-// calcula um orçamento estimado (pior caso, sem desconto de cache) pra
-// psicanalista confirmar ou não — só chama a IA depois da confirmação.
+// em si (por nome), nada além disso. Dentro do analisante identificado,
+// manda TODO o histórico (todas as sessões e registros, sem corte de
+// quantidade nem de tamanho) — decisão deliberada: essa ferramenta existe
+// pra dar à IA o máximo de acesso ao material da profissional, não pra
+// economizar tokens escolhendo o que parece mais relevante. E antes de
+// gastar crédito de verdade, calcula um orçamento estimado (pior caso, sem
+// desconto de cache) pra psicanalista confirmar ou não — só chama a IA
+// depois da confirmação.
 import { listarPacientes, getSessions, getRecords } from './database';
 import { calcularAnosEMeses } from './validacao';
 import { criarPseudonimizador } from './pseudonimizacao';
@@ -11,16 +16,15 @@ import { criarPseudonimizador } from './pseudonimizacao';
 export class CreditosInsuficientesError extends Error {}
 export class AssinaturaInativaError extends Error {}
 
-const MAX_ITENS_POR_PACIENTE = 30;
-const TRUNCAR_SESSAO = 600;
-const TRUNCAR_REGISTRO = 500;
-
 // Espelha os preços da Edge Function `ia-busca` (DeepSeek V4-Flash, por 1M
 // tokens) — só pra estimar o orçamento ANTES da chamada. O custo real
 // (com desconto de cache, se houver) vem na resposta da própria função.
 const PRECO_INPUT_POR_1M = 0.14;
 const PRECO_OUTPUT_POR_1M = 0.28;
-const MAX_TOKENS_RESPOSTA = 3000;
+// Teto de saída maior que o padrão da Edge Function — perguntas que pedem
+// leitura clínica podem precisar de uma resposta bem mais longa que uma
+// resposta factual simples.
+const MAX_TOKENS_RESPOSTA = 6000;
 
 function stripHtml(html) {
   if (!html) return '';
@@ -36,16 +40,10 @@ function formatarDataBR(dataStr) {
   }
 }
 
-function truncar(texto, max) {
-  const limpo = (texto || '').trim();
-  return limpo.length > max ? `${limpo.slice(0, max)}…` : limpo;
-}
-
 // Sem tirar acento, "joão" digitado como "joao" (ou vice-versa — autocorrigido
 // pelo teclado, por exemplo) nunca casava com o nome cadastrado, e a
 // pergunta caía sem contexto nenhum de paciente — o sintoma era o chatbot
-// parecendo "não integrado ao app". Mesma normalização que `tokenizar` já
-// usa mais abaixo neste arquivo, só que não estava aplicada aqui também.
+// parecendo "não integrado ao app".
 function normalizarAcento(texto) {
   return (texto || '').normalize('NFD').replace(/[̀-ͯ]/g, '');
 }
@@ -80,65 +78,18 @@ export async function identificarPacienteNaPergunta(pergunta) {
   return null;
 }
 
-function tokenizar(texto) {
-  return (texto || '')
-    .toLowerCase()
-    .normalize('NFD').replace(/[^\x00-\x7F]/g, '')
-    .match(/[a-z0-9]{3,}/g) || [];
-}
-
-/** Escolhe os itens mais relevantes pra pergunta dentre TODO o histórico
- * (não só os mais recentes) — antes disso, um paciente com 200+ sessões
- * nunca tinha as sessões antigas nem consideradas, só as ~30 últimas
- * (item C.6). Pontua por sobreposição de palavras com a pergunta; sem
- * correspondência (pergunta genérica tipo "como ele está indo"), cai pro
- * comportamento anterior — os mais recentes primeiro. */
-function selecionarItensRelevantes(itensOrdenados, queryTexto, limite) {
-  if (itensOrdenados.length <= limite) return itensOrdenados;
-
-  const tokensQuery = new Set(tokenizar(queryTexto));
-  if (tokensQuery.size === 0) return itensOrdenados.slice(0, limite);
-
-  const pontuados = itensOrdenados.map((item, index) => {
-    const tokensItem = tokenizar(item.texto);
-    let pontuacao = 0;
-    for (const t of tokensItem) if (tokensQuery.has(t)) pontuacao++;
-    return { item, pontuacao, index };
-  });
-
-  const relevantes = pontuados.filter((p) => p.pontuacao > 0);
-  if (relevantes.length === 0) return itensOrdenados.slice(0, limite);
-
-  relevantes.sort((a, b) => (b.pontuacao - a.pontuacao) || (a.index - b.index));
-  const selecionados = relevantes.slice(0, limite).map((p) => p.item);
-
-  // Preenche o resto do orçamento com os mais recentes que ainda não
-  // entraram, pra sempre ter algum contexto temporal mesmo quando a
-  // correspondência de palavras é escassa.
-  if (selecionados.length < limite) {
-    const jaSelecionados = new Set(selecionados);
-    for (const item of itensOrdenados) {
-      if (selecionados.length >= limite) break;
-      if (!jaSelecionados.has(item)) selecionados.push(item);
-    }
-  }
-
-  const conjuntoFinal = new Set(selecionados);
-  return itensOrdenados.filter((item) => conjuntoFinal.has(item));
-}
-
 /** Contexto do histórico de UM analisante só — nunca de todos ao mesmo
- * tempo. `queryTexto` (a pergunta atual, ou a pergunta + histórico recente
- * da conversa) guia a seleção por relevância entre TODOS os itens do
- * paciente — sem isso, um histórico longo perderia tudo que não fosse
- * recente. Itens truncados individualmente pra não explodir o tamanho do
- * prompt.
+ * tempo. Manda TODAS as sessões e TODOS os registros, sem seleção por
+ * relevância nem corte de tamanho — decisão deliberada (ver comentário no
+ * topo do arquivo): a ferramenta existe pra dar o máximo de acesso ao
+ * material da profissional, não pra economizar tokens adivinhando o que
+ * "parece" relevante pra pergunta.
  *
  * O nome do paciente nunca sai daqui: no cabeçalho ele já nasce como
  * `[ANALISANTE]`, e o corpo inteiro (transcrições e registros, onde o
  * nome pode aparecer dito/escrito) passa pela mesma substituição antes
  * de virar prompt. */
-export async function montarContextoPaciente(paciente, queryTexto = '') {
+export async function montarContextoPaciente(paciente) {
   const { redigir } = criarPseudonimizador(paciente);
   const [sessoes, registros] = await Promise.all([
     getSessions(paciente.id),
@@ -148,24 +99,22 @@ export async function montarContextoPaciente(paciente, queryTexto = '') {
   const todosItens = [
     ...sessoes.map((s) => ({
       data: s.date,
-      texto: `Sessão (${s.type === 'online' ? 'online' : 'presencial'}): ${truncar(s.transcript, TRUNCAR_SESSAO) || '(sem transcrição)'}`,
+      texto: `Sessão (${s.type === 'online' ? 'online' : 'presencial'}): ${s.transcript || '(sem transcrição)'}`,
     })),
     ...registros.map((r) => ({
       data: r.date,
-      texto: `${r.type === 'estudo' ? 'Estudo' : 'Registro'}${r.title ? ` — ${r.title}` : ''}: ${truncar(stripHtml(r.content), TRUNCAR_REGISTRO) || '(sem conteúdo)'}`,
+      texto: `${r.type === 'estudo' ? 'Estudo' : 'Registro'}${r.title ? ` — ${r.title}` : ''}: ${stripHtml(r.content) || '(sem conteúdo)'}`,
     })),
   ].sort((a, b) => new Date(b.data) - new Date(a.data));
 
-  const itens = selecionarItensRelevantes(todosItens, queryTexto, MAX_ITENS_POR_PACIENTE);
-
-  const corpo = itens.length
-    ? itens.map((i) => `  [${formatarDataBR(i.data)}] ${redigir(i.texto)}`).join('\n')
+  const corpo = todosItens.length
+    ? todosItens.map((i) => `  [${formatarDataBR(i.data)}] ${redigir(i.texto)}`).join('\n')
     : '  (nenhuma sessão ou registro ainda)';
 
   const idade = calcularAnosEMeses(paciente.nascimento)?.anos;
 
   return (
-    `Histórico de [ANALISANTE] (mais recentes primeiro, alguns trechos truncados):\n` +
+    `Histórico completo de [ANALISANTE] (todas as sessões e registros, mais recentes primeiro):\n` +
     `Idade: ${idade != null ? `${idade} anos` : '-'} · Início do acompanhamento: ${formatarDataBR(paciente.data_inicio)}\n` +
     `${corpo}`
   );
@@ -174,16 +123,27 @@ export async function montarContextoPaciente(paciente, queryTexto = '') {
 function promptSistema(contexto) {
   if (!contexto) {
     return (
-      `Você é o "Busca Dr.Sig", assistente de uma psicanalista. Nenhum analisante específico foi ` +
-      `identificado nesta pergunta — responda de forma geral, SEM inventar dados de nenhum paciente. ` +
-      `Se a pergunta parecer ser sobre um analisante específico, peça pra ela mencionar o nome dele.`
+      `Você está sendo acessado pelo aplicativo Dr.Sig, através da funcionalidade "Busca Dr.Sig" — uma ` +
+      `ferramenta de consulta ao histórico clínico de UM analisante específico. Nenhum analisante foi ` +
+      `identificado nesta pergunta — não invente dados de nenhum paciente. Peça pra a psicanalista ` +
+      `mencionar o nome do analisante sobre quem quer consultar.`
     );
   }
   return (
-    `Você é o "Busca Dr.Sig", assistente que ajuda uma psicanalista a consultar o histórico clínico ` +
-    `de um analisante específico. Responda em português, tom profissional, baseado ESTRITAMENTE nos ` +
-    `dados abaixo — não invente informações, não faça diagnóstico. Se não puder responder com esses ` +
-    `dados, diga isso claramente.\n\n${contexto}`
+    `Você está sendo acessado pelo aplicativo Dr.Sig, através da funcionalidade "Busca Dr.Sig" — uma ` +
+    `ferramenta de consulta ao histórico clínico de UM analisante específico.\n\n` +
+    `Escopo estrito: você SÓ responde perguntas relacionadas diretamente ao histórico clínico do ` +
+    `analisante identificado — conteúdo de sessões, registros, frequência, dados cadastrais básicos ` +
+    `(idade, início do acompanhamento, paralisações). Qualquer pergunta fora desse escopo — assuntos ` +
+    `gerais, aconselhamento pessoal ao profissional, tópicos sem relação com o analisante em questão — ` +
+    `deve ser recusada explicitamente, dizendo que está fora do escopo desta ferramenta, sem tentar ` +
+    `responder de outra forma.\n\n` +
+    `Todo o histórico disponível do analisante (todas as sessões e todos os registros, sem cortes) ` +
+    `está abaixo, em ordem cronológica.\n\n` +
+    `Responda com base estritamente nesse material, sob perspectiva psicanalítica ampla e detalhista ` +
+    `quando a pergunta pedir leitura clínica. Nunca invente informações ausentes do material. Nunca ` +
+    `emita diagnóstico psiquiátrico ou classificação nosológica. Se o material não permitir responder, ` +
+    `diga isso claramente.\n\n${contexto}`
   );
 }
 
@@ -222,6 +182,7 @@ export async function chamarBuscaChat(contexto, historico, paciente) {
         { role: 'system', content: promptSistema(contexto) },
         ...historico.map((m) => ({ ...m, content: redigir(m.content) })),
       ],
+      maxTokens: MAX_TOKENS_RESPOSTA,
     },
   });
 

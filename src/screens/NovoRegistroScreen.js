@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { isSupported as ocrSuportado, extractTextFromImage } from 'expo-text-extractor';
-import { RichEditor, RichToolbar, actions as richActions } from 'react-native-pell-rich-editor';
+import { RichText, Toolbar, useEditorBridge, TenTapStartKit } from '@10play/tentap-editor';
 import {
   listarPacientes, addRecord, editRecord,
 } from '../services/database';
@@ -75,23 +75,6 @@ function removerIntroducaoAutomatica(conteudoCompleto) {
   return idx !== -1 ? texto.slice(idx + 2) : texto;
 }
 
-// ─── paleta de cores de texto disponíveis no editor ──────────────────────
-const CORES_TEXTO = [
-  { nome: 'Padrão',   valor: '#1A1A2E' },
-  { nome: 'Azul',     valor: '#2c7be5' },
-  { nome: 'Vermelho', valor: '#e74c3c' },
-  { nome: 'Verde',    valor: '#1e9e63' },
-  { nome: 'Roxo',     valor: '#8e44ad' },
-  { nome: 'Laranja',  valor: '#e67e22' },
-];
-
-const TAMANHOS = [
-  { nome: 'P', valor: 14 },
-  { nome: 'M', valor: 16 },
-  { nome: 'G', valor: 20 },
-  { nome: 'GG', valor: 26 },
-];
-
 // ─── componente principal ──────────────────────────────────────────────────
 
 export default function NovoRegistroScreen() {
@@ -119,12 +102,16 @@ export default function NovoRegistroScreen() {
   const [salvando, setSalvando] = useState(false);
   const [processando, setProcessando] = useState('');
 
-  // ─── editor de texto rico (WYSIWYG de verdade, via WebView) ───
-  const [conteudo, setConteudo] = useState(() => removerIntroducaoAutomatica(registroExistente?.content));
-  const [corTexto, setCorTexto] = useState(CORES_TEXTO[0].valor);
-  const [tamanhoTexto, setTamanhoTexto] = useState(TAMANHOS[1].valor);
-
-  const richText = useRef(null);
+  // ─── editor de texto rico (item 1, v13 — troca do react-native-pell-
+  // rich-editor, cuja formatação não aplicava de forma confiável na seleção
+  // real do texto, pelo @10play/tentap-editor, baseado em TipTap/ProseMirror
+  // — o mesmo motor por trás do Notion/Google Docs mobile). initialContent
+  // só é lido uma vez, no mount — igual ao comportamento anterior. ───
+  const editor = useEditorBridge({
+    bridgeExtensions: TenTapStartKit,
+    initialContent: removerIntroducaoAutomatica(registroExistente?.content) || '',
+    avoidIosKeyboard: true,
+  });
 
   useEffect(() => {
     async function carregar() {
@@ -151,24 +138,26 @@ export default function NovoRegistroScreen() {
   // ─── importar texto de imagem — OCR no próprio aparelho (Google ML Kit
   // no Android, Apple Vision no iOS via expo-text-extractor), sem enviar a
   // imagem pra lugar nenhum: sem custo, sem provedor, funciona offline. ───
-  // Insere direto no editor rico (na posição do cursor) como HTML — precisa
-  // escapar e converter quebras de linha em <br>, senão o texto reconhecido
-  // vira uma linha só dentro do editor.
-  function anexarTexto(linhas) {
+  // Acrescenta ao final do conteúdo já escrito (o bridge do tentap não expõe
+  // "inserir na posição do cursor" publicamente) — precisa escapar e
+  // converter quebras de linha em <br>, senão o texto reconhecido vira uma
+  // linha só dentro do editor.
+  async function anexarTexto(linhas) {
     const texto = (linhas || []).join('\n').trim();
     if (!texto) {
       Alert.alert('Sem texto', 'Não encontrei texto útil nessa imagem.');
       return;
     }
     const html = escaparHtml(texto).split('\n').join('<br>');
-    richText.current?.insertHTML(html);
+    const atual = (await editor.getHTML()) || '';
+    editor.setContent(`${atual}<p>${html}</p>`);
   }
 
   async function processarImagem(uri) {
     try {
       setProcessando('Lendo texto da imagem...');
       const linhas = await extractTextFromImage(uri);
-      anexarTexto(linhas);
+      await anexarTexto(linhas);
     } catch (err) {
       console.error('[processarImagem]', err);
       Alert.alert('Erro ao ler imagem', err?.message || 'Falha ao processar imagem.');
@@ -230,7 +219,12 @@ export default function NovoRegistroScreen() {
       Alert.alert('Título obrigatório', 'Por favor, informe um título.');
       return;
     }
-    if (!conteudo.trim()) {
+    // Lê o HTML direto do editor no momento de salvar (não guarda em state a
+    // cada digitação) — evita qualquer risco de salvar uma versão
+    // desatualizada por causa de uma atualização de state ainda em trânsito.
+    const conteudoHtml = (await editor.getHTML()) || '';
+    const textoSemFormatacao = conteudoHtml.replace(/<[^>]*>/g, '').trim();
+    if (!textoSemFormatacao) {
       Alert.alert('Conteúdo vazio', 'Escreva algo antes de salvar.');
       return;
     }
@@ -242,7 +236,7 @@ export default function NovoRegistroScreen() {
       // novo usa a data de agora.
       const dataIntroducao = editando && registroExistente.date ? new Date(registroExistente.date) : new Date();
       const introducao = gerarIntroducao(tipo, paciente.nome, dataIntroducao);
-      const conteudoFinal = `${introducao}\n\n${conteudo.trim()}`;
+      const conteudoFinal = `${introducao}\n\n${conteudoHtml.trim()}`;
       if (editando) {
         await editRecord(registroExistente.id, {
           type: 'text',
@@ -384,76 +378,17 @@ export default function NovoRegistroScreen() {
           <View style={s.editorHintBox}>
             <Text style={s.editorHintText}>
               Escreva livremente abaixo. Selecione um trecho e toque num botão da
-              barra de formatação (negrito, itálico, sublinhado, tachado ou listas)
-              pra aplicar só naquele trecho. Tamanho e cor de texto ficam na barra
-              logo abaixo do editor.
+              barra de formatação (negrito, itálico, sublinhado, tachado, títulos,
+              listas ou cor) pra aplicar só naquele trecho.
             </Text>
           </View>
 
-          {/* ─── editor rico de verdade (WebView + execCommand) ───
+          {/* ─── editor rico de verdade (TipTap/ProseMirror via WebView) ───
               Bold/itálico/etc. aplicam na seleção real do editor, não
               dependem do estado de seleção instável do TextInput do RN —
               é o que fazia negrito "não funcionar" no editor antigo. */}
-          <RichEditor
-            ref={richText}
-            style={s.editorInput}
-            placeholder="Escreva aqui o conteúdo do registro..."
-            initialContentHTML={conteudo}
-            useContainer
-            onChange={setConteudo}
-            editorStyle={{
-              backgroundColor: '#fff',
-              color: corTexto,
-              contentCSSText: `font-size:${tamanhoTexto}px; min-height:280px; padding:4px;`,
-            }}
-          />
-
-          <RichToolbar
-            editor={richText}
-            actions={[
-              richActions.setBold,
-              richActions.setItalic,
-              richActions.setUnderline,
-              richActions.setStrikethrough,
-              richActions.insertBulletsList,
-              richActions.insertOrderedList,
-              richActions.undo,
-              richActions.redo,
-            ]}
-            iconTint="#1A1A2E"
-            selectedIconTint="#3D5A80"
-            style={s.richToolbar}
-          />
-
-          <View style={s.toolbar}>
-            <View style={s.toolbarRow}>
-              <Text style={s.toolbarLabel}>Tamanho:</Text>
-              {TAMANHOS.map(tm => (
-                <TouchableOpacity
-                  key={tm.valor}
-                  style={[s.sizeBtn, tamanhoTexto === tm.valor && s.fmtBtnActive]}
-                  onPress={() => { setTamanhoTexto(tm.valor); richText.current?.setFontSize(tm.valor); }}
-                >
-                  <Text style={s.fmtBtnText}>{tm.nome}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <View style={s.toolbarRow}>
-              <Text style={s.toolbarLabel}>Cor:</Text>
-              {CORES_TEXTO.map(c => (
-                <TouchableOpacity
-                  key={c.valor}
-                  style={[
-                    s.colorDot,
-                    { backgroundColor: c.valor },
-                    corTexto === c.valor && s.colorDotActive,
-                  ]}
-                  onPress={() => { setCorTexto(c.valor); richText.current?.setForeColor(c.valor); }}
-                />
-              ))}
-            </View>
-          </View>
+          <RichText editor={editor} style={s.editorInput} />
+          <Toolbar editor={editor} />
         </View>
 
         <TouchableOpacity style={s.saveBtn} onPress={salvar} disabled={salvando}>
@@ -581,75 +516,13 @@ const s = StyleSheet.create({
   },
   editorHintText: { fontSize: 12, color: '#3D5A80', lineHeight: 17 },
 
-  richToolbar: {
-    backgroundColor: '#F5F7FA',
-    borderWidth: 1,
-    borderColor: '#E0E4EA',
-    borderRadius: 10,
-    marginTop: 8,
-  },
-
-  toolbar: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#E0E4EA',
-    padding: 10,
-    gap: 10,
-    marginTop: 10,
-  },
-  toolbarRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  toolbarLabel: { fontSize: 12, color: '#888', fontWeight: '600', marginRight: 2 },
-  fmtBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E0E4EA',
-    backgroundColor: '#F5F7FA',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sizeBtn: {
-    minWidth: 34,
-    height: 30,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E0E4EA',
-    backgroundColor: '#F5F7FA',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  fmtBtnActive: {
-    borderColor: '#3D5A80',
-    backgroundColor: '#EBF3FB',
-  },
-  fmtBtnText: { fontSize: 16, color: '#1A1A2E' },
-  colorDot: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  colorDotActive: {
-    borderColor: '#1A1A2E',
-  },
-
   editorInput: {
     backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: '#E0E4EA',
     borderRadius: 12,
-    padding: 16,
-    minHeight: 320,
-    lineHeight: 26,
+    height: 320,
+    marginTop: 4,
   },
 
   patientCard: {

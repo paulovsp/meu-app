@@ -3,6 +3,53 @@
 // (DD/MM/AAAA) e o formato que o Postgres espera numa coluna `date`
 // (AAAA-MM-DD) — sem essa conversão, "25/07/2026" pode ser interpretado
 // errado ou rejeitado pelo banco, dependendo da configuração regional dele.
+import { AsYouType } from 'libphonenumber-js';
+
+/** (11) 9 9999-9999 (celular, 9 dígitos locais) ou (11) 9999-9999 (fixo, 8
+ * dígitos) — sempre 4 dígitos depois do último hífen. Decide celular vs fixo
+ * pelo primeiro dígito após o DDD: todo celular brasileiro (formato novo)
+ * começa com 9. `numeros` já vem só com DDD + número local (sem DDI). */
+function formatarTelefoneBR(numeros) {
+  if (!numeros) return '';
+  const ddd = numeros.slice(0, 2);
+  const resto = numeros.slice(2, 11);
+  if (numeros.length <= 2) return `(${ddd}`;
+  if (!resto) return `(${ddd}) `;
+
+  const celular = resto[0] === '9';
+  const nono = celular ? resto.slice(0, 1) : '';
+  const meio = celular ? resto.slice(1, 5) : resto.slice(0, 4);
+  const fim = celular ? resto.slice(5, 9) : resto.slice(4, 8);
+
+  let saida = `(${ddd}) `;
+  if (nono) saida += `${nono} `;
+  saida += meio;
+  if (fim) saida += `-${fim}`;
+  return saida;
+}
+
+/** Formata telefone pra exibição: padrão brasileiro escrito à mão (regra
+ * exata acima), com "+55" opcional na frente; qualquer outro código de país
+ * digitado (ex: "+1...") delega pra libphonenumber-js, que cobre o formato
+ * de qualquer país sem precisar escrever regra pra cada um. Nunca escreve
+ * fora dígitos, "+", espaço, parênteses e hífen — quem quiser os dígitos
+ * puros (ex: montar link do WhatsApp) deve sempre re-extrair com \D. */
+export function formatarTelefone(texto) {
+  const bruto = texto || '';
+  const comDDI = bruto.trim().startsWith('+');
+  const digitos = bruto.replace(/\D/g, '');
+  if (!digitos) return '';
+
+  if (comDDI) {
+    if (digitos.startsWith('55')) {
+      const local = formatarTelefoneBR(digitos.slice(2, 13));
+      return local ? `+55 ${local}` : '+55';
+    }
+    return new AsYouType().input(`+${digitos}`);
+  }
+
+  return formatarTelefoneBR(digitos.slice(0, 11));
+}
 
 export function validarCPF(cpfTexto) {
   const cpf = (cpfTexto || '').replace(/\D/g, '');

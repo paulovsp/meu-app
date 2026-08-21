@@ -14,7 +14,7 @@ import {
   MOEDAS, formatarValorMoeda, atualizarCotacao, getCotacaoCacheada, formatarDataCotacao,
 } from '../services/currency';
 import { mensagemDeErro } from '../services/erros';
-import { dataBRParaISO, dataISOParaBR } from '../services/validacao';
+import { dataBRParaISO, dataISOParaBR, formatarTelefone } from '../services/validacao';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
 
 const DIAS_SEMANA = [
@@ -173,17 +173,6 @@ export default function FormularioAnalisanteScreen() {
       formatado = `${numeros.slice(0, 2)}/${numeros.slice(2)}`;
     } else if (numeros.length > 4) {
       formatado = `${numeros.slice(0, 2)}/${numeros.slice(2, 4)}/${numeros.slice(4, 8)}`;
-    }
-    setter(formatado);
-  }
-
-  function formatarTelefone(texto, setter) {
-    const numeros = texto.replace(/\D/g, '');
-    let formatado = numeros;
-    if (numeros.length > 2 && numeros.length <= 7) {
-      formatado = `(${numeros.slice(0, 2)}) ${numeros.slice(2)}`;
-    } else if (numeros.length > 7) {
-      formatado = `(${numeros.slice(0, 2)}) ${numeros.slice(2, 7)}-${numeros.slice(7, 11)}`;
     }
     setter(formatado);
   }
@@ -576,12 +565,12 @@ export default function FormularioAnalisanteScreen() {
           <Text style={styles.label}>Telefone / WhatsApp</Text>
           <TextInput
             style={styles.input}
-            placeholder="(11) 99999-9999"
+            placeholder="(11) 9 9999-9999 ou +1 ..."
             placeholderTextColor="#bbb"
             value={telefone}
-            onChangeText={(t) => formatarTelefone(t, setTelefone)}
+            onChangeText={(t) => setTelefone(formatarTelefone(t))}
             keyboardType="phone-pad"
-            maxLength={15}
+            maxLength={25}
             returnKeyType="next"
           />
         </View>
@@ -757,12 +746,12 @@ export default function FormularioAnalisanteScreen() {
           <Text style={styles.label}>Contato de emergência</Text>
           <TextInput
             style={styles.input}
-            placeholder="(11) 99999-9999"
+            placeholder="(11) 9 9999-9999 ou +1 ..."
             placeholderTextColor="#bbb"
             value={contatoEmergencia}
-            onChangeText={(t) => formatarTelefone(t, setContatoEmergencia)}
+            onChangeText={(t) => setContatoEmergencia(formatarTelefone(t))}
             keyboardType="phone-pad"
-            maxLength={15}
+            maxLength={25}
             returnKeyType="next"
           />
         </View>

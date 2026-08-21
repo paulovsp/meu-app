@@ -12,7 +12,7 @@ import {
 } from '../services/database';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { validarCPF, dataBRParaISO, dataISOParaBR } from '../services/validacao';
+import { validarCPF, dataBRParaISO, dataISOParaBR, formatarTelefone } from '../services/validacao';
 import { mensagemDeErro } from '../services/erros';
 import { enviarFotoPerfil, enviarFotoCapa } from '../services/avatar';
 import { exportarDadosUsuario } from '../services/exportacaoDados';
@@ -363,17 +363,6 @@ export default function PerfilScreen({ navigation }) {
       formatado = `${numeros.slice(0, 2)}/${numeros.slice(2)}`;
     } else if (numeros.length > 4) {
       formatado = `${numeros.slice(0, 2)}/${numeros.slice(2, 4)}/${numeros.slice(4, 8)}`;
-    }
-    setter(formatado);
-  }
-
-  function formatarTelefone(texto, setter) {
-    const numeros = texto.replace(/\D/g, '');
-    let formatado = numeros;
-    if (numeros.length > 2 && numeros.length <= 7) {
-      formatado = `(${numeros.slice(0, 2)}) ${numeros.slice(2)}`;
-    } else if (numeros.length > 7) {
-      formatado = `(${numeros.slice(0, 2)}) ${numeros.slice(2, 7)}-${numeros.slice(7, 11)}`;
     }
     setter(formatado);
   }
@@ -739,10 +728,10 @@ export default function PerfilScreen({ navigation }) {
             <TextInput
               style={st.input}
               value={telefone}
-              onChangeText={(t) => formatarTelefone(t, setTelefone)}
+              onChangeText={(t) => setTelefone(formatarTelefone(t))}
               keyboardType="phone-pad"
-              maxLength={15}
-              placeholder="(11) 99999-9999"
+              maxLength={25}
+              placeholder="(11) 9 9999-9999 ou +1 ..."
             />
 
             <Text style={st.label}>Chave Pix</Text>
@@ -773,10 +762,10 @@ export default function PerfilScreen({ navigation }) {
             <TextInput
               style={st.input}
               value={contadorTelefone}
-              onChangeText={(t) => formatarTelefone(t, setContadorTelefone)}
+              onChangeText={(t) => setContadorTelefone(formatarTelefone(t))}
               keyboardType="phone-pad"
-              maxLength={15}
-              placeholder="(11) 99999-9999"
+              maxLength={25}
+              placeholder="(11) 9 9999-9999 ou +1 ..."
             />
 
             <View style={st.btnRow}>

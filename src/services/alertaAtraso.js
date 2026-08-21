@@ -1,8 +1,11 @@
 // ─── Alerta de recebimento em atraso ────────────────────────────────────
 // Cobrança mensal: quando passa o dia de pagamento sem ser marcado como
-// recebido, avisa a própria psicanalista (não o analisante) — por e-mail,
-// 1x por dia, até ser marcado como pago. Reaproveitado tanto pelo alerta
-// por e-mail quanto pelo pop-up da tela inicial (mesma lista de atrasados).
+// recebido, avisa a própria psicanalista (não o analisante). O e-mail saiu
+// daqui (item 1, leva pós-v13) — mandar toda vez que a Início ganhava foco
+// fazia o horário do aviso parecer aleatório; agora é o digest diário
+// (Edge Function enviar-digest-diario, via cron, sempre no mesmo horário).
+// Esta função só cuida do push (mais imediato) e da lista pro pop-up da
+// tela inicial.
 import { getRecebimentosDoMes } from './database';
 
 function diasNoMes(ano, mesIndex) {
@@ -36,7 +39,7 @@ export async function obterRecebimentosAtrasados() {
     .filter((r) => r.diasAtraso >= 1);
 }
 
-/** Catch-up silencioso — chamado ao abrir o app. Manda UM e-mail agregado
+/** Catch-up silencioso — chamado ao abrir o app. Manda UM push agregado
  * (não um por paciente) com todos os atrasados ainda não avisados hoje, e
  * marca a data do envio pra não repetir no mesmo dia. Silencioso: falhas só
  * vão pro console, não interrompem o uso do app. */
@@ -48,12 +51,10 @@ export async function verificarEEnviarAlertaAtraso() {
   const { data: { session } } = await supabase.auth.getSession();
   const { data: perfil } = await supabase
     .from('profiles')
-    .select('notif_atraso_email, notif_atraso_push')
+    .select('notif_atraso_push')
     .eq('id', session.user.id)
     .single();
-  // Os dois canais são independentes (item D.10) — só pula o envio se AMBOS
-  // estiverem desligados; qual canal usar é decidido dentro da Edge Function.
-  if (perfil?.notif_atraso_email === false && perfil?.notif_atraso_push !== true) return;
+  if (perfil?.notif_atraso_push !== true) return;
 
   const idsAtrasados = atrasados.map((a) => a.patient_id);
   const { data: statusAlertas, error: errStatus } = await supabase

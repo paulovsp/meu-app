@@ -21,6 +21,7 @@ import {
   deleteAvailabilitySlot,
   getPatients,
   addPatient,
+  cancelarCompromissosFuturosDoHorario,
 } from '../services/database';
 import { mensagemDeErro } from '../services/erros';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
@@ -354,6 +355,18 @@ export default function DisponibilidadeScreen() {
             setExcluindoId(slot.id);
             try {
               await deleteAvailabilitySlot(slot.id);
+              // Item 3 (leva pós-v13): excluir o horário recorrente aqui
+              // nunca cancelava compromissos já materializados em
+              // `appointments` — eles ficavam "fantasmas", ainda aparecendo
+              // como agendados na Agenda e no widget da Início mesmo depois
+              // de excluídos daqui. Mesma função de cascata do item 4 (v13).
+              if (slot.patient_id) {
+                await cancelarCompromissosFuturosDoHorario({
+                  patientId: slot.patient_id,
+                  dayOfWeek: slot.day_of_week,
+                  startTime: slot.start_time,
+                });
+              }
               await carregarSlots();
 
               if (slot.id === slotEditandoId) {
@@ -387,6 +400,14 @@ export default function DisponibilidadeScreen() {
             setExcluindoId(slotEditandoId);
             try {
               await deleteAvailabilitySlot(slotEditandoId);
+              // Mesma cascata de confirmarExclusao — ver comentário lá.
+              if (analisanteId) {
+                await cancelarCompromissosFuturosDoHorario({
+                  patientId: analisanteId,
+                  dayOfWeek: diaSemana,
+                  startTime: horarioInicio,
+                });
+              }
               await carregarSlots();
               limparFormulario();
             } catch (e) {

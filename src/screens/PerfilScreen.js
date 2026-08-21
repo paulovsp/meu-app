@@ -4,6 +4,7 @@ import {
   TextInput, Alert, ActivityIndicator, Image, Switch, Modal, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import {
   getPlanoFinanceiro, getRecebimentosDoMes, getPrecoMedioSessao,
@@ -197,9 +198,14 @@ export default function PerfilScreen({ navigation }) {
     setCarregando(false);
   }, [session.user.id]);
 
-  useEffect(() => {
-    carregar();
-  }, [carregar]);
+  // Item 1 (leva pós-v13): era useEffect simples (só no mount) — voltar
+  // pra essa tela depois de confirmar um pagamento, mudar créditos etc.
+  // nunca atualizava os números até fechar e reabrir o app inteiro.
+  useFocusEffect(
+    useCallback(() => {
+      carregar();
+    }, [carregar])
+  );
 
   async function iniciarCheckoutCreditos(valorBRL) {
     setAbrindoCheckout(true);

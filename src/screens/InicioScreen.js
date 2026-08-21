@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Image,
   StatusBar, Dimensions, ScrollView, Animated, Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
@@ -84,29 +84,41 @@ const GRID_ROWS = 2;
 const ESPACO_ACIMA_DA_GRADE =
   (HEADER_H + FREUD_OVERFLOW - TOGGLE_OVERLAP) + TOGGLE_H + 14 /* scrollContent.paddingTop */;
 const ESPACO_ABAIXO_DA_GRADE = 20; // scrollContent.paddingBottom
-// Teto de altura — sem isso, em telas bem altas a conta acima dava
-// células enormes e quase vazias (só um ícone pequeno "flutuando" no
-// meio de um botão gigante). 190 dá espaço confortável pro ícone +
-// rótulo em até 2 linhas sem esticar além disso.
-const CELL_H = Math.min(
-  190,
-  Math.max(
-    140,
-    (SH - ESPACO_ACIMA_DA_GRADE - ESPACO_ABAIXO_DA_GRADE - GRID_ROW_GAP * (GRID_ROWS - 1)) / GRID_ROWS
-  )
-);
 
-// Mesma lógica pra aba Início: Afazeres/Agenda de hoje crescem pra ocupar
-// o espaço vertical que sobrava, com o botão Arquivo e Relatórios (agora
-// fundo azul, igual aos outros botões — só Afazeres/Agenda mantêm a
-// moldura com borda) fixo na parte mais baixa da tela.
+// Item 2 (leva pós-v13): a conta de altura usava só Dimensions.get('window'),
+// que é a tela INTEIRA — sem descontar a área segura (notch, barra de
+// gestos), a grade calculada ficava maior do que o espaço realmente
+// disponível dentro da SafeAreaView, e o ScrollView tinha que entrar pra
+// cobrir a diferença. Isso é exatamente o que fazia "precisar rolar pra
+// ver todos os botões" e atrapalhava o gesto de arrastar pros lados. Os
+// insets reais só existem em tempo de render (useSafeAreaInsets), por isso
+// esta conta agora é uma função pura chamada de dentro do componente, não
+// mais uma constante de módulo.
 const USER_BANNER_H = 66; // aproximado: avatar 32 + paddingVertical 8*2 + marginBottom 16
 const WIDGETS_ROW_MARGIN_BOTTOM = 16;
 const ARQUIVO_BTN_H = 64;
-const WIDGET_H = Math.max(
-  150,
-  SH - ESPACO_ACIMA_DA_GRADE - ESPACO_ABAIXO_DA_GRADE - USER_BANNER_H - WIDGETS_ROW_MARGIN_BOTTOM - ARQUIVO_BTN_H
-);
+
+function calcularAlturasDaGrade(alturaUtil) {
+  // Teto de altura — sem isso, em telas bem altas a conta acima dava
+  // células enormes e quase vazias (só um ícone pequeno "flutuando" no
+  // meio de um botão gigante). 190 dá espaço confortável pro ícone +
+  // rótulo em até 2 linhas sem esticar além disso.
+  const cellH = Math.min(
+    190,
+    Math.max(
+      140,
+      (alturaUtil - ESPACO_ACIMA_DA_GRADE - ESPACO_ABAIXO_DA_GRADE - GRID_ROW_GAP * (GRID_ROWS - 1)) / GRID_ROWS
+    )
+  );
+  // Mesma lógica pra aba Início: Afazeres/Agenda de hoje crescem pra ocupar
+  // o espaço vertical que sobrava, com o botão Arquivo e Relatórios fixo na
+  // parte mais baixa da tela.
+  const widgetH = Math.max(
+    150,
+    alturaUtil - ESPACO_ACIMA_DA_GRADE - ESPACO_ABAIXO_DA_GRADE - USER_BANNER_H - WIDGETS_ROW_MARGIN_BOTTOM - ARQUIVO_BTN_H
+  );
+  return { cellH, widgetH };
+}
 
 // Distância mínima de arraste horizontal para trocar de modo
 const SWIPE_THRESHOLD = 45;
@@ -171,6 +183,15 @@ export default function InicioScreen({ navigation }) {
   const [user, setUser] = useState(null);
   const [modo, setModo] = useState('inicio'); // 'inicio' | 'clinica' | 'administrativa'
   const [menuAberto, setMenuAberto] = useState(false);
+
+  // Item 2 (leva pós-v13): altura de fato disponível dentro da área segura
+  // — SH sozinho (Dimensions) inclui notch/barra de gestos, que a
+  // SafeAreaView já desconta visualmente mas a conta de layout ignorava.
+  const insets = useSafeAreaInsets();
+  const { cellH, widgetH } = useMemo(
+    () => calcularAlturasDaGrade(SH - insets.top - insets.bottom),
+    [insets.top, insets.bottom]
+  );
 
   // Registra o token de push uma vez por sessão de app (não a cada vez que
   // a tela ganha foco de novo — ver useFocusEffect abaixo, que roda toda
@@ -412,12 +433,21 @@ export default function InicioScreen({ navigation }) {
           nele) — grudar um PanResponder externo direto num ScrollView disputa
           com o responder nativo de rolagem dele e o gesto fica "preso"
           (arrasta visualmente mas nunca solta pra trocar de aba), mesmo
-          problema que o padrão usado em Agenda/Financeiro evita. */}
+          problema que o padrão usado em Agenda/Financeiro evita.
+          Item 2 (leva pós-v13): scrollEnabled=false — a tela agora é
+          calculada pra sempre caber (ver calcularAlturasDaGrade, com
+          insets reais), então rolar verticalmente só existia como rede de
+          segurança pra quando a conta errava a altura disponível — e
+          competia com o gesto horizontal de trocar de aba. Continua um
+          ScrollView (não vira View simples) só pelo contentContainerStyle
+          já pronto; na prática não rola. */}
       <View style={{ flex: 1 }} {...panHandlers}>
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={s.scrollContent}
         showsVerticalScrollIndicator={false}
+        scrollEnabled={false}
+        bounces={false}
       >
         {modo === 'inicio' ? (
           <Animated.View style={gridAnimatedStyle}>
@@ -453,8 +483,8 @@ export default function InicioScreen({ navigation }) {
             ) : null}
 
             <View style={s.widgetsRow}>
-              <MiniAfazeresBox navigation={navigation} altura={WIDGET_H} />
-              <MiniAgendaBox navigation={navigation} altura={WIDGET_H} />
+              <MiniAfazeresBox navigation={navigation} altura={widgetH} />
+              <MiniAgendaBox navigation={navigation} altura={widgetH} />
             </View>
 
             <TouchableOpacity
@@ -472,7 +502,7 @@ export default function InicioScreen({ navigation }) {
             {botoesAtivos.map((btn) => (
               <TouchableOpacity
                 key={btn.id}
-                style={s.cell}
+                style={[s.cell, { width: CELL_W, height: cellH }]}
                 activeOpacity={0.75}
                 onPress={() => abrirBotaoGrid(btn)}
               >
@@ -737,8 +767,8 @@ const s = StyleSheet.create({
     rowGap: GRID_ROW_GAP,
   },
   cell: {
-    width: CELL_W,
-    height: CELL_H,
+    // width/height vêm inline (calcularAlturasDaGrade, com insets reais —
+    // ver useMemo no componente), não são mais fixos aqui.
     backgroundColor: COLORS.btnBlue,
     borderRadius: 22,
     paddingVertical: 22,

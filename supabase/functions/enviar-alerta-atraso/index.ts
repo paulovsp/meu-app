@@ -1,19 +1,17 @@
 // Edge Function: enviar-alerta-atraso
 // Chamada pelo app (autenticado) quando há recebimentos mensais em atraso
-// ainda não avisados hoje (ver src/services/alertaAtraso.js). Manda UM
-// e-mail agregado — não um por paciente — pro próprio e-mail de login da
-// psicanalista, via Resend. Sem custo de crédito de IA (não usa nenhum
-// provedor de IA), só um e-mail informativo.
+// ainda não avisados hoje (ver src/services/alertaAtraso.js). Só PUSH —
+// o e-mail de atraso saiu daqui (item 1, leva pós-v13): mandar e-mail toda
+// vez que a Início ganha foco fazia o horário do aviso parecer aleatório.
+// O e-mail agora é o digest diário (enviar-digest-diario, num horário fixo,
+// via cron), que já cobre atraso + sessões sem relato num envio só. Push
+// continua aqui porque é mais leve (não é "caixa de entrada") e faz sentido
+// ser mais imediato.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
-const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!;
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
-
-function formatarMoedaBRL(valor: number) {
-  return (valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -43,42 +41,12 @@ Deno.serve(async (req) => {
 
     const { data: perfil } = await supabaseUser
       .from('profiles')
-      .select('expo_push_token, notif_atraso_email, notif_atraso_push')
+      .select('expo_push_token, notif_atraso_push')
       .eq('id', userData.user.id)
       .single();
 
     const titulo = `${atrasados.length} recebimento${atrasados.length === 1 ? '' : 's'} em atraso`;
-    const linhas = atrasados
-      .map((a: { nome: string; diasAtraso: number; valor: number }) =>
-        `- ${a.nome}: ${a.diasAtraso} dia${a.diasAtraso === 1 ? '' : 's'} de atraso — ${formatarMoedaBRL(a.valor)}`)
-      .join('<br/>');
-
-    // Canais independentes (item D.10) — cada um só dispara se a pessoa
-    // ligou, e a falha de um não impede o outro.
     const erros: string[] = [];
-
-    if (perfil?.notif_atraso_email !== false) {
-      const resp = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${RESEND_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          from: 'Dr.Sig <naoresponda@drsig.com.br>',
-          to: [userData.user.email],
-          subject: titulo,
-          html: `
-            <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1A1A2E;">
-              <h2>Recebimentos em atraso</h2>
-              <p>${linhas}</p>
-              <p>Abra o app Dr.Sig e confira em Recebíveis.</p>
-            </div>
-          `,
-        }),
-      });
-      if (!resp.ok) erros.push(`e-mail: ${await resp.text()}`);
-    }
 
     if (perfil?.notif_atraso_push === true && perfil?.expo_push_token) {
       const resp = await fetch(EXPO_PUSH_URL, {

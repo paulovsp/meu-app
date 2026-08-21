@@ -2,7 +2,8 @@ import React, { useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { getAppointmentsByDate } from '../services/database';
+import { getAppointmentsByDate, ensureAppointmentsForDate } from '../services/database';
+import { horarioJaPassou } from '../services/compromissoStatus';
 
 const COLORS = {
   surface: '#FFFFFF',
@@ -10,6 +11,23 @@ const COLORS = {
   textDark: '#1C1C1E',
   textMid: '#6B6860',
 };
+
+// Mesmas cores de ESTADO_LABEL (compromissoStatus.js), versão simplificada
+// pro espaço pequeno do widget — sem buscar transcrição por paciente (isso
+// exigiria uma consulta extra por linha só pra colorir uma bolinha).
+const COR_STATUS = {
+  agendado_futuro: '#3D5A80',
+  aguardando_confirmacao: '#F09B4A',
+  realizado: '#2E8B57',
+  nao_realizado: '#C0392B',
+};
+
+function corDoStatus(compromisso) {
+  if (compromisso.status === 'realizado') return COR_STATUS.realizado;
+  if (compromisso.status === 'nao_realizado') return COR_STATUS.nao_realizado;
+  const passou = horarioJaPassou(compromisso.date, compromisso.end_time);
+  return passou ? COR_STATUS.aguardando_confirmacao : COR_STATUS.agendado_futuro;
+}
 
 const MAX_LINHAS = 4;
 
@@ -23,8 +41,14 @@ export default function MiniAgendaBox({ navigation, altura }) {
 
   useFocusEffect(
     useCallback(() => {
-      getAppointmentsByDate(hojeISO())
-        .then(setCompromissos)
+      const hoje = new Date();
+      // Item 3 (leva pós-v13): appointments só "nasce" quando o dia é
+      // aberto na Agenda de verdade (mesmo gatilho que AgendaScreen.js usa
+      // na visão diária) — sem chamar isso aqui, um dia nunca visitado na
+      // Agenda aparecia vazio no widget mesmo tendo horário marcado.
+      ensureAppointmentsForDate(hojeISO(), hoje.getDay())
+        .then(() => getAppointmentsByDate(hojeISO()))
+        .then((lista) => setCompromissos((lista || []).filter((c) => c.status !== 'cancelado')))
         .catch(() => setCompromissos([]));
     }, [])
   );
@@ -39,7 +63,7 @@ export default function MiniAgendaBox({ navigation, altura }) {
       onPress={() => navigation.navigate('Agenda')}
     >
       <View style={s.molduraFina}>
-        <View style={[s.caixa, altura ? { minHeight: altura } : null]}>
+        <View style={[s.caixa, altura ? { height: altura } : null]}>
           <View style={s.header}>
             <Ionicons name="calendar-outline" size={18} color={COLORS.borderAzul} />
             <Text style={s.titulo}>Agenda de hoje</Text>
@@ -49,9 +73,12 @@ export default function MiniAgendaBox({ navigation, altura }) {
             <Text style={s.vazio}>Nenhum horário hoje</Text>
           ) : (
             visiveis.map((c) => (
-              <Text key={c.id} style={s.linha} numberOfLines={1}>
-                {c.start_time?.slice(0, 5)} · {c.patient_nome || c.titulo || 'Compromisso'}
-              </Text>
+              <View key={c.id} style={s.linhaRow}>
+                <View style={[s.statusDot, { backgroundColor: corDoStatus(c) }]} />
+                <Text style={s.linha} numberOfLines={1}>
+                  {c.start_time?.slice(0, 5)} · {c.patient_nome || c.titulo || 'Compromisso'}
+                </Text>
+              </View>
             ))
           )}
           {restantes > 0 && <Text style={s.maisTexto}>+{restantes} mais</Text>}
@@ -81,11 +108,16 @@ const s = StyleSheet.create({
     backgroundColor: COLORS.surface,
     borderRadius: 15,
     padding: 16,
+    // altura fixa (não só mínimo) + corte — a Início não rola mais (item
+    // 2), então este widget nunca pode crescer além do espaço reservado.
+    overflow: 'hidden',
     minHeight: 150,
   },
   header: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 10 },
   titulo: { fontSize: 14, fontWeight: '700', color: COLORS.textDark },
-  linha: { fontSize: 13.5, color: COLORS.textDark, marginBottom: 6 },
+  linhaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  statusDot: { width: 8, height: 8, borderRadius: 4 },
+  linha: { flex: 1, fontSize: 13.5, color: COLORS.textDark },
   vazio: { fontSize: 13.5, color: COLORS.textMid, fontStyle: 'italic' },
   maisTexto: { fontSize: 12.5, color: COLORS.textMid, marginTop: 2, fontWeight: '600' },
 });

@@ -44,7 +44,7 @@ export async function solicitarAutorizacao(paciente) {
 export async function getStatusAutorizacao(patientLocalId) {
   const { data, error } = await supabase
     .from('autorizacoes_transcricao')
-    .select('status, criado_em, expira_em, respondido_em')
+    .select('status, criado_em, expira_em, respondido_em, tentativas, motivo_rejeicao')
     .eq('patient_local_id', patientLocalId)
     .order('criado_em', { ascending: false })
     .limit(1)

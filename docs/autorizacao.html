@@ -14,11 +14,16 @@
   button:disabled { opacity: 0.6; }
   .btn-autorizar { background: #3D5A80; color: #fff; }
   .btn-negar { background: #F0F0F0; color: #6B6860; margin-top: 10px; }
-  .erro { background: #FCEBEA; color: #C0392B; padding: 12px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; }
+  .erro { background: #FCEBEA; color: #C0392B; padding: 12px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; line-height: 1.5; }
   .aviso { color: #6B6860; font-size: 12px; margin-top: 20px; line-height: 1.5; }
   .privacidade { background: #F5F7FA; border-left: 3px solid #3D5A80; padding: 10px 14px; border-radius: 4px; font-size: 12.5px; color: #33333d; margin-top: 16px; line-height: 1.5; }
   .carregando { text-align: center; color: #6B6860; padding: 40px 0; }
   .preview { width: 100%; border-radius: 10px; margin-top: 10px; display: none; }
+  .dicas { background: #F5F7FA; border-radius: 10px; padding: 12px 14px 12px 30px; margin: 14px 0 0; font-size: 12.5px; color: #33333d; line-height: 1.6; }
+  .dicas li { margin-bottom: 2px; }
+  .tentativas { font-size: 13px; font-weight: 700; margin: 0 0 14px; padding: 10px 12px; border-radius: 10px; }
+  .tentativas.ok { background: #FFF4E5; color: #B36B00; }
+  .tentativas.critico { background: #FCEBEA; color: #C0392B; }
 </style>
 </head>
 <body>
@@ -47,6 +52,33 @@
 
     function mensagemSimples(titulo, texto) {
       render('<h2>' + titulo + '</h2><p>' + texto + '</p>');
+    }
+
+    // Mensagem específica por motivo de rejeição (a Edge Function devolve o
+    // motivo exato — documento ilegível, CPF diferente do cadastro, ou
+    // documento da própria profissional — cada um pede uma correção
+    // diferente do analisante, então merece um texto diferente.
+    var MENSAGENS_MOTIVO = {
+      documento_ilegivel: 'Não conseguimos ler os dados desse documento na foto enviada.',
+      cpf_nao_confere: 'O CPF que identificamos nesse documento não é o mesmo que está cadastrado. Confira se você enviou o documento da pessoa certa.',
+      cpf_do_profissional: 'Esse documento pertence à psicanalista responsável, não a você — não é possível usar o documento dela para autorizar.',
+    };
+
+    var DICAS_FOTO =
+      '<ul class="dicas">' +
+      '<li>Boa luz, sem sombra sobre o documento</li>' +
+      '<li>Sem reflexo no plástico (evite luz direta em cima)</li>' +
+      '<li>Documento inteiro dentro do quadro da foto</li>' +
+      '<li>Câmera reta, de frente — não em ângulo</li>' +
+      '</ul>';
+
+    function blocoTentativas(restantes) {
+      if (typeof restantes !== 'number') return '';
+      var classe = restantes <= 1 ? 'critico' : 'ok';
+      var texto = restantes === 1
+        ? 'Você tem só <b>1 tentativa</b> restante.'
+        : 'Você tem <b>' + restantes + ' tentativas</b> restantes.';
+      return '<p class="tentativas ' + classe + '">' + texto + '</p>';
     }
 
     function redimensionarImagem(file) {
@@ -81,15 +113,17 @@
       });
     }
 
-    function renderUpload(erro) {
+    function renderUpload(erro, tentativasHtml) {
       render(
         (erro ? '<div class="erro">' + erro + '</div>' : '') +
+        (tentativasHtml || '') +
         '<h2>Autorização de gravação e transcrição</h2>' +
         '<p>Para confirmar que é você, envie uma foto de um documento com foto (RG, CNH ou passaporte). É só pra essa conferência automática — a foto não fica guardada.</p>' +
         '<form id="form">' +
         '  <label>Foto do documento</label>' +
         '  <input type="file" name="documento" accept="image/*" capture="environment" required />' +
         '  <img class="preview" id="preview" />' +
+        DICAS_FOTO +
         '  <button type="submit" data-acao="autorizar" class="btn-autorizar">Enviar documento e autorizar</button>' +
         '  <button type="submit" data-acao="negar" class="btn-negar">Não autorizo</button>' +
         '</form>' +
@@ -181,11 +215,20 @@
           mensagemSimples('Link expirado', 'Peça para sua psicanalista enviar uma nova solicitação.');
           break;
         case 'locked':
-          mensagemSimples('Muitas tentativas', 'Por segurança, este link foi bloqueado. Peça uma nova solicitação.');
+          if (data.motivo === 'cpf_do_profissional') {
+            mensagemSimples(
+              'Documento não aceito',
+              'O documento enviado pertence à psicanalista responsável, não a você. Por segurança, esse link foi bloqueado. Peça pra ela enviar uma nova solicitação e envie um documento seu dessa vez.'
+            );
+          } else {
+            mensagemSimples('Muitas tentativas', 'Por segurança, este link foi bloqueado após várias tentativas sem sucesso. Peça pra sua psicanalista enviar uma nova solicitação.');
+          }
           break;
-        case 'mismatch':
-          renderUpload(data.erro || 'Não conseguimos confirmar sua identidade pelo documento enviado. Tente novamente com uma foto mais nítida.');
+        case 'mismatch': {
+          var texto = (data.motivo && MENSAGENS_MOTIVO[data.motivo]) || data.erro || 'Não conseguimos confirmar sua identidade pelo documento enviado. Tente novamente com uma foto mais nítida.';
+          renderUpload(texto, blocoTentativas(data.tentativasRestantes));
           break;
+        }
         case 'invalid':
         default:
           mensagemSimples('Link inválido', 'Não encontramos essa solicitação. O link pode estar incorreto.');

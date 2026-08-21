@@ -58,12 +58,18 @@ function getModalidadeLabel(modalidade) {
 }
 
 // ─── Status da autorização de gravação/transcrição ────
+// Motivo exato devolvido pela Edge Function confirmar-autorizacao quando o
+// documento enviado não bate — mostrar aqui pra profissional evita que ela
+// veja só "Aguardando" sem saber que o analisante já tentou e falhou, e por quê.
+const MOTIVO_REJEICAO_LABEL = {
+  documento_ilegivel: 'documento ilegível na foto',
+  cpf_nao_confere: 'CPF do documento não confere com o cadastro',
+  cpf_do_profissional: 'enviou documento da própria profissional',
+};
+
 function getAutorizacaoInfo(autorizacao) {
   if (!autorizacao) {
     return { texto: 'Ainda não solicitada', cor: '#888', botao: 'Solicitar autorização' };
-  }
-  if (autorizacao.status === 'pendente') {
-    return { texto: 'Aguardando confirmação do analisante', cor: '#F09B4A', botao: 'Reenviar e-mail' };
   }
   if (autorizacao.status === 'autorizada') {
     const data = autorizacao.respondido_em
@@ -71,7 +77,30 @@ function getAutorizacaoInfo(autorizacao) {
       : '';
     return { texto: `Autorizada${data ? ` em ${data}` : ''}`, cor: '#2E8B57', botao: 'Solicitar novamente' };
   }
-  return { texto: 'Não autorizada pelo analisante', cor: '#C0392B', botao: 'Solicitar novamente' };
+  if (autorizacao.status === 'negada') {
+    return { texto: 'Não autorizada pelo analisante', cor: '#C0392B', botao: 'Solicitar novamente' };
+  }
+
+  // status === 'pendente' — ainda sem resposta, ou já tentou enviar o
+  // documento e a conferência automática rejeitou (continua pendente até
+  // esgotar as 5 tentativas ou o analisante conseguir enviar um válido).
+  const motivo = MOTIVO_REJEICAO_LABEL[autorizacao.motivo_rejeicao];
+  const bloqueada = (autorizacao.tentativas || 0) >= 5;
+  if (bloqueada) {
+    return {
+      texto: `Bloqueada — esgotou as tentativas${motivo ? ` (${motivo})` : ''}`,
+      cor: '#C0392B',
+      botao: 'Solicitar novamente',
+    };
+  }
+  if (motivo) {
+    return {
+      texto: `Aguardando reenvio — última tentativa falhou (${motivo})`,
+      cor: '#F09B4A',
+      botao: 'Reenviar e-mail',
+    };
+  }
+  return { texto: 'Aguardando confirmação do analisante', cor: '#F09B4A', botao: 'Reenviar e-mail' };
 }
 
 // ⚠️ NOVO: Badge de autor para registros

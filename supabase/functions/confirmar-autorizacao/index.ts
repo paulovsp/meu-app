@@ -236,6 +236,7 @@ Deno.serve(async (req) => {
 
     return json({
       state: novasTentativas >= 5 ? 'locked' : 'mismatch',
+      motivo: resultado.motivo,
       tentativasRestantes: Math.max(0, 5 - novasTentativas),
     });
   }

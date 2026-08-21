@@ -146,6 +146,30 @@ async function montarMensagens(paciente, tipo, parametros) {
   throw new Error(`Tipo de relatório desconhecido: ${tipo}`);
 }
 
+// Preços DeepSeek V4-Flash — espelha ia-busca/index.ts, só pra estimar o
+// orçamento ANTES da chamada (mesmo padrão de buscaChat.js:estimarCustoResposta).
+// O custo real (com desconto de cache, se houver) sai menor ou igual, nunca maior.
+const PRECO_INPUT_POR_1M = 0.14;
+const PRECO_OUTPUT_POR_1M = 0.28;
+const MAX_TOKENS_RESPOSTA = 3000;
+
+function estimarTokens(texto) {
+  return Math.ceil((texto || '').length / 3.5);
+}
+
+/** Estima o custo (pior caso, sem desconto de cache) de gerar este relatório
+ * ANTES de chamar a IA de verdade — monta as mesmas mensagens que
+ * gerarRelatorio vai usar, só pra medir o tamanho. Lança o mesmo erro de
+ * "sem dados" que gerarRelatorio lançaria, se for o caso (analisante sem
+ * sessões/registros/etc pro tipo escolhido). */
+export async function estimarCustoRelatorio(paciente, tipo, parametros = {}) {
+  const mensagens = await montarMensagens(paciente, tipo, parametros);
+  const tokensEntrada = mensagens.reduce((soma, m) => soma + estimarTokens(m.content), 0);
+  const custoEntrada = (tokensEntrada / 1_000_000) * PRECO_INPUT_POR_1M;
+  const custoSaidaMax = (MAX_TOKENS_RESPOSTA / 1_000_000) * PRECO_OUTPUT_POR_1M;
+  return custoEntrada + custoSaidaMax;
+}
+
 /** Gera um relatório via IA e já arquiva em `relatorios`. Lança erro se a
  * IA falhar (crédito insuficiente, assinatura inativa, etc — mesmo
  * tratamento de erro do restante do app via mensagemDeErro). */

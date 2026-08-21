@@ -8,9 +8,10 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { listarPacientes, getSessions, getRecords } from '../services/database';
 import {
-  TIPOS_RELATORIO, OPCOES_ULTIMAS_SESSOES, gerarRelatorio, listarRelatorios,
+  TIPOS_RELATORIO, OPCOES_ULTIMAS_SESSOES, gerarRelatorio, listarRelatorios, estimarCustoRelatorio,
 } from '../services/relatorios';
 import { mensagemDeErro } from '../services/erros';
+import { formatarSaldoBRL } from '../services/creditosIA';
 
 const COLORS = {
   bg: '#F7F6F3',
@@ -73,9 +74,33 @@ export default function ArquivoRelatoriosScreen() {
   }
 
   async function handleGerar(tipo) {
+    const tipoInfo = TIPOS_RELATORIO.find((t) => t.valor === tipo);
+    const parametros = tipo === 'ultimas_sessoes' ? { quantidade: quantidadeUltimas } : {};
+
+    setGerandoTipo(tipo);
+    let custoEstimado;
+    try {
+      custoEstimado = await estimarCustoRelatorio(paciente, tipo, parametros);
+    } catch (err) {
+      setGerandoTipo(null);
+      Alert.alert('Não foi possível gerar', mensagemDeErro(err));
+      return;
+    }
+    setGerandoTipo(null);
+
+    Alert.alert(
+      'Confirmar geração',
+      `${tipoInfo?.label || tipo}\n\nCusto estimado (no pior caso): até ${formatarSaldoBRL(custoEstimado)}.\n\nGerar mesmo assim?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Gerar', onPress: () => executarGeracao(tipo, parametros) },
+      ]
+    );
+  }
+
+  async function executarGeracao(tipo, parametros) {
     setGerandoTipo(tipo);
     try {
-      const parametros = tipo === 'ultimas_sessoes' ? { quantidade: quantidadeUltimas } : {};
       const relatorio = await gerarRelatorio(paciente, tipo, parametros);
       setHistoricoRelatorios((atual) => [relatorio, ...atual]);
       setRelatorioAberto(relatorio);

@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  FlatList, Alert, ActivityIndicator
+  SectionList, Alert, ActivityIndicator
 } from 'react-native';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -129,6 +129,25 @@ function getItemTipoLabel(item) {
   if (item.type === 'image') return { icon: '🖼️', label: 'Imagem', color: '#E06B6B', bg: '#FDE8E8' };
   if (item.type === 'file')  return { icon: '📎', label: 'Arquivo', color: '#888',   bg: '#F0F0F0' };
   return { icon: '📝', label: 'Nota', color: '#7C3AED', bg: '#F0E8FF' };
+}
+
+// Item 10 (v13): agrupa o histórico em 3 pastas — sessões (transcritas ou
+// anotadas) ficam juntas com registros do tipo "sessão", já que a distinção
+// entre elas é só uma badge (🎙️ vs 📝), não uma pasta separada. Registro sem
+// categoria nenhuma (imagem/arquivo/nota salva antes da correção do item 6)
+// cai em "Outros", o catch-all — não faz sentido junto de sessão nem estudo.
+const PASTAS = [
+  { key: 'sessoes', titulo: 'Sessões' },
+  { key: 'estudos', titulo: 'Estudos' },
+  { key: 'outros', titulo: 'Outros' },
+];
+
+function getPastaItem(item) {
+  if (item._itemType === 'session') return 'sessoes';
+  const cat = item.category || (['sessao', 'estudo', 'outro'].includes(item.type) ? item.type : null);
+  if (cat === 'sessao') return 'sessoes';
+  if (cat === 'estudo') return 'estudos';
+  return 'outros';
 }
 
 // ─── InfoRow (dados do paciente) ───────────────────────
@@ -310,6 +329,15 @@ export default function DetalheAnalisanteScreen() {
     ...sessoes.map(s => ({ ...s, _itemType: 'session' })),
     ...registros.map(r => ({ ...r, _itemType: 'record' })),
   ].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  // ─── Item 10 (v13): agrupamento em pastas ─────────────
+  const secoes = PASTAS
+    .map((pasta) => ({
+      key: pasta.key,
+      title: pasta.titulo,
+      data: todosItens.filter((item) => getPastaItem(item) === pasta.key),
+    }))
+    .filter((secao) => secao.data.length > 0);
 
   // ─── Formatação de data ──────────────────────────────
   function formatarData(dataStr) {
@@ -573,12 +601,22 @@ export default function DetalheAnalisanteScreen() {
           <InfoRow label="Telefone de emergência" value={paciente.contato_emergencia} icon="🚨" />
         </View>
 
-        {/* Separador da lista */}
-        <View style={styles.listaHeader}>
-          <Text style={styles.listaHeaderText}>
-            Histórico ({todosItens.length})
-          </Text>
-        </View>
+        {todosItens.length > 0 && (
+          <View style={styles.listaHeader}>
+            <Text style={styles.listaHeaderText}>
+              Histórico ({todosItens.length})
+            </Text>
+          </View>
+        )}
+      </View>
+    );
+  }
+
+  // ─── Cabeçalho de cada pasta (Sessões/Estudos/Outros) ─
+  function renderSectionHeader({ section }) {
+    return (
+      <View style={styles.pastaHeader}>
+        <Text style={styles.pastaHeaderText}>{section.title} ({section.data.length})</Text>
       </View>
     );
   }
@@ -597,11 +635,13 @@ export default function DetalheAnalisanteScreen() {
         <View style={{ width: 70 }} />
       </View>
 
-      {/* Lista única com header */}
-      <FlatList
-        data={todosItens}
+      {/* Lista em pastas — Sessões / Estudos / Outros (item 10, v13) */}
+      <SectionList
+        sections={secoes}
         keyExtractor={(item) => `${item._itemType}_${item.id}`}
         renderItem={renderItem}
+        renderSectionHeader={renderSectionHeader}
+        stickySectionHeadersEnabled={false}
         contentContainerStyle={[
           styles.lista,
           { paddingBottom: 20 }
@@ -709,6 +749,15 @@ const styles = StyleSheet.create({
   },
   listaHeaderText: {
     fontSize: 15, fontWeight: '700', color: '#1A1A2E',
+  },
+
+  // Cabeçalho de pasta (item 10, v13)
+  pastaHeader: {
+    marginHorizontal: 16, marginTop: 16, marginBottom: 6,
+  },
+  pastaHeaderText: {
+    fontSize: 13, fontWeight: '700', color: '#6B6860',
+    textTransform: 'uppercase', letterSpacing: 0.5,
   },
 
   // Lista

@@ -955,6 +955,57 @@ export async function getOrCreateAppointmentForSlot(slot, dataISO) {
   return comParticipantes;
 }
 
+/** Compromissos futuros (a partir de hoje, ainda 'agendado') que vieram do
+ * mesmo horário recorrente — mesmo paciente, mesmo dia da semana, mesmo
+ * horário de início. Usado antes de cancelar/editar "este e todos os
+ * futuros" (item 4, v13), pra saber quantos serão afetados e poder avisar
+ * antes de confirmar. Só cobre sessão/supervisão individual (que têm
+ * patient_id) — evento em grupo/outros não participa da cascata. */
+export async function listarCompromissosFuturosDoHorario({ patientId, dayOfWeek, startTime }) {
+  if (!patientId) return [];
+  const { supabase } = require('./supabase');
+  const hojeISO = new Date().toISOString().slice(0, 10);
+  const { data, error } = await supabase
+    .from('appointments')
+    .select('id, date, start_time')
+    .eq('patient_id', patientId)
+    .eq('start_time', startTime)
+    .eq('status', 'agendado')
+    .gte('date', hojeISO);
+  if (error) throw error;
+  return (data || []).filter((a) => {
+    const [ano, mes, dia] = a.date.split('-').map(Number);
+    return new Date(ano, mes - 1, dia).getDay() === dayOfWeek;
+  });
+}
+
+/** Cancela em cascata os compromissos futuros do mesmo horário recorrente
+ * — chamado junto de deleteAvailabilitySlot ao excluir "este e todos os
+ * futuros" (item 4, v13). Retorna quantos foram cancelados. */
+export async function cancelarCompromissosFuturosDoHorario({ patientId, dayOfWeek, startTime }) {
+  const futuros = await listarCompromissosFuturosDoHorario({ patientId, dayOfWeek, startTime });
+  if (futuros.length === 0) return 0;
+  const { supabase } = require('./supabase');
+  const { error } = await supabase
+    .from('appointments')
+    .update({ status: 'cancelado' })
+    .in('id', futuros.map((a) => a.id));
+  if (error) throw error;
+  return futuros.length;
+}
+
+/** Atualiza start_time/end_time só desse compromisso específico, sem tocar
+ * no horário recorrente em availability_slots — "só este horário" ao
+ * editar (item 4, v13). */
+export async function atualizarHorarioAppointment(appointmentId, { startTime, endTime }) {
+  const { supabase } = require('./supabase');
+  const { error } = await supabase
+    .from('appointments')
+    .update({ start_time: startTime, end_time: endTime })
+    .eq('id', appointmentId);
+  if (error) throw error;
+}
+
 /** Acha o slot do template semanal que originou um compromisso específico
  * (mesmo dia da semana + mesmo horário de início), pra permitir editar o
  * horário recorrente a partir da tela de detalhe do compromisso. */

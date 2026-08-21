@@ -8,6 +8,9 @@ import {
   updateAppointmentStatus,
   temTranscricaoParaData,
   getAvailabilitySlotByDayAndTime,
+  deleteAvailabilitySlot,
+  listarCompromissosFuturosDoHorario,
+  cancelarCompromissosFuturosDoHorario,
 } from '../services/database';
 import { horarioJaPassou, getEstadoCompromisso, ESTADO_LABEL } from '../services/compromissoStatus';
 import { mensagemDeErro } from '../services/erros';
@@ -73,7 +76,31 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
   const estadoInfo = ESTADO_LABEL[estado];
   const podeAgir = compromisso.status === 'agendado';
 
-  async function editarHorario() {
+  // Item 4 (v13): appointments já guarda start_time/end_time próprios,
+  // independentes do horário recorrente — "só este dia" é uma edição
+  // pontual dessa linha, sem tocar em availability_slots.
+  function editarHorario() {
+    const dataFormatada = compromisso.date.split('-').reverse().join('/');
+    Alert.alert(
+      'Editar horário',
+      'Editar só este horário, ou este e todos os futuros?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: `Só este (${dataFormatada})`,
+          onPress: () => navigation.navigate('EditarHorarioUnico', {
+            appointmentId: compromisso.id,
+            date: compromisso.date,
+            startTime: compromisso.start_time,
+            endTime: compromisso.end_time,
+          }),
+        },
+        { text: 'Este e todos os futuros', onPress: editarHorarioRecorrente },
+      ]
+    );
+  }
+
+  async function editarHorarioRecorrente() {
     const [ano, mes, dia] = compromisso.date.split('-').map(Number);
     const dayOfWeek = new Date(ano, mes - 1, dia).getDay();
     try {
@@ -135,6 +162,77 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
     }
   }
 
+  function perguntarEscopoCancelamento() {
+    const dataFormatada = compromisso.date.split('-').reverse().join('/');
+    Alert.alert(
+      'Cancelar compromisso',
+      'Cancelar só este horário, ou este e todos os futuros?',
+      [
+        { text: 'Voltar', style: 'cancel' },
+        { text: `Só este (${dataFormatada})`, onPress: cancelarCompromisso },
+        { text: 'Este e todos os futuros', style: 'destructive', onPress: cancelarRecorrenteComCascata },
+      ]
+    );
+  }
+
+  // "Todos os futuros" remove o horário recorrente (availability_slots) e
+  // cancela em cascata os compromissos futuros ainda não realizados desse
+  // mesmo horário — avisa quantos antes de confirmar, pra não surpreender.
+  async function cancelarRecorrenteComCascata() {
+    const [ano, mes, dia] = compromisso.date.split('-').map(Number);
+    const dayOfWeek = new Date(ano, mes - 1, dia).getDay();
+    setAgindo(true);
+    let slot, futuros;
+    try {
+      [slot, futuros] = await Promise.all([
+        getAvailabilitySlotByDayAndTime(dayOfWeek, compromisso.start_time),
+        listarCompromissosFuturosDoHorario({
+          patientId: compromisso.patient_id,
+          dayOfWeek,
+          startTime: compromisso.start_time,
+        }),
+      ]);
+    } catch (e) {
+      setAgindo(false);
+      Alert.alert('Erro', mensagemDeErro(e));
+      return;
+    }
+    setAgindo(false);
+
+    Alert.alert(
+      'Confirmar cancelamento',
+      futuros.length > 0
+        ? `Isso remove o horário recorrente da agenda e cancela mais ${futuros.length} compromisso${futuros.length === 1 ? '' : 's'} futuro${futuros.length === 1 ? '' : 's'} desse horário, além deste. Confirma?`
+        : 'Isso remove o horário recorrente da agenda. Não há outros compromissos futuros desse horário. Confirma?',
+      [
+        { text: 'Voltar', style: 'cancel' },
+        {
+          text: 'Confirmar',
+          style: 'destructive',
+          onPress: async () => {
+            setAgindo(true);
+            try {
+              await updateAppointmentStatus(compromisso.id, 'cancelado');
+              if (futuros.length > 0) {
+                await cancelarCompromissosFuturosDoHorario({
+                  patientId: compromisso.patient_id,
+                  dayOfWeek,
+                  startTime: compromisso.start_time,
+                });
+              }
+              if (slot?.id) await deleteAvailabilitySlot(slot.id);
+              await carregar();
+            } catch (e) {
+              Alert.alert('Erro ao cancelar', mensagemDeErro(e));
+            } finally {
+              setAgindo(false);
+            }
+          },
+        },
+      ]
+    );
+  }
+
   return (
     <ScrollView style={styles.container}>
       <Text style={[styles.tipoLabel, { color: infoTipoEvento(tipo).cor }]}>
@@ -189,12 +287,7 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
           <TouchableOpacity
             style={[styles.btnCancelar, agindo && { opacity: 0.7 }]}
             disabled={agindo}
-            onPress={() => {
-              Alert.alert('Cancelar compromisso', 'Confirma o cancelamento?', [
-                { text: 'Não' },
-                { text: 'Sim', onPress: cancelarCompromisso },
-              ]);
-            }}
+            onPress={perguntarEscopoCancelamento}
           >
             {agindo ? <ActivityIndicator color="#c62828" /> : <Text style={styles.btnCancelarTxt}>Cancelar Compromisso</Text>}
           </TouchableOpacity>

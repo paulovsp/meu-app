@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
   Alert, ActivityIndicator, FlatList, TextInput, Linking,
-  Platform,
+  Platform, KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -648,7 +648,8 @@ export default function NovaSessaoScreen() {
   if (step === STEPS.REVIEW) {
     return (
       <SafeAreaView style={s.safeArea} edges={['top', 'bottom']}>
-        <ScrollView style={s.container} contentContainerStyle={{ paddingBottom: 40 }}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <ScrollView style={s.container} contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
           <Text style={s.header}>Revisar Transcrição</Text>
           <Text style={s.sub}>
             Analisante: <Text style={s.bold}>{paciente?.nome}</Text>
@@ -728,6 +729,7 @@ export default function NovaSessaoScreen() {
             <Text style={s.btnVoltarText}>← Voltar</Text>
           </TouchableOpacity>
         </ScrollView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     );
   }

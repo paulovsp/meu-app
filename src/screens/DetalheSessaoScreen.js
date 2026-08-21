@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
   SafeAreaView, ScrollView, Alert, ActivityIndicator,
-  Switch, TextInput,
+  Switch, TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useAudioPlayer, AudioModule } from 'expo-audio';
@@ -329,7 +329,8 @@ export default function DetalheSessaoScreen() {
         <View style={{ width: 70 }} />
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: 40 }}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
         {/* Info card */}
         <View style={styles.infoCard}>
           <Text style={styles.pacienteNome}>{pacienteNome}</Text>
@@ -418,6 +419,7 @@ export default function DetalheSessaoScreen() {
             : renderTranscricaoBruta()}
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

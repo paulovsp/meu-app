@@ -82,7 +82,7 @@ export default function AfazeresScreen() {
 
   return (
     <SafeAreaView style={s.safe} edges={['bottom']}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         {carregando ? (
           <View style={s.loadingWrap}>
             <ActivityIndicator size="large" color={COLORS.btnBlue} />

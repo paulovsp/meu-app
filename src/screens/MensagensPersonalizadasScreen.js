@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../services/supabase';
@@ -100,7 +101,8 @@ export default function MensagensPersonalizadasScreen() {
 
   return (
     <SafeAreaView style={s.safe} edges={['bottom']}>
-      <ScrollView contentContainerStyle={s.scrollInner}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView contentContainerStyle={s.scrollInner} keyboardShouldPersistTaps="handled">
         <Text style={s.intro}>
           Escreva do seu jeito, ou deixe em branco pra usar o texto padrão do Dr.Sig.
           As variáveis entre chaves são substituídas automaticamente ao enviar.
@@ -144,6 +146,7 @@ export default function MensagensPersonalizadasScreen() {
           {salvando ? <ActivityIndicator color="#fff" /> : <Text style={s.btnSalvarTexto}>Salvar</Text>}
         </TouchableOpacity>
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

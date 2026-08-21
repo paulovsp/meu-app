@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator,
+  KeyboardAvoidingView, Platform, ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -53,7 +54,8 @@ export default function EditarHorarioUnicoScreen() {
 
   return (
     <SafeAreaView style={s.safe} edges={['bottom']}>
-      <View style={s.content}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
         <Text style={s.titulo}>Editar só este horário</Text>
         <Text style={s.subtitulo}>
           Só o compromisso de {dataFormatada || 'hoje'} muda — o horário recorrente da agenda
@@ -89,7 +91,8 @@ export default function EditarHorarioUnicoScreen() {
         >
           {salvando ? <ActivityIndicator color="#fff" /> : <Text style={s.btnSalvarTexto}>Salvar</Text>}
         </TouchableOpacity>
-      </View>
+      </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

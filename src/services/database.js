@@ -1576,6 +1576,44 @@ export function calcularStatusGeralRecebimentos(recebimentos) {
   return 'verde';
 }
 
+// ===================== WHATSAPP BUSINESS (item 13, v13 — opcional) =======
+//
+// Comprovantes que a Edge Function whatsapp-webhook detectou por OCR e
+// deixou 'pendente' — nunca marca pagamento como recebido sozinha, só
+// sinaliza aqui pra profissional revisar. patients(nome) já vem junto pra
+// não precisar de uma consulta extra por item da lista.
+export async function listarComprovantesWhatsappPendentes() {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase
+    .from('whatsapp_comprovantes')
+    .select('*, patients(nome)')
+    .eq('status', 'pendente')
+    .order('criado_em', { ascending: false });
+  if (error) throw error;
+  return (data || []).map((c) => ({ ...c, patient_nome: c.patients?.nome ?? null }));
+}
+
+/** Confirma um comprovante: marca o pagamento mensal do paciente como
+ * recebido (mesma função usada em Recebíveis) e fecha o item da fila. */
+export async function confirmarComprovanteWhatsapp(comprovanteId, { patientId, ano, mes, valor }) {
+  const { supabase } = require('./supabase');
+  await marcarPagamentoRecebido(patientId, ano, mes, valor);
+  const { error } = await supabase
+    .from('whatsapp_comprovantes')
+    .update({ status: 'confirmado', revisado_em: new Date().toISOString() })
+    .eq('id', comprovanteId);
+  if (error) throw error;
+}
+
+export async function ignorarComprovanteWhatsapp(comprovanteId) {
+  const { supabase } = require('./supabase');
+  const { error } = await supabase
+    .from('whatsapp_comprovantes')
+    .update({ status: 'ignorado', revisado_em: new Date().toISOString() })
+    .eq('id', comprovanteId);
+  if (error) throw error;
+}
+
 // ===================== FISCAL (config por analisante + pagamento por sessão) ====
 
 /** Config de emissão fiscal de um paciente — usada por FiscalScreen,

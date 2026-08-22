@@ -1,0 +1,42 @@
+name: Build e submit Android (EAS)
+
+on:
+  workflow_dispatch:
+    inputs:
+      submit:
+        description: "Depois do build, subir automaticamente pro Play Console (track \"internal\", ver eas.json)?"
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Configurar EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build Android (production, AAB)
+        run: eas build --platform android --profile production --non-interactive --wait
+
+      - name: Gravar credencial do Google Play
+        if: ${{ inputs.submit }}
+        env:
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+        run: echo "$GOOGLE_SERVICE_ACCOUNT_KEY" > google-service-account.json
+
+      - name: Submit pro Play Console
+        if: ${{ inputs.submit }}
+        run: eas submit --platform android --latest --non-interactive

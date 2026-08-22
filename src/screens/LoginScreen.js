@@ -173,7 +173,7 @@ export default function LoginScreen({ navigation }) {
             style={s.input}
             value={email}
             onChangeText={setEmail}
-            placeholder="Ex: paulo@email.com"
+            placeholder="Ex: sigmund.freud@email.com"
             placeholderTextColor="#B0ADA6"
             keyboardType="email-address"
             autoCapitalize="none"
@@ -229,7 +229,7 @@ export default function LoginScreen({ navigation }) {
               style={s.modalInput}
               value={emailEsqueci}
               onChangeText={setEmailEsqueci}
-              placeholder="Ex: paulo@email.com"
+              placeholder="Ex: sigmund.freud@email.com"
               placeholderTextColor="#B0ADA6"
               keyboardType="email-address"
               autoCapitalize="none"

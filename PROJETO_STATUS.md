@@ -44,17 +44,26 @@ caminho virou produto — hoje está na Play Store.
   credencial da API oficial da Meta Business no perfil dela — o Dr.Sig só
   hospeda o webhook compartilhado que roteia por `phone_number_id`.
 
-### Uma pegadinha estrutural importante
+### `meu-app-standalone` foi aposentado (22/08/2026)
 
-Existem **dois diretórios** do mesmo app:
-- `C:\Users\USER\Documents\meu-app` — onde o trabalho de verdade acontece
-  (edições, git com histórico real).
-- `C:\Users\USER\Documents\meu-app-standalone` — de onde os builds EAS
-  realmente saem. Os arquivos são copiados manualmente (`cp`) de um pro
-  outro a cada sessão. O git desse segundo diretório está **congelado desde
-  o primeiro commit** (20/06/2026) — ou seja, ele não serve como histórico,
-  só o disco (working directory) importa pra build. Isso é uma dívida
-  técnica conhecida, não um bug de hoje.
+Até aqui existiam **dois diretórios** do mesmo app — `meu-app` (histórico
+git real) e `meu-app-standalone` (de onde os builds EAS realmente saíam,
+com arquivos copiados manualmente a cada sessão, git congelado desde
+20/06/2026). Isso já causou pelo menos um bug real chegando em produção
+sem a correção mais recente (telefone internacional, item de 22/08) porque
+a cópia manual não foi feita antes de um build.
+
+Decisão tomada em 22/08/2026: **parar de usar `meu-app-standalone` como
+fonte de build.** O app é Expo *managed* (sem pasta `android/`/`ios/`
+nativa), então não há motivo técnico pra precisar de uma segunda pasta —
+`eas build` sobe o código pros servidores da Expo de qualquer lugar que
+tenha os arquivos certos, e já existe `.github/workflows/eas-build.yml`
+nesse repositório pra buildar/submeter direto do `meu-app` via GitHub
+Actions (disparável pelo app do GitHub no celular). Builds a partir daqui
+em diante devem sair só do `meu-app`. Se ainda houver algo em
+`meu-app-standalone` que não esteja neste repositório (ex: um `.env`
+local com `EXPO_PUBLIC_SUPABASE_URL`/`EXPO_PUBLIC_SUPABASE_ANON_KEY`),
+precisa ser recriado aqui antes de apagar aquela pasta de vez.
 
 ### Migrations do Supabase — risco recorrente
 
@@ -88,8 +97,9 @@ Notificações (push + e-mail, digest diário agregado).
 - Todo o código/comentário é em português.
 - Testes com Jest (`src/services/__tests__/`) — rodar antes de considerar
   algo pronto.
-- Todo arquivo alterado em `meu-app` é copiado manualmente pra
-  `meu-app-standalone` antes de um build.
+- Build/submit sai só do `meu-app` (GitHub Actions, `.github/workflows/eas-build.yml`)
+  — sem cópia manual pra `meu-app-standalone`, aposentado em 22/08/2026
+  (ver seção acima).
 - Commits em português, heredoc, terminando com
   `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>`.
 - **Mudança recente de dinâmica (21/08/2026):** o Paulo decidiu não mais

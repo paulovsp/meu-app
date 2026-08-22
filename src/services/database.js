@@ -42,8 +42,13 @@ export async function inserirPaciente({
   return data.id;
 }
 
+// `data_paralizacao` não é parâmetro aqui de propósito: uma vez que o
+// paciente já existe, esse campo só pode mudar via marcarParalizacao/
+// marcarRetorno/editarPeriodoParalizacao/excluirPeriodoParalizacao (ver
+// seção "Paralisação / retorno da análise" abaixo), nunca por um "salvar"
+// genérico da ficha — foi exatamente isso que desincronizava o histórico.
 export async function editarPaciente({
-  id, nome, nascimento, data_inicio, data_paralizacao, telefone, email, cpf,
+  id, nome, nascimento, data_inicio, telefone, email, cpf,
   horario, preco_sessao, preco_moeda, modalidade, endereco,
   contato_emergencia, como_chegou, info_relevantes, dia_pagamento, tipo_cobranca,
   valor_mensal_fixo, eh_analisante, eh_supervisionando,
@@ -53,7 +58,6 @@ export async function editarPaciente({
     .from('patients')
     .update({
       nome, nascimento: nascimento || null, data_inicio: data_inicio || null,
-      data_paralizacao: data_paralizacao || null,
       telefone: telefone || null, email: email || null, cpf: cpf || null,
       horario: horario || null, preco_sessao: preco_sessao || null, preco_moeda: preco_moeda || 'BRL',
       modalidade: modalidade || null, endereco: endereco || null,
@@ -1108,6 +1112,65 @@ export async function marcarRetorno(patientId) {
     .update({ data_paralizacao: null })
     .eq('id', patientId);
   if (errUpdatePaciente) throw errUpdatePaciente;
+}
+
+/** Cria o período de paralisação inicial de um paciente recém-cadastrado
+ * que já entra no app parado (ex: importação de um caso antigo) — só faz
+ * sentido logo após inserirPaciente, quando ainda não existe nenhum botão
+ * de paralisação pra ter gerado esse registro. */
+export async function registrarParalizacaoInicial(patientId, dataInicio) {
+  const { supabase } = require('./supabase');
+  const { error } = await supabase
+    .from('patient_paralizacoes')
+    .insert({ patient_id: patientId, data_inicio: dataInicio });
+  if (error) throw error;
+}
+
+/** Recalcula `patients.data_paralizacao` a partir do período em aberto mais
+ * recente (ou null, se não houver nenhum) — chamado sempre que um período
+ * é editado ou apagado, pra nunca deixar as duas fontes desalinhadas. */
+async function resincronizarDataParalizacao(patientId) {
+  const { supabase } = require('./supabase');
+  const { data: aberto, error: errBusca } = await supabase
+    .from('patient_paralizacoes')
+    .select('data_inicio')
+    .eq('patient_id', patientId)
+    .is('data_fim', null)
+    .order('data_inicio', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (errBusca) throw errBusca;
+  const { error: errUpdatePaciente } = await supabase
+    .from('patients')
+    .update({ data_paralizacao: aberto ? aberto.data_inicio : null })
+    .eq('id', patientId);
+  if (errUpdatePaciente) throw errUpdatePaciente;
+}
+
+/** Corrige a data de início e/ou fim de um período já registrado (ex: a
+ * pessoa apertou o botão no dia errado). Nunca sobrescreve outros períodos —
+ * só resincroniza `patients.data_paralizacao` com o que ficar em aberto
+ * depois da correção. */
+export async function editarPeriodoParalizacao(periodoId, patientId, { dataInicio, dataFim }) {
+  const { supabase } = require('./supabase');
+  const { error: errUpdate } = await supabase
+    .from('patient_paralizacoes')
+    .update({ data_inicio: dataInicio, data_fim: dataFim || null })
+    .eq('id', periodoId);
+  if (errUpdate) throw errUpdate;
+  await resincronizarDataParalizacao(patientId);
+}
+
+/** Apaga um período lançado por engano (ex: clique duplo no botão) e
+ * resincroniza `patients.data_paralizacao`. */
+export async function excluirPeriodoParalizacao(periodoId, patientId) {
+  const { supabase } = require('./supabase');
+  const { error: errDelete } = await supabase
+    .from('patient_paralizacoes')
+    .delete()
+    .eq('id', periodoId);
+  if (errDelete) throw errDelete;
+  await resincronizarDataParalizacao(patientId);
 }
 
 // ===================== FINANCEIRO =====================

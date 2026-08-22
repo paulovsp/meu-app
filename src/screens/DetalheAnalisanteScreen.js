@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  SectionList, Alert, ActivityIndicator
+  SectionList, Alert, ActivityIndicator, Modal, TextInput
 } from 'react-native';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,12 +9,26 @@ import { Ionicons } from '@expo/vector-icons';
 import {
   getSessions, getRecords, deleteSession, deleteRecord, parsePreco, getPatientById, getModalidadeDerivada,
   getHistoricoParalizacoes, marcarParalizacao, marcarRetorno,
+  editarPeriodoParalizacao, excluirPeriodoParalizacao,
   getAvailabilitySlotsByPatient, liberarHorariosDoPaciente,
 } from '../services/database';
 import { formatarValorMoeda, getCotacaoCacheada } from '../services/currency';
 import { solicitarAutorizacao, getStatusAutorizacao } from '../services/autorizacaoGravacao';
 import { mensagemDeErro } from '../services/erros';
-import { dataISOParaBR, calcularAnosEMeses, formatarAnosEMeses } from '../services/validacao';
+import { dataISOParaBR, dataBRParaISO, calcularAnosEMeses, formatarAnosEMeses } from '../services/validacao';
+
+// ─── Helper: máscara DD/MM/AAAA enquanto digita (mesmo padrão usado no
+// Formulário do Analisante) ─────────────────────────────
+function formatarDataDigitada(texto, setter) {
+  const numeros = texto.replace(/\D/g, '');
+  let formatado = numeros;
+  if (numeros.length >= 3 && numeros.length <= 4) {
+    formatado = `${numeros.slice(0, 2)}/${numeros.slice(2)}`;
+  } else if (numeros.length > 4) {
+    formatado = `${numeros.slice(0, 2)}/${numeros.slice(2, 4)}/${numeros.slice(4, 8)}`;
+  }
+  setter(formatado);
+}
 
 // ─── Helper: remove tags HTML ──────────────────────────
 function stripHtml(html) {
@@ -185,6 +199,10 @@ export default function DetalheAnalisanteScreen() {
   const [historicoParalizacoes, setHistoricoParalizacoes] = useState([]);
   const [mostrarHistorico, setMostrarHistorico] = useState(false);
   const [alternandoParalizacao, setAlternandoParalizacao] = useState(false);
+  const [periodoEmEdicao, setPeriodoEmEdicao] = useState(null);
+  const [dataInicioEdicao, setDataInicioEdicao] = useState('');
+  const [dataFimEdicao, setDataFimEdicao] = useState('');
+  const [salvandoPeriodo, setSalvandoPeriodo] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -291,6 +309,87 @@ export default function DetalheAnalisanteScreen() {
     } finally {
       setAlternandoParalizacao(false);
     }
+  }
+
+  // ─── Edição/exclusão de um período já registrado ──────
+  // Corrige a causa raiz do item G.20b: cada paralisação/retorno já fica
+  // registrado como um período (data_inicio + data_fim) na tabela
+  // patient_paralizacoes; o que faltava era poder corrigir uma data errada
+  // ou apagar um lançamento feito por engano, sem nunca sobrescrever outros
+  // períodos — cada edição resincroniza patients.data_paralizacao a partir
+  // do que ficar em aberto (ver editarPeriodoParalizacao em database.js).
+  function abrirEdicaoPeriodo(periodo) {
+    setPeriodoEmEdicao(periodo);
+    setDataInicioEdicao(dataISOParaBR(periodo.data_inicio) || '');
+    setDataFimEdicao(periodo.data_fim ? dataISOParaBR(periodo.data_fim) || '' : '');
+  }
+
+  function fecharEdicaoPeriodo() {
+    setPeriodoEmEdicao(null);
+    setDataInicioEdicao('');
+    setDataFimEdicao('');
+  }
+
+  async function recarregarParalizacoes() {
+    const [atualizado, historico] = await Promise.all([
+      getPatientById(paciente.id),
+      getHistoricoParalizacoes(paciente.id),
+    ]);
+    setPaciente(atualizado);
+    setHistoricoParalizacoes(historico);
+  }
+
+  async function salvarEdicaoPeriodo() {
+    const inicioISO = dataBRParaISO(dataInicioEdicao);
+    if (!inicioISO) {
+      Alert.alert('Data inválida', 'Informe a data de início no formato DD/MM/AAAA.');
+      return;
+    }
+    const fimISO = dataFimEdicao ? dataBRParaISO(dataFimEdicao) : null;
+    if (dataFimEdicao && !fimISO) {
+      Alert.alert('Data inválida', 'Informe a data de fim no formato DD/MM/AAAA, ou deixe em branco se ainda está em aberto.');
+      return;
+    }
+    if (fimISO && fimISO < inicioISO) {
+      Alert.alert('Datas inválidas', 'A data de fim não pode ser anterior à data de início.');
+      return;
+    }
+    setSalvandoPeriodo(true);
+    try {
+      await editarPeriodoParalizacao(periodoEmEdicao.id, paciente.id, { dataInicio: inicioISO, dataFim: fimISO });
+      await recarregarParalizacoes();
+      fecharEdicaoPeriodo();
+    } catch (e) {
+      Alert.alert('Erro ao salvar', mensagemDeErro(e));
+    } finally {
+      setSalvandoPeriodo(false);
+    }
+  }
+
+  function confirmarExclusaoPeriodo() {
+    Alert.alert(
+      'Excluir este período?',
+      'Isso remove o lançamento do histórico de paralisações. Não dá pra desfazer.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Excluir',
+          style: 'destructive',
+          onPress: async () => {
+            setSalvandoPeriodo(true);
+            try {
+              await excluirPeriodoParalizacao(periodoEmEdicao.id, paciente.id);
+              await recarregarParalizacoes();
+              fecharEdicaoPeriodo();
+            } catch (e) {
+              Alert.alert('Erro ao excluir', mensagemDeErro(e));
+            } finally {
+              setSalvandoPeriodo(false);
+            }
+          },
+        },
+      ]
+    );
   }
 
   // ─── Autorização de gravação/transcrição ─────────────
@@ -549,13 +648,14 @@ export default function DetalheAnalisanteScreen() {
           </TouchableOpacity>
         )}
         {mostrarHistorico && historicoParalizacoes.map((p) => (
-          <View key={p.id} style={styles.historicoItem}>
+          <TouchableOpacity key={p.id} style={styles.historicoItem} onPress={() => abrirEdicaoPeriodo(p)}>
             <Text style={styles.historicoItemTexto}>
               ⏸ {dataISOParaBR(p.data_inicio) || p.data_inicio}
               {' → '}
               {p.data_fim ? `▶ ${dataISOParaBR(p.data_fim) || p.data_fim}` : 'em aberto'}
             </Text>
-          </View>
+            <Text style={styles.historicoItemEditar}>✏️</Text>
+          </TouchableOpacity>
         ))}
 
         {/* Autorização de gravação/transcrição pelo analisante */}
@@ -655,6 +755,64 @@ export default function DetalheAnalisanteScreen() {
         }
         showsVerticalScrollIndicator={false}
       />
+
+      {/* Editar/excluir um período de paralisação já registrado */}
+      <Modal
+        visible={!!periodoEmEdicao}
+        transparent
+        animationType="fade"
+        onRequestClose={fecharEdicaoPeriodo}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitulo}>Editar período de paralisação</Text>
+
+            <Text style={styles.modalLabel}>Início</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={dataInicioEdicao}
+              onChangeText={(t) => formatarDataDigitada(t, setDataInicioEdicao)}
+              placeholder="DD/MM/AAAA"
+              keyboardType="numeric"
+              maxLength={10}
+            />
+
+            <Text style={styles.modalLabel}>Fim</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={dataFimEdicao}
+              onChangeText={(t) => formatarDataDigitada(t, setDataFimEdicao)}
+              placeholder="DD/MM/AAAA (vazio = em aberto)"
+              keyboardType="numeric"
+              maxLength={10}
+            />
+
+            <TouchableOpacity
+              style={[styles.modalBtnSalvar, salvandoPeriodo && { opacity: 0.6 }]}
+              onPress={salvarEdicaoPeriodo}
+              disabled={salvandoPeriodo}
+            >
+              {salvandoPeriodo ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.modalBtnSalvarTexto}>Salvar</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.modalBtnExcluir, salvandoPeriodo && { opacity: 0.6 }]}
+              onPress={confirmarExclusaoPeriodo}
+              disabled={salvandoPeriodo}
+            >
+              <Text style={styles.modalBtnExcluirTexto}>Excluir período</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.modalBtnCancelar} onPress={fecharEdicaoPeriodo} disabled={salvandoPeriodo}>
+              <Text style={styles.modalBtnCancelarTexto}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -705,8 +863,39 @@ const styles = StyleSheet.create({
     fontSize: 12.5, color: '#3D5A80', fontWeight: '600',
     marginHorizontal: 16, marginTop: 8,
   },
-  historicoItem: { marginHorizontal: 16, marginTop: 4 },
+  historicoItem: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginHorizontal: 16, marginTop: 4, paddingVertical: 4,
+  },
   historicoItemTexto: { fontSize: 12.5, color: '#6B6860' },
+  historicoItemEditar: { fontSize: 12, opacity: 0.5, marginLeft: 8 },
+
+  // Modal de edição de período de paralisação
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center', alignItems: 'center', padding: 24,
+  },
+  modalCard: {
+    width: '100%', backgroundColor: '#fff', borderRadius: 16, padding: 20, gap: 8,
+  },
+  modalTitulo: { fontSize: 16, fontWeight: 'bold', color: '#1A1A2E', marginBottom: 8 },
+  modalLabel: { fontSize: 12, fontWeight: '600', color: '#777', textTransform: 'uppercase' },
+  modalInput: {
+    backgroundColor: '#F5F7FA', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 15, color: '#1A1A2E', borderWidth: 1, borderColor: '#E0E4EA', marginBottom: 4,
+  },
+  modalBtnSalvar: {
+    backgroundColor: '#3D5A80', borderRadius: 10, paddingVertical: 12,
+    alignItems: 'center', marginTop: 8,
+  },
+  modalBtnSalvarTexto: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  modalBtnExcluir: {
+    borderRadius: 10, paddingVertical: 12, alignItems: 'center',
+    borderWidth: 1, borderColor: '#E5A19B', marginTop: 4,
+  },
+  modalBtnExcluirTexto: { color: '#c0392b', fontWeight: '700', fontSize: 14 },
+  modalBtnCancelar: { alignItems: 'center', paddingVertical: 10, marginTop: 2 },
+  modalBtnCancelarTexto: { color: '#888', fontSize: 14 },
 
   // Card de autorização de gravação/transcrição
   cardAutorizacao: {

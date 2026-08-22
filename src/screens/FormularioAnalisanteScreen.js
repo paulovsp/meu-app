@@ -7,7 +7,7 @@ import {
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  inserirPaciente, editarPaciente, parsePreco,
+  inserirPaciente, editarPaciente, parsePreco, registrarParalizacaoInicial,
   getAvailabilitySlotsByPatient, deleteAvailabilitySlotsByPatient,
   resolverConflitoEAdicionarSlot, sincronizarModalidadeCompromissosAgendados,
 } from '../services/database';
@@ -304,6 +304,10 @@ export default function FormularioAnalisanteScreen() {
       let patientId;
       if (editando) {
         patientId = pacienteExistente.id;
+        // data_paralizacao não é enviado aqui: uma vez cadastrado, esse
+        // status só muda pelo botão Paralisação/Retorno (ou editando um
+        // período no histórico), nunca por "salvar" a ficha — ver
+        // editarPaciente em services/database.js.
         await editarPaciente({
           id: patientId,
           eh_analisante: ehAnalisante,
@@ -311,7 +315,6 @@ export default function FormularioAnalisanteScreen() {
           nome: nome.trim(),
           nascimento: nascimentoISO,
           data_inicio: dataInicioISO,
-          data_paralizacao: dataParalizacaoISO,
           telefone,
           email: email.trim() || null,
           cpf: cpf.trim() || null,
@@ -348,6 +351,12 @@ export default function FormularioAnalisanteScreen() {
           tipo_cobranca: tipoCobranca,
           valor_mensal_fixo: valorMensalFixo ? Number(valorMensalFixo.replace(',', '.')) : null,
         });
+        // Só faz sentido na criação: um cadastro novo pode já entrar
+        // paralisado (ex: caso antigo importado), e como ainda não existe
+        // nenhum botão apertado pra isso, registramos o período aqui.
+        if (dataParalizacaoISO) {
+          await registrarParalizacaoInicial(patientId, dataParalizacaoISO);
+        }
       }
 
       await sincronizarAgenda(patientId);
@@ -551,19 +560,35 @@ export default function FormularioAnalisanteScreen() {
 
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Paralização da análise</Text>
-          <Text style={styles.hint}>
-            Preencha só se o acompanhamento estiver parado no momento.
-          </Text>
-          <TextInput
-            style={styles.input}
-            placeholder="DD/MM/AAAA"
-            placeholderTextColor="#bbb"
-            value={dataParalizacao}
-            onChangeText={(t) => formatarData(t, setDataParalizacao)}
-            keyboardType="numeric"
-            maxLength={10}
-            returnKeyType="next"
-          />
+          {editando ? (
+            <>
+              <Text style={styles.hint}>
+                Não editável aqui — use o botão "Paralisação/Retorno da análise" ou o
+                histórico de paralisações na tela do analisante.
+              </Text>
+              <View style={[styles.input, styles.inputSomenteLeitura]}>
+                <Text style={styles.inputSomenteLeituraTexto}>
+                  {dataParalizacao ? `Pausado desde ${dataParalizacao}` : 'Análise ativa (não pausada)'}
+                </Text>
+              </View>
+            </>
+          ) : (
+            <>
+              <Text style={styles.hint}>
+                Preencha só se o acompanhamento já começar parado (ex: caso antigo importado).
+              </Text>
+              <TextInput
+                style={styles.input}
+                placeholder="DD/MM/AAAA"
+                placeholderTextColor="#bbb"
+                value={dataParalizacao}
+                onChangeText={(t) => formatarData(t, setDataParalizacao)}
+                keyboardType="numeric"
+                maxLength={10}
+                returnKeyType="next"
+              />
+            </>
+          )}
         </View>
 
         <View style={styles.fieldGroup}>
@@ -836,6 +861,8 @@ const styles = StyleSheet.create({
     minHeight: 80,
     paddingTop: 14,
   },
+  inputSomenteLeitura: { backgroundColor: '#F3F4F6', shadowOpacity: 0, elevation: 0 },
+  inputSomenteLeituraTexto: { fontSize: 16, color: '#555' },
 
   // Horários
   horarioCard: {

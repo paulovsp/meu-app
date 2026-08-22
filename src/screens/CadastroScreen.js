@@ -253,7 +253,7 @@ export default function CadastroScreen({ navigation }) {
             style={s.input}
             value={email}
             onChangeText={setEmail}
-            placeholder="Ex: paulo@email.com"
+            placeholder="Ex: sigmund.freud@email.com"
             placeholderTextColor="#B0ADA6"
             keyboardType="email-address"
             autoCapitalize="none"

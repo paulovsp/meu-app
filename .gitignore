@@ -33,7 +33,6 @@ yarn-error.*
 # local env files
 .env
 .env*.local
-google-service-account.json
 
 # credencial gerada em tempo de execução pelo workflow de build (nunca committar)
 google-service-account.json

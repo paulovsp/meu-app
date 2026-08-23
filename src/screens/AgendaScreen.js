@@ -142,11 +142,27 @@ export default function AgendaScreen({ navigation }) {
 
   const inicioSemana = useMemo(() => getInicioSemana(dataRef), [dataRef]);
 
+  // Instante em que esta tela ganhou foco. Serve pra ignorar um toque que
+  // "atravessa" da tela anterior: ao tocar numa linha de horário do widget
+  // Agenda de hoje (Início), a Agenda é empurrada por cima e um toque ainda
+  // em curso (ou um segundo toque rápido) aterrissa aqui, na mesma altura
+  // da tela — que por coincidência é onde ficam as linhas de horário daqui.
+  // O resultado era abrir o compromisso direto, sem a pessoa ter tocado
+  // nele. Tocar no título do widget não fazia isso porque cai no cabeçalho,
+  // que não tem nada tocável.
+  const focoEmRef = React.useRef(0);
+  const TOQUE_CARENCIA_MS = 350;
+
   useFocusEffect(
     useCallback(() => {
+      focoEmRef.current = Date.now();
       carregarDadosAgenda();
     }, [modoView, dataRef, inicioSemana])
   );
+
+  function toqueAtravessouDaTelaAnterior() {
+    return Date.now() - focoEmRef.current < TOQUE_CARENCIA_MS;
+  }
 
   async function carregarDadosAgenda() {
     setCarregando(true);
@@ -259,6 +275,8 @@ export default function AgendaScreen({ navigation }) {
   // semanal, o compromisso daquela data específica pode ainda não existir
   // (só a diária pré-cria todos ao carregar) — nesse caso é criado na hora.
   async function abrirCompromissoOuEdicao({ slot, dataISO }) {
+    // Carência logo após a tela abrir — ver focoEmRef acima.
+    if (toqueAtravessouDaTelaAnterior()) return;
     const compromisso = buscarCompromissoDoSlot(dataISO, slot);
     if (compromisso) {
       navigation.navigate('DetalheCompromisso', { appointmentId: compromisso.id });

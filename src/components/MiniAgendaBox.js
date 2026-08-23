@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -39,17 +39,9 @@ function hojeISO() {
 export default function MiniAgendaBox({ navigation, altura }) {
   const [compromissos, setCompromissos] = useState([]);
   const [carregando, setCarregando] = useState(true);
-  // Sem isso, um toque duplo (comum quando a pessoa não vê nenhum sinal de
-  // que o primeiro toque "pegou" — exatamente o caso do carregando acima,
-  // antes de existir) podia disparar navigation.navigate('Agenda') mais de
-  // uma vez em sequência rápida, empilhando navegação por cima da própria
-  // transição ainda em andamento. Trava no primeiro toque; destrava quando
-  // a Início ganha foco de novo (voltando da Agenda).
-  const navegandoRef = useRef(false);
 
   useFocusEffect(
     useCallback(() => {
-      navegandoRef.current = false;
       setCarregando(true);
       const hoje = new Date();
       // Item 3 (leva pós-v13): appointments só "nasce" quando o dia é
@@ -64,12 +56,6 @@ export default function MiniAgendaBox({ navigation, altura }) {
     }, [])
   );
 
-  function abrirAgenda() {
-    if (navegandoRef.current) return;
-    navegandoRef.current = true;
-    navigation.navigate('Agenda');
-  }
-
   const visiveis = compromissos.slice(0, MAX_LINHAS);
   const restantes = compromissos.length - visiveis.length;
 
@@ -77,7 +63,7 @@ export default function MiniAgendaBox({ navigation, altura }) {
     <TouchableOpacity
       style={s.molduraGrossa}
       activeOpacity={0.75}
-      onPress={abrirAgenda}
+      onPress={() => navigation.navigate('Agenda')}
     >
       <View style={s.molduraFina}>
         <View style={[s.caixa, altura ? { height: altura } : null]}>

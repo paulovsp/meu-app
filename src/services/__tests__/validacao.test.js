@@ -1,41 +1,57 @@
-// Telefone internacional (item 2, v13): garante que o formato brasileiro
-// escrito à mão bate a regra pedida (9 extra destacado com espaço, sempre 4
-// dígitos após o hífen) e que país estrangeiro delega pro libphonenumber-js
-// sem quebrar.
-const { formatarTelefone, validarCPF, dataBRParaISO, dataISOParaBR } = require('../validacao');
+// Telefone com caixas separadas (DDI / DDD / número): a detecção automática
+// de celular-vs-fixo e nacional-vs-internacional num campo de texto livre
+// nunca foi confiável, então a pessoa agora escolhe DDI/DDD explicitamente
+// e só o número em si é formatado — sempre 4 dígitos após o hífen, com o
+// 9 extra (quando presente) destacado por um espaço.
+const {
+  formatarNumeroLocalTelefone, parseTelefone, montarTelefone,
+  validarCPF, dataBRParaISO, dataISOParaBR,
+} = require('../validacao');
 
-describe('formatarTelefone (item 2 — telefone internacional)', () => {
-  it('celular BR sem DDI: destaca o 9 extra com espaço, 4 dígitos após o hífen', () => {
-    expect(formatarTelefone('11999998888')).toBe('(11) 9 9999-8888');
+describe('formatarNumeroLocalTelefone', () => {
+  it('9 dígitos (celular, com o 9 extra): separa o primeiro com espaço', () => {
+    expect(formatarNumeroLocalTelefone('999998888')).toBe('9 9999-8888');
   });
-
-  it('fixo BR sem DDI (8 dígitos locais): sem o 9 extra', () => {
-    expect(formatarTelefone('1133334444')).toBe('(11) 3333-4444');
+  it('8 dígitos (fixo, ou celular sem o 9 extra): só o hífen', () => {
+    expect(formatarNumeroLocalTelefone('33334444')).toBe('3333-4444');
   });
-
-  it('celular BR com +55 explícito', () => {
-    expect(formatarTelefone('+5511999998888')).toBe('+55 (11) 9 9999-8888');
+  it('menos de 5 dígitos: sem hífen ainda', () => {
+    expect(formatarNumeroLocalTelefone('333')).toBe('333');
   });
-
-  it('formata progressivamente enquanto o DDD ainda não fechou', () => {
-    expect(formatarTelefone('1')).toBe('(1');
-    expect(formatarTelefone('11')).toBe('(11');
+  it('vazio retorna vazio', () => {
+    expect(formatarNumeroLocalTelefone('')).toBe('');
+    expect(formatarNumeroLocalTelefone(null)).toBe('');
   });
+});
 
-  it('país estrangeiro (+1) delega pro libphonenumber-js sem travar', () => {
-    const resultado = formatarTelefone('+12025551234');
-    expect(resultado.startsWith('+1')).toBe(true);
-    expect(resultado).not.toMatch(/[a-zA-Z]/);
+describe('parseTelefone', () => {
+  it('sem "+": assume DDI 55 (padrão anterior do app)', () => {
+    expect(parseTelefone('11999998888')).toEqual({ ddi: '55', ddd: '11', numero: '999998888' });
   });
-
-  it('string vazia retorna vazio', () => {
-    expect(formatarTelefone('')).toBe('');
-    expect(formatarTelefone(null)).toBe('');
+  it('com "+55" explícito', () => {
+    expect(parseTelefone('+5511999998888')).toEqual({ ddi: '55', ddd: '11', numero: '999998888' });
   });
+  it('vazio retorna as 3 caixas vazias com DDI 55', () => {
+    expect(parseTelefone('')).toEqual({ ddi: '55', ddd: '', numero: '' });
+    expect(parseTelefone(null)).toEqual({ ddi: '55', ddd: '', numero: '' });
+  });
+});
 
-  it('nunca inclui letras nem caracteres fora de dígitos/+/espaço/parênteses/hífen', () => {
-    const resultado = formatarTelefone('11999998888abc');
-    expect(resultado).toMatch(/^[\d+()\- ]*$/);
+describe('montarTelefone', () => {
+  it('celular BR (9 dígitos): 9 extra destacado com espaço', () => {
+    expect(montarTelefone('55', '11', '999998888')).toBe('+55 (11) 9 9999-8888');
+  });
+  it('fixo BR (8 dígitos): sem o 9 extra', () => {
+    expect(montarTelefone('55', '11', '33334444')).toBe('+55 (11) 3333-4444');
+  });
+  it('outro país (DDI diferente de 55) continua com 4 dígitos após o hífen', () => {
+    expect(montarTelefone('1', '202', '5551234')).toBe('+1 (202) 555-1234');
+  });
+  it('DDI vazio cai no padrão 55', () => {
+    expect(montarTelefone('', '11', '999998888')).toBe('+55 (11) 9 9999-8888');
+  });
+  it('sem DDD nem número: string vazia', () => {
+    expect(montarTelefone('55', '', '')).toBe('');
   });
 });
 

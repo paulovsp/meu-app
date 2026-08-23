@@ -16,7 +16,8 @@ import {
   MOEDAS, formatarValorMoeda, atualizarCotacao, getCotacaoCacheada, formatarDataCotacao,
 } from '../services/currency';
 import { mensagemDeErro } from '../services/erros';
-import { dataBRParaISO, dataISOParaBR, formatarTelefone } from '../services/validacao';
+import { dataBRParaISO, dataISOParaBR } from '../services/validacao';
+import TelefoneInput from '../components/TelefoneInput';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
 
 const DIAS_SEMANA = [
@@ -714,16 +715,7 @@ export default function FormularioAnalisanteScreen() {
 
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Telefone / WhatsApp</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="(11) 9 9999-9999 ou +1 ..."
-            placeholderTextColor="#A9A299"
-            value={telefone}
-            onChangeText={(t) => setTelefone(formatarTelefone(t))}
-            keyboardType="phone-pad"
-            maxLength={25}
-            returnKeyType="next"
-          />
+          <TelefoneInput value={telefone} onChangeText={setTelefone} />
         </View>
 
         <View style={styles.fieldGroup}>
@@ -895,16 +887,7 @@ export default function FormularioAnalisanteScreen() {
 
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Contato de emergência</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="(11) 9 9999-9999 ou +1 ..."
-            placeholderTextColor="#A9A299"
-            value={contatoEmergencia}
-            onChangeText={(t) => setContatoEmergencia(formatarTelefone(t))}
-            keyboardType="phone-pad"
-            maxLength={25}
-            returnKeyType="next"
-          />
+          <TelefoneInput value={contatoEmergencia} onChangeText={setContatoEmergencia} />
         </View>
 
         <View style={styles.fieldGroup}>

@@ -16,7 +16,8 @@ import {
 } from '../services/database';
 import { supabase, SUPABASE_URL } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { validarCPF, dataBRParaISO, dataISOParaBR, formatarTelefone } from '../services/validacao';
+import { validarCPF, dataBRParaISO, dataISOParaBR } from '../services/validacao';
+import TelefoneInput from '../components/TelefoneInput';
 import { mensagemDeErro } from '../services/erros';
 import { enviarFotoPerfil, enviarFotoCapa } from '../services/avatar';
 import { exportarDadosUsuario } from '../services/exportacaoDados';
@@ -814,14 +815,7 @@ export default function PerfilScreen({ navigation }) {
             />
 
             <Text style={st.label}>Telefone</Text>
-            <TextInput
-              style={st.input}
-              value={telefone}
-              onChangeText={(t) => setTelefone(formatarTelefone(t))}
-              keyboardType="phone-pad"
-              maxLength={25}
-              placeholder="(11) 9 9999-9999 ou +1 ..."
-            />
+            <TelefoneInput value={telefone} onChangeText={setTelefone} />
 
             <Text style={st.label}>Chave Pix</Text>
             <TextInput
@@ -848,14 +842,7 @@ export default function PerfilScreen({ navigation }) {
             />
 
             <Text style={st.label}>WhatsApp do contador</Text>
-            <TextInput
-              style={st.input}
-              value={contadorTelefone}
-              onChangeText={(t) => setContadorTelefone(formatarTelefone(t))}
-              keyboardType="phone-pad"
-              maxLength={25}
-              placeholder="(11) 9 9999-9999 ou +1 ..."
-            />
+            <TelefoneInput value={contadorTelefone} onChangeText={setContadorTelefone} />
 
             <View style={st.btnRow}>
               <TouchableOpacity

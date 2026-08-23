@@ -3,52 +3,58 @@
 // (DD/MM/AAAA) e o formato que o Postgres espera numa coluna `date`
 // (AAAA-MM-DD) — sem essa conversão, "25/07/2026" pode ser interpretado
 // errado ou rejeitado pelo banco, dependendo da configuração regional dele.
-import { AsYouType } from 'libphonenumber-js';
 
-/** (11) 9 9999-9999 (celular, 9 dígitos locais) ou (11) 9999-9999 (fixo, 8
- * dígitos) — sempre 4 dígitos depois do último hífen. Decide celular vs fixo
- * pelo primeiro dígito após o DDD: todo celular brasileiro (formato novo)
- * começa com 9. `numeros` já vem só com DDD + número local (sem DDI). */
-function formatarTelefoneBR(numeros) {
-  if (!numeros) return '';
-  const ddd = numeros.slice(0, 2);
-  const resto = numeros.slice(2, 11);
-  if (numeros.length <= 2) return `(${ddd}`;
-  if (!resto) return `(${ddd}) `;
-
-  const celular = resto[0] === '9';
-  const nono = celular ? resto.slice(0, 1) : '';
-  const meio = celular ? resto.slice(1, 5) : resto.slice(0, 4);
-  const fim = celular ? resto.slice(5, 9) : resto.slice(4, 8);
-
-  let saida = `(${ddd}) `;
-  if (nono) saida += `${nono} `;
-  saida += meio;
-  if (fim) saida += `-${fim}`;
-  return saida;
+/** Sempre termina com 4 dígitos após o hífen. Se sobrarem 5 dígitos antes
+ * dele (celular com o 9 extra), separa o primeiro deles com um espaço —
+ * "9 9999-9999". Com 4 ou menos antes do hífen (fixo, ou ainda digitando),
+ * fica só "9999-9999". Não tenta mais "adivinhar" celular vs fixo pelo
+ * primeiro dígito — quem decide agora é a caixa em que a pessoa digitou. */
+export function formatarNumeroLocalTelefone(digitos) {
+  const d = (digitos || '').replace(/\D/g, '').slice(0, 9);
+  if (d.length <= 4) return d;
+  const antes = d.slice(0, d.length - 4);
+  const depois = d.slice(-4);
+  if (antes.length === 5) return `${antes[0]} ${antes.slice(1)}-${depois}`;
+  return `${antes}-${depois}`;
 }
 
-/** Formata telefone pra exibição: padrão brasileiro escrito à mão (regra
- * exata acima), com "+55" opcional na frente; qualquer outro código de país
- * digitado (ex: "+1...") delega pra libphonenumber-js, que cobre o formato
- * de qualquer país sem precisar escrever regra pra cada um. Nunca escreve
- * fora dígitos, "+", espaço, parênteses e hífen — quem quiser os dígitos
- * puros (ex: montar link do WhatsApp) deve sempre re-extrair com \D. */
-export function formatarTelefone(texto) {
+/** Quebra um telefone já salvo (de qualquer formato anterior) em
+ * { ddi, ddd, numero } pras 3 caixas do TelefoneInput. Sem "+" na frente,
+ * assume DDI 55 (padrão anterior do app, sempre foi só número nacional). */
+export function parseTelefone(texto) {
   const bruto = texto || '';
   const comDDI = bruto.trim().startsWith('+');
   const digitos = bruto.replace(/\D/g, '');
-  if (!digitos) return '';
+  if (!digitos) return { ddi: '55', ddd: '', numero: '' };
 
   if (comDDI) {
     if (digitos.startsWith('55')) {
-      const local = formatarTelefoneBR(digitos.slice(2, 13));
-      return local ? `+55 ${local}` : '+55';
+      return { ddi: '55', ddd: digitos.slice(2, 4), numero: digitos.slice(4, 13) };
     }
-    return new AsYouType().input(`+${digitos}`);
+    // Outro DDI: só sabemos que os 2 primeiros dígitos costumam ser o
+    // código do país (a maioria tem 1-3 dígitos, mas não dá pra adivinhar
+    // o tamanho certo de cada um sem uma tabela — a pessoa pode ajustar
+    // na própria caixa de DDI se vier errado).
+    return { ddi: digitos.slice(0, 2), ddd: '', numero: digitos.slice(2, 13) };
   }
 
-  return formatarTelefoneBR(digitos.slice(0, 11));
+  return { ddi: '55', ddd: digitos.slice(0, 2), numero: digitos.slice(2, 11) };
+}
+
+/** Monta a string final a partir das 3 caixas (DDI, DDD, número) — sempre
+ * com "+" na frente, DDD entre parênteses quando presente, e o número já
+ * formatado pela regra do hífen/espaço acima. */
+export function montarTelefone(ddi, ddd, numero) {
+  const ddiDigitos = (ddi || '').replace(/\D/g, '') || '55';
+  const dddDigitos = (ddd || '').replace(/\D/g, '');
+  const numeroDigitos = (numero || '').replace(/\D/g, '');
+  if (!dddDigitos && !numeroDigitos) return '';
+
+  let saida = `+${ddiDigitos}`;
+  if (dddDigitos) saida += ` (${dddDigitos})`;
+  const numeroFormatado = formatarNumeroLocalTelefone(numeroDigitos);
+  if (numeroFormatado) saida += ` ${numeroFormatado}`;
+  return saida;
 }
 
 export function validarCPF(cpfTexto) {

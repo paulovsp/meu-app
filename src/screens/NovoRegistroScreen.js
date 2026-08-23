@@ -18,7 +18,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { isSupported as ocrSuportado, extractTextFromImage } from 'expo-text-extractor';
 import {
-  RichText, Toolbar, useEditorBridge, useBridgeState, useKeyboard, TenTapStartKit,
+  RichText, Toolbar, useEditorBridge, useBridgeState, useKeyboard, TenTapStartKit, PlaceholderBridge,
 } from '@10play/tentap-editor';
 import {
   listarPacientes, addRecord, editRecord, getAppointmentByPatientAndDate,
@@ -206,7 +206,13 @@ export default function NovoRegistroScreen() {
   // CRESCE para caber o documento inteiro, e quem rola é o ScrollView da tela
   // toda — igual rolar uma página comprida, não uma caixinha por dentro. ───
   const editor = useEditorBridge({
-    bridgeExtensions: TenTapStartKit,
+    // Placeholder em português — o padrão da lib ("Write something...") é
+    // em inglês; PlaceholderBridge depois de TenTapStartKit vence o de mesmo
+    // nome (uniqueBy da lib é "last wins"), sem precisar clonar a lista.
+    bridgeExtensions: [
+      ...TenTapStartKit,
+      PlaceholderBridge.configureExtension({ placeholder: 'Escreva aqui o conteúdo do registro...' }),
+    ],
     initialContent: removerIntroducaoAutomatica(registroExistente?.content) || '',
     avoidIosKeyboard: true,
     dynamicHeight: true,

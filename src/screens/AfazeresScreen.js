@@ -10,12 +10,12 @@ import { listarAfazeres, adicionarAfazer, alternarAfazer, removerAfazer } from '
 import { mensagemDeErro } from '../services/erros';
 
 const COLORS = {
-  bg: '#F7F6F3',
+  bg: '#F7F5F0',
   surface: '#FFFFFF',
-  border: '#E8E4DD',
-  textDark: '#1C1C1E',
-  textMid: '#6B6860',
-  btnBlue: '#3D5A80',
+  border: '#EAE5DC',
+  textDark: '#302C28',
+  textMid: '#756E66',
+  btnBlue: '#497363',
 };
 
 export default function AfazeresScreen() {
@@ -82,7 +82,11 @@ export default function AfazeresScreen() {
 
   return (
     <SafeAreaView style={s.safe} edges={['bottom']}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      {/* Android já redimensiona a tela sozinho quando o teclado abre
+          (softwareKeyboardLayoutMode "resize", padrão do Expo) — usar
+          behavior "height" aqui em cima disso comprimia a tela duas vezes.
+          Só o iOS precisa de ajuste manual (não redimensiona sozinho). */}
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         {carregando ? (
           <View style={s.loadingWrap}>
             <ActivityIndicator size="large" color={COLORS.btnBlue} />
@@ -119,7 +123,7 @@ export default function AfazeresScreen() {
             value={texto}
             onChangeText={setTexto}
             placeholder="Novo afazer..."
-            placeholderTextColor="#B0ADA6"
+            placeholderTextColor="#756E66"
             onSubmitEditing={handleAdicionar}
             returnKeyType="done"
           />
@@ -144,14 +148,14 @@ const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.bg },
   loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   lista: { padding: 16, paddingBottom: 8 },
-  vazio: { textAlign: 'center', color: COLORS.textMid, fontSize: 14, marginTop: 40 },
+  vazio: { textAlign: 'center', color: COLORS.textMid, fontSize: 14, marginTop: 40, lineHeight: 20 },
   linha: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: COLORS.surface, borderRadius: 14, padding: 14, marginBottom: 10,
     borderWidth: 1, borderColor: COLORS.border,
   },
   checkWrap: { padding: 2 },
-  texto: { flex: 1, fontSize: 15, color: COLORS.textDark },
+  texto: { flex: 1, fontSize: 15, color: COLORS.textDark, lineHeight: 22 },
   textoConcluido: { color: COLORS.textMid, textDecorationLine: 'line-through' },
   removerBtn: { padding: 4 },
   addBar: {

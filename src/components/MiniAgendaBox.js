@@ -2,122 +2,235 @@ import React, { useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { getAppointmentsByDate, ensureAppointmentsForDate } from '../services/database';
-import { horarioJaPassou } from '../services/compromissoStatus';
+import {
+  getAppointmentsByDate, ensureAppointmentsForDate, getAvailabilitySlots, slotAtivoNaData,
+} from '../services/database';
+import { corTipoEvento, ehTipoGrupo } from '../services/tiposEvento';
+import { papel, tinta, salvia } from '../theme';
 
 const COLORS = {
-  surface: '#FFFFFF',
-  borderAzul: '#3D5A80',
-  textDark: '#1C1C1E',
-  textMid: '#6B6860',
+  surface: papel.alto,
+  moldura: salvia.tinta,
+  molduraFina: salvia.suave,
+  textDark: tinta.t900,
+  textMid: tinta.t500,
 };
 
-// Mesmas cores de ESTADO_LABEL (compromissoStatus.js), versão simplificada
-// pro espaço pequeno do widget — sem buscar transcrição por paciente (isso
-// exigiria uma consulta extra por linha só pra colorir uma bolinha).
-const COR_STATUS = {
-  agendado_futuro: '#3D5A80',
-  aguardando_confirmacao: '#F09B4A',
-  realizado: '#2E8B57',
-  nao_realizado: '#C0392B',
-};
-
-function corDoStatus(compromisso) {
-  if (compromisso.status === 'realizado') return COR_STATUS.realizado;
-  if (compromisso.status === 'nao_realizado') return COR_STATUS.nao_realizado;
-  const passou = horarioJaPassou(compromisso.date, compromisso.end_time);
-  return passou ? COR_STATUS.aguardando_confirmacao : COR_STATUS.agendado_futuro;
-}
-
-const MAX_LINHAS = 4;
+const COR_LIVRE = '#43A047';
 
 function hojeISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// Primeiro nome (ou o título/"Grupo") — o botão é estreito demais pro nome
+// inteiro.
+function nomeCurto({ tipo, patientNome, titulo, participantes }) {
+  if (tipo === 'outros') return (titulo || 'Outros').split(' ')[0];
+  if (ehTipoGrupo(tipo)) return participantes?.[0]?.nome?.split(' ')[0] || 'Grupo';
+  return (patientNome || 'Livre').split(' ')[0];
+}
+
+/**
+ * Mesma dinâmica de botões coloridos por horário da AgendaScreen (verde =
+ * livre, cor do tipo de evento = ocupado), só que compactados numa faixa
+ * horizontal rolável — o widget é estreito demais (metade da largura da
+ * tela) pra caber tudo sem rolar, mas nenhum horário do dia fica de fora.
+ */
 export default function MiniAgendaBox({ navigation, altura }) {
-  const [compromissos, setCompromissos] = useState([]);
+  const [itens, setItens] = useState([]);
 
   useFocusEffect(
     useCallback(() => {
       const hoje = new Date();
+      const diaSemana = hoje.getDay();
+      const dataISO = hojeISO();
+
       // Item 3 (leva pós-v13): appointments só "nasce" quando o dia é
       // aberto na Agenda de verdade (mesmo gatilho que AgendaScreen.js usa
       // na visão diária) — sem chamar isso aqui, um dia nunca visitado na
       // Agenda aparecia vazio no widget mesmo tendo horário marcado.
-      ensureAppointmentsForDate(hojeISO(), hoje.getDay())
-        .then(() => getAppointmentsByDate(hojeISO()))
-        .then((lista) => setCompromissos((lista || []).filter((c) => c.status !== 'cancelado')))
-        .catch(() => setCompromissos([]));
+      Promise.all([
+        ensureAppointmentsForDate(dataISO, diaSemana).then(() => getAppointmentsByDate(dataISO)),
+        getAvailabilitySlots(),
+      ])
+        .then(([compromissosDia, slots]) => {
+          const compromissos = (compromissosDia || []).filter((c) => c.status !== 'cancelado');
+          const slotsHoje = (slots || []).filter(
+            (s) => s.day_of_week === diaSemana && slotAtivoNaData(s, dataISO)
+          );
+
+          const horariosComSlot = new Set();
+          const lista = [];
+
+          for (const slot of slotsHoje) {
+            const compromisso = compromissos.find((c) => c.start_time === slot.start_time);
+            horariosComSlot.add(slot.start_time);
+            const tipo = compromisso?.tipo || slot.tipo || 'sessao_individual';
+            const ocupado = !!compromisso || !!slot.patient_id || tipo === 'outros' || ehTipoGrupo(tipo);
+            lista.push({
+              key: `slot-${slot.id}`,
+              startTime: slot.start_time,
+              ocupado,
+              cor: ocupado ? corTipoEvento(tipo) : COR_LIVRE,
+              nome: nomeCurto({
+                tipo,
+                patientNome: compromisso?.patient_nome || slot.patient_name,
+                titulo: compromisso?.titulo || slot.titulo,
+                participantes: compromisso?.participantes || slot.participantes,
+              }),
+              appointmentId: compromisso?.id || null,
+              slotId: slot.id,
+              dayOfWeek: diaSemana,
+              endTime: slot.end_time,
+            });
+          }
+
+          // Compromissos avulsos (sem horário recorrente por trás) não
+          // aparecem no loop acima — entram à parte, como a Agenda também
+          // faz (renderAgendamentosSemSlot).
+          for (const c of compromissos) {
+            if (horariosComSlot.has(c.start_time)) continue;
+            lista.push({
+              key: `compromisso-${c.id}`,
+              startTime: c.start_time,
+              ocupado: true,
+              cor: corTipoEvento(c.tipo),
+              nome: nomeCurto({ tipo: c.tipo, patientNome: c.patient_nome, titulo: c.titulo, participantes: c.participantes }),
+              appointmentId: c.id,
+              slotId: null,
+              dayOfWeek: diaSemana,
+              endTime: c.end_time,
+            });
+          }
+
+          lista.sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+          setItens(lista);
+        })
+        .catch(() => setItens([]));
     }, [])
   );
 
-  const visiveis = compromissos.slice(0, MAX_LINHAS);
-  const restantes = compromissos.length - visiveis.length;
+  function abrirItem(item) {
+    if (item.appointmentId) {
+      navigation.navigate('DetalheCompromisso', { appointmentId: item.appointmentId });
+      return;
+    }
+    navigation.navigate('EditarHorario', {
+      slotId: item.slotId,
+      dayOfWeek: item.dayOfWeek,
+      startTime: item.startTime,
+      endTime: item.endTime,
+    });
+  }
 
   return (
-    <TouchableOpacity
-      style={s.molduraGrossa}
-      activeOpacity={0.75}
-      onPress={() => navigation.navigate('Agenda')}
-    >
-      <View style={s.molduraFina}>
-        <View style={[s.caixa, altura ? { height: altura } : null]}>
-          <View style={s.header}>
-            <Ionicons name="calendar-outline" size={18} color={COLORS.borderAzul} />
-            <Text style={s.titulo}>Agenda de hoje</Text>
-          </View>
+    // Moldura tripla: fina, grossa (3 dp ≈ 0,5 mm) e fina de novo.
+    <View style={s.molduraExterna}>
+      <View style={s.molduraCentral}>
+        <View style={s.molduraInterna}>
+          <View style={[s.caixa, altura ? { height: altura } : null]}>
+            <TouchableOpacity style={s.header} activeOpacity={0.7} onPress={() => navigation.navigate('Agenda')}>
+              <Ionicons name="calendar-outline" size={16} color={salvia.tinta} />
+              <Text style={s.titulo} numberOfLines={1}>Agenda de hoje</Text>
+            </TouchableOpacity>
 
-          {visiveis.length === 0 ? (
-            <Text style={s.vazio}>Nenhum horário hoje</Text>
-          ) : (
-            visiveis.map((c) => (
-              <View key={c.id} style={s.linhaRow}>
-                <View style={[s.statusDot, { backgroundColor: corDoStatus(c) }]} />
-                <Text style={s.linha} numberOfLines={1}>
-                  {c.start_time?.slice(0, 5)} · {c.patient_nome || c.titulo || 'Compromisso'}
-                </Text>
+            {itens.length === 0 ? (
+              <Text style={s.vazio}>Nenhum horário hoje</Text>
+            ) : (
+              // Barras finas, uma abaixo da outra, dividindo a altura
+              // disponível — todas cabem sem rolar, com qualquer quantidade
+              // de horários do dia. A cor original do tipo (tiposEvento.js)
+              // vive na borda; o preenchimento fica em papel, senão o widget
+              // inteiro vira um bloco de cor.
+              <View style={s.pilha}>
+                {itens.map((item) => (
+                  <TouchableOpacity
+                    key={item.key}
+                    style={[s.slotExterno, { borderColor: item.cor + '44' }]}
+                    activeOpacity={0.75}
+                    onPress={() => abrirItem(item)}
+                  >
+                    <View style={[s.slotCentral, { borderColor: item.cor }]}>
+                      <View style={[s.slotInterno, { borderColor: item.cor + '44' }]}>
+                        <Text style={s.slotHora} numberOfLines={1}>{item.startTime?.slice(0, 5)}</Text>
+                        <Text style={s.slotNome} numberOfLines={1}>{item.nome}</Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                ))}
               </View>
-            ))
-          )}
-          {restantes > 0 && <Text style={s.maisTexto}>+{restantes} mais</Text>}
+            )}
+          </View>
         </View>
       </View>
-    </TouchableOpacity>
+    </View>
   );
 }
 
 const s = StyleSheet.create({
-  molduraGrossa: {
+  molduraExterna: {
     flex: 1,
-    borderRadius: 20,
-    borderWidth: 3,
-    borderColor: COLORS.borderAzul,
-    padding: 3,
-  },
-  molduraFina: {
-    flex: 1,
-    borderRadius: 17,
+    borderRadius: 21,
     borderWidth: 1,
-    borderColor: COLORS.borderAzul,
+    borderColor: COLORS.molduraFina,
     padding: 2,
+    backgroundColor: COLORS.surface,
+    shadowColor: '#4E4941',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.07,
+    shadowRadius: 18,
+    elevation: 3,
+  },
+  molduraCentral: {
+    flex: 1,
+    borderRadius: 18,
+    borderWidth: 3,
+    borderColor: COLORS.moldura,
+    padding: 2,
+  },
+  molduraInterna: {
+    flex: 1,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: COLORS.molduraFina,
+    overflow: 'hidden',
   },
   caixa: {
     flex: 1,
     backgroundColor: COLORS.surface,
-    borderRadius: 15,
-    padding: 16,
-    // altura fixa (não só mínimo) + corte — a Início não rola mais (item
-    // 2), então este widget nunca pode crescer além do espaço reservado.
+    borderRadius: 12,
+    padding: 12,
+    // altura fixa (não só mínimo) + corte — a Início não rola, então o
+    // widget nunca pode crescer além do espaço reservado.
     overflow: 'hidden',
     minHeight: 150,
   },
   header: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 10 },
-  titulo: { fontSize: 14, fontWeight: '700', color: COLORS.textDark },
-  linhaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
-  statusDot: { width: 8, height: 8, borderRadius: 4 },
-  linha: { flex: 1, fontSize: 13.5, color: COLORS.textDark },
-  vazio: { fontSize: 13.5, color: COLORS.textMid, fontStyle: 'italic' },
-  maisTexto: { fontSize: 12.5, color: COLORS.textMid, marginTop: 2, fontWeight: '600' },
+  titulo: { fontSize: 13.5, fontWeight: '500', color: COLORS.textDark, lineHeight: 18 },
+  vazio: { fontSize: 13, color: COLORS.textMid, fontStyle: 'italic', lineHeight: 19 },
+
+  pilha: { flex: 1, gap: 5 },
+  slotExterno: {
+    flex: 1,
+    minHeight: 19,
+    maxHeight: 40,
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: 1,
+  },
+  slotCentral: { flex: 1, borderRadius: 6, borderWidth: 2, padding: 1 },
+  slotInterno: {
+    flex: 1,
+    borderRadius: 3,
+    borderWidth: 1,
+    backgroundColor: papel.alto,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 5,
+    overflow: 'hidden',
+  },
+  slotHora: { fontSize: 10.5, fontWeight: '500', color: tinta.t900, lineHeight: 14 },
+  slotNome: { flex: 1, fontSize: 10, color: tinta.t500, lineHeight: 13 },
 });

@@ -54,7 +54,7 @@ export default function EditarHorarioUnicoScreen() {
 
   return (
     <SafeAreaView style={s.safe} edges={['bottom']}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
         <Text style={s.titulo}>Editar só este horário</Text>
         <Text style={s.subtitulo}>
@@ -68,7 +68,7 @@ export default function EditarHorarioUnicoScreen() {
           value={inicio}
           onChangeText={setInicio}
           placeholder="HH:MM"
-          placeholderTextColor="#B0ADA6"
+          placeholderTextColor="#756E66"
           keyboardType="numbers-and-punctuation"
           maxLength={5}
         />
@@ -79,7 +79,7 @@ export default function EditarHorarioUnicoScreen() {
           value={fim}
           onChangeText={setFim}
           placeholder="HH:MM"
-          placeholderTextColor="#B0ADA6"
+          placeholderTextColor="#756E66"
           keyboardType="numbers-and-punctuation"
           maxLength={5}
         />
@@ -98,18 +98,18 @@ export default function EditarHorarioUnicoScreen() {
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#fff' },
+  safe: { flex: 1, backgroundColor: '#FDFCFA' },
   content: { padding: 20 },
-  titulo: { fontSize: 20, fontWeight: '700', color: '#1A1A2E', marginBottom: 6 },
-  subtitulo: { fontSize: 13, color: '#6B6860', marginBottom: 20, lineHeight: 18 },
-  label: { fontSize: 13, fontWeight: '600', color: '#1A1A2E', marginBottom: 6, marginTop: 12 },
+  titulo: { fontSize: 20, fontWeight: '500', color: '#302C28', marginBottom: 6 },
+  subtitulo: { fontSize: 13, color: '#756E66', marginBottom: 20, lineHeight: 18 },
+  label: { fontSize: 13, fontWeight: '600', color: '#302C28', marginBottom: 6, marginTop: 12, lineHeight: 19 },
   input: {
-    borderWidth: 1, borderColor: '#E0E4EA', borderRadius: 10, padding: 12,
-    fontSize: 16, color: '#1A1A2E',
+    borderWidth: 1, borderColor: '#EAE5DC', borderRadius: 10, padding: 12,
+    fontSize: 16, color: '#302C28',
   },
   btnSalvar: {
-    backgroundColor: '#3D5A80', borderRadius: 10, padding: 16,
+    backgroundColor: '#497363', borderRadius: 10, padding: 16,
     alignItems: 'center', marginTop: 24,
   },
-  btnSalvarTexto: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  btnSalvarTexto: { color: '#fff', fontWeight: '500', fontSize: 15, lineHeight: 22 },
 });

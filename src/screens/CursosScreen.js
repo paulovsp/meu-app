@@ -7,12 +7,12 @@ import { listarCursos } from '../services/cursos';
 import { mensagemDeErro } from '../services/erros';
 
 const COLORS = {
-  bg: '#F7F6F3',
+  bg: '#F7F5F0',
   surface: '#FFFFFF',
-  border: '#E8E4DD',
-  textDark: '#1C1C1E',
-  textMid: '#6B6860',
-  btnBlue: '#3D5A80',
+  border: '#EAE5DC',
+  textDark: '#302C28',
+  textMid: '#756E66',
+  btnBlue: '#497363',
 };
 
 const FORMATO_LABEL = {
@@ -94,19 +94,19 @@ const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.bg },
   loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   lista: { padding: 16, paddingBottom: 90 },
-  vazio: { textAlign: 'center', color: COLORS.textMid, fontSize: 13, marginTop: 40 },
+  vazio: { textAlign: 'center', color: COLORS.textMid, fontSize: 13, marginTop: 40, lineHeight: 19 },
   card: {
     backgroundColor: COLORS.surface, borderRadius: 14, padding: 16, marginBottom: 10,
     borderWidth: 1, borderColor: COLORS.border,
   },
   cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  cardTitulo: { flex: 1, fontSize: 15, fontWeight: '700', color: COLORS.textDark },
-  cardSub: { fontSize: 13, color: COLORS.textMid, marginTop: 4 },
+  cardTitulo: { flex: 1, fontSize: 15, fontWeight: '500', color: COLORS.textDark, lineHeight: 22 },
+  cardSub: { fontSize: 13, color: COLORS.textMid, marginTop: 4, lineHeight: 19 },
   cardMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 8 },
-  cardMeta: { fontSize: 12, color: COLORS.textMid, fontWeight: '600' },
+  cardMeta: { fontSize: 12, color: COLORS.textMid, fontWeight: '600', lineHeight: 17 },
   fab: {
     position: 'absolute', right: 20, bottom: 20, width: 56, height: 56, borderRadius: 28,
     backgroundColor: COLORS.btnBlue, alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.25, shadowRadius: 8, elevation: 6,
+    shadowColor: '#4E4941', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 6,
   },
 });

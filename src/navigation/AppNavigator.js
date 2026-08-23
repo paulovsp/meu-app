@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
+import { papel, tinta, salvia } from '../theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -50,18 +52,48 @@ import EditarHorarioScreen from '../screens/DisponibilidadeScreen';
 import EditarHorarioUnicoScreen from '../screens/EditarHorarioUnicoScreen';
 import DetalheCompromissoScreen from '../screens/DetalheCompromissoScreen';
 
-// Início — afazeres, arquivo e relatórios
+// Início — afazeres e relatórios
 import AfazeresScreen from '../screens/AfazeresScreen';
-import ArquivoRelatoriosScreen from '../screens/ArquivoRelatoriosScreen';
+import RelatoriosScreen from '../screens/RelatoriosScreen';
 import SessoesStatusScreen from '../screens/SessoesStatusScreen';
 
 const Stack = createNativeStackNavigator();
 
+/**
+ * Cabeçalho das telas secundárias: fundo no verde da marca, com o rodapé
+ * recortado em onda — o mesmo motivo da tela Início, agora como gramática
+ * do app inteiro em vez de enfeite de uma tela só.
+ */
+function CabecalhoVerde() {
+  return (
+    <View style={cab.fundo}>
+      <Svg
+        width="100%"
+        height={18}
+        viewBox="0 0 390 18"
+        preserveAspectRatio="none"
+        style={cab.onda}
+      >
+        <Path d="M0,4 C66,14 132,0 198,7 C258,13 326,2 390,9 L390,18 L0,18 Z" fill={salvia.base} />
+        <Path d="M0,9 C66,18 132,5 198,11 C258,17 326,7 390,13 L390,18 L0,18 Z" fill={papel.base} />
+      </Svg>
+    </View>
+  );
+}
+
+const cab = StyleSheet.create({
+  fundo: { flex: 1, backgroundColor: salvia.tinta },
+  onda: { position: 'absolute', left: 0, right: 0, bottom: 0 },
+});
+
 const screenOptions = {
-  headerStyle: { backgroundColor: '#fff' },
-  headerTintColor: '#1a202c',
-  headerTitleStyle: { fontWeight: '700' },
+  headerBackground: () => <CabecalhoVerde />,
+  headerStyle: { backgroundColor: salvia.tinta },
+  headerTintColor: '#FFFFFF',
+  headerTitleStyle: { fontWeight: '600', fontSize: 19, letterSpacing: -0.3, color: '#FFFFFF' },
   headerShadowVisible: false,
+  contentStyle: { backgroundColor: papel.base },
+  animation: 'slide_from_right',
 };
 
 function AuthStackNavigator() {
@@ -189,9 +221,9 @@ function AppStackNavigator() {
       />
 
       <Stack.Screen
-        name="ArquivoRelatorios"
-        component={ArquivoRelatoriosScreen}
-        options={{ title: 'Arquivo e Relatórios' }}
+        name="Relatorios"
+        component={RelatoriosScreen}
+        options={{ title: 'Relatórios' }}
       />
 
       {/* Administrativo */}
@@ -276,7 +308,7 @@ export default function AppNavigator() {
   if (loading || politicaAceita === null) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#4A90D9" />
+        <ActivityIndicator size="large" color={salvia.tinta} />
       </View>
     );
   }

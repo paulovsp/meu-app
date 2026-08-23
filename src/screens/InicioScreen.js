@@ -20,6 +20,8 @@ import MenuLateral from '../components/MenuLateral';
 import { assinaturaEstaAtiva, MENSAGEM_ASSINATURA_INATIVA } from '../services/assinatura';
 import MiniAfazeresBox from '../components/MiniAfazeresBox';
 import MiniAgendaBox from '../components/MiniAgendaBox';
+import Lavado from '../components/Lavado';
+import { papel, tinta, salvia } from '../theme';
 import { CLINICA_BUTTONS, ADMIN_BUTTONS } from '../constants/menuBotoes';
 
 const { width: SW, height: SH } = Dimensions.get('window');
@@ -27,28 +29,30 @@ const { width: SW, height: SH } = Dimensions.get('window');
 import FreudImage from '../../assets/freud.png';
 
 const COLORS = {
-  bg:          '#F7F6F3',
-  surface:     '#FFFFFF',
-  border:      '#E8E4DD',
-  textDark:    '#1C1C1E',
-  textMid:     '#6B6860',
-  textLight:   '#A5A19A',
+  bg:          papel.base,
+  surface:     papel.alto,
+  border:      papel.linha,
+  textDark:    tinta.t900,
+  textMid:     tinta.t500,
+  textLight:   tinta.t400,
 
-  accent:      '#6B9E8A',
-  accentMid:   '#8FBFA8',
-  accentSoft:  '#B5D4C4',
-  accentPale:  '#C8DDD1',
-  accentGhost: '#D4E8DC',
+  // As quatro faixas da onda do cabeçalho, do mais fundo ao mais claro.
+  accent:      salvia.tinta,
+  accentMid:   salvia.base,
+  accentSoft:  salvia.suave,
+  accentPale:  '#CADFD4',
+  accentGhost: salvia.veu,
 
-  btnBlue:     '#3D5A80',
-  btnLight:    '#5B7FA6',
-  btnShadow:   '#1A2D45',
+  marca:       salvia.funda,
+  acao:        salvia.tinta,
+  acaoClara:   '#4E7767',
+  sombra:      '#4E4941',
 };
 
 // Paleta própria por botão (item E.11/B.6) — cada tela tem sua cor e seu
 // ícone, tirados de uma paleta quente/fria equilibrada em vez de todo mundo
 // caindo no mesmo cinza genérico "outros". O badge do Recebíveis usa ícone
-// escuro em vez de branco porque #D9A441 é claro demais pro branco cumprir
+// escuro em vez de branco porque #776746 é claro demais pro branco cumprir
 // o contraste mínimo AA (WCAG 1.4.11, 3:1).
 // CLINICA_BUTTONS/ADMIN_BUTTONS agora moraram pra src/constants/menuBotoes.js
 // (reutilizados pelo MenuLateral.js em outras telas, não só aqui).
@@ -96,7 +100,7 @@ const ESPACO_ABAIXO_DA_GRADE = 20; // scrollContent.paddingBottom
 // mais uma constante de módulo.
 const USER_BANNER_H = 66; // aproximado: avatar 32 + paddingVertical 8*2 + marginBottom 16
 const WIDGETS_ROW_MARGIN_BOTTOM = 16;
-const ARQUIVO_BTN_H = 64;
+const BUSCA_BTN_H = 64;
 
 function calcularAlturasDaGrade(alturaUtil) {
   // Teto de altura — sem isso, em telas bem altas a conta acima dava
@@ -111,11 +115,11 @@ function calcularAlturasDaGrade(alturaUtil) {
     )
   );
   // Mesma lógica pra aba Início: Afazeres/Agenda de hoje crescem pra ocupar
-  // o espaço vertical que sobrava, com o botão Arquivo e Relatórios fixo na
+  // o espaço vertical que sobrava, com o botão Busca Dr.Sig fixo na
   // parte mais baixa da tela.
   const widgetH = Math.max(
     150,
-    alturaUtil - ESPACO_ACIMA_DA_GRADE - ESPACO_ABAIXO_DA_GRADE - USER_BANNER_H - WIDGETS_ROW_MARGIN_BOTTOM - ARQUIVO_BTN_H
+    alturaUtil - ESPACO_ACIMA_DA_GRADE - ESPACO_ABAIXO_DA_GRADE - USER_BANNER_H - WIDGETS_ROW_MARGIN_BOTTOM - BUSCA_BTN_H
   );
   return { cellH, widgetH };
 }
@@ -240,14 +244,21 @@ export default function InicioScreen({ navigation }) {
   // status sozinho quando o horário passa — sem isso, "Sessões sem relato"
   // fica praticamente vazia pra sempre, não por estar quebrada, mas porque
   // ninguém nunca confirma que a sessão aconteceu. Este popup pergunta um
-  // por um, no início do app. Mesmo padrão de "só 1x por sessão do app" do
-  // aviso de atraso logo abaixo — e "Fechar" em qualquer ponto da fila
-  // suspende o resto até o próximo início do app (flag em memória, sem
-  // precisar de tabela nova).
-  const checkinMostradoRef = useRef(false);
+  // por um, no início do app.
+  // ⚠️ CORRIGIDO: antes só perguntava 1x por sessão do app (flag permanente
+  // — "Fechar" suspendia o resto até reabrir o app do zero), o que
+  // contradiz "o app precisa SEMPRE confirmar". Agora o gate só evita
+  // disparar duas varreduras ao mesmo tempo (ex: foco duplo rápido) — toda
+  // vez que a Início ganha foco de novo, os compromissos ainda não
+  // respondidos (continuam 'agendado' — responder muda o status) voltam a
+  // ser perguntados.
+  const processandoCheckinRef = useRef(false);
 
   function processarFilaCheckin(fila, indice) {
-    if (indice >= fila.length) return;
+    if (indice >= fila.length) {
+      processandoCheckinRef.current = false;
+      return;
+    }
     const compromisso = fila[indice];
     const tipo = compromisso.tipo || 'sessao_individual';
     const eventoIndividual = tipo === 'sessao_individual' || tipo === 'supervisao_individual';
@@ -256,6 +267,9 @@ export default function InicioScreen({ navigation }) {
     perguntarCheckin(compromisso, {
       // Só oferece "adicionar relato" pra sessão/supervisão individual —
       // grupo, evento livre etc. não têm um prontuário único pra gravar.
+      // Duas formas de relato contam igualmente (ver estaSemRelato em
+      // database.js): gravar áudio (transcrito depois) ou escrever
+      // diretamente em Novo Registro, com a data da sessão já preenchida.
       aoRealizada: eventoIndividual
         ? () => new Promise((resolve) => {
             Alert.alert(
@@ -264,7 +278,19 @@ export default function InicioScreen({ navigation }) {
               [
                 { text: 'Depois', onPress: () => resolve() },
                 {
-                  text: 'Adicionar agora',
+                  text: 'Escrever registro',
+                  onPress: () => {
+                    navegouPraRelato = true;
+                    navigation.navigate('AddRecord', {
+                      patientId: compromisso.patient_id,
+                      appointmentId: compromisso.id,
+                      dataSessao: compromisso.date,
+                    });
+                    resolve();
+                  },
+                },
+                {
+                  text: 'Gravar áudio',
                   onPress: () => {
                     navegouPraRelato = true;
                     navigation.navigate('NewSession', {
@@ -280,22 +306,26 @@ export default function InicioScreen({ navigation }) {
             );
           })
         : undefined,
-      // Ao navegar pra gravar a sessão, não insiste no resto da fila em
-      // cima da tela nova — o resto só volta a perguntar no próximo início.
+      // Ao navegar pra gravar/escrever, não insiste no resto da fila em
+      // cima da tela nova — o resto continua 'agendado' e volta a ser
+      // perguntado na próxima vez que a Início ganhar foco.
       aoConcluir: (info) => {
-        if (navegouPraRelato || info?.fechado) return;
+        if (navegouPraRelato || info?.fechado) {
+          processandoCheckinRef.current = false;
+          return;
+        }
         processarFilaCheckin(fila, indice + 1);
       },
     });
   }
 
   async function perguntarCheckinsPendentes() {
-    if (checkinMostradoRef.current) return;
+    if (processandoCheckinRef.current) return;
     try {
       const candidatos = await listarCompromissosAguardandoCheckin();
       const pendentes = candidatos.filter((c) => horarioJaPassou(c.date, c.end_time));
       if (pendentes.length === 0) return;
-      checkinMostradoRef.current = true;
+      processandoCheckinRef.current = true;
       processarFilaCheckin(pendentes, 0);
     } catch (e) {
       console.error('Falha ao verificar compromissos pendentes de check-in:', e?.message || e);
@@ -363,7 +393,7 @@ export default function InicioScreen({ navigation }) {
 
   return (
     <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
-      <StatusBar barStyle="dark-content" backgroundColor={COLORS.accent} />
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
 
       <View style={s.headerWrapper}>
         <HeaderWaves />
@@ -407,7 +437,7 @@ export default function InicioScreen({ navigation }) {
           activeOpacity={0.7}
           onPress={() => setMenuAberto(true)}
         >
-          <Ionicons name="menu-outline" size={24} color={COLORS.btnBlue} />
+          <Ionicons name="menu-outline" size={24} color={COLORS.acao} />
         </TouchableOpacity>
       </View>
 
@@ -488,28 +518,41 @@ export default function InicioScreen({ navigation }) {
             </View>
 
             <TouchableOpacity
-              style={[s.arquivoBtnAzul, { height: ARQUIVO_BTN_H }]}
-              activeOpacity={0.75}
-              onPress={() => navigation.navigate('ArquivoRelatorios')}
+              style={[s.buscaExterna, { height: BUSCA_BTN_H }]}
+              activeOpacity={0.8}
+              onPress={() => navigation.navigate('Busca')}
             >
-              <Ionicons name="folder-outline" size={24} color="#FFFFFF" />
-              <Text style={s.arquivoBtnAzulText}>Arquivo e Relatórios</Text>
-              <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
+              <View style={s.buscaCentral}>
+                <View style={s.buscaInterna}>
+                  <Ionicons name="sparkles-outline" size={22} color="#675A9A" />
+                  <Text style={s.buscaBtnText}>Busca Dr.Sig</Text>
+                  <Ionicons name="chevron-forward" size={18} color={tinta.t400} />
+                </View>
+              </View>
             </TouchableOpacity>
           </Animated.View>
         ) : (
           <Animated.View style={[s.grid, gridAnimatedStyle]}>
             {botoesAtivos.map((btn) => (
+              // Moldura tripla: fina · grossa (3 dp ≈ 0,5 mm) · fina.
+              // O fundo é o mesmo verde em todas as células; a cor da seção
+              // vive só no medalhão.
               <TouchableOpacity
                 key={btn.id}
-                style={[s.cell, { width: CELL_W, height: cellH }]}
-                activeOpacity={0.75}
+                style={[s.cellExterna, { width: CELL_W, height: cellH }]}
+                activeOpacity={0.8}
                 onPress={() => abrirBotaoGrid(btn)}
               >
-                <View style={[s.cellIconBadge, { backgroundColor: btn.corBadge }]}>
-                  <Ionicons name={btn.icon} size={32} color={btn.corIcone || '#FFFFFF'} />
+                <View style={s.cellCentral}>
+                  <View style={s.cellInterna}>
+                    <Lavado de={salvia.veuForte} para={papel.alto} parada={0.74} style={s.cellCampo}>
+                      <View style={[s.cellMedalhao, { borderColor: btn.corBadge + '73' }]}>
+                        <Ionicons name={btn.icon} size={24} color={btn.corBadge} />
+                      </View>
+                      <Text style={s.cellLabel} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.85}>{btn.label}</Text>
+                    </Lavado>
+                  </View>
                 </View>
-                <Text style={s.cellLabel} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.85}>{btn.label}</Text>
               </TouchableOpacity>
             ))}
           </Animated.View>
@@ -542,7 +585,7 @@ const s = StyleSheet.create({
     top: 0,
     left: 0,
     zIndex: 20,
-    elevation: 20,
+    elevation: 8,
     padding: 10,
   },
   headerContent: {
@@ -571,17 +614,17 @@ const s = StyleSheet.create({
   },
   appName: {
     fontSize: 34,
-    fontWeight: '700',
+    fontWeight: '600',
     fontStyle: 'italic',
-    color: COLORS.btnBlue,
-    letterSpacing: 1.2,
+    color: COLORS.marca,
+    letterSpacing: -0.5,
     lineHeight: 40,
   },
   appSub: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.btnLight,
-    letterSpacing: 2,
+    fontSize: 11,
+    fontWeight: '500',
+    color: COLORS.acaoClara,
+    letterSpacing: 1.8,
     textTransform: 'uppercase',
     lineHeight: 16,
     marginTop: 4,
@@ -591,7 +634,9 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: COLORS.btnBlue,
+    backgroundColor: papel.alto,
+    borderWidth: 1,
+    borderColor: '#D3E5DB',
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -601,15 +646,16 @@ const s = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.50)',
+    backgroundColor: tinta.t300,
   },
   sessionDotActive: {
-    backgroundColor: COLORS.accentSoft,
+    backgroundColor: salvia.tinta,
   },
   sessionText: {
     fontSize: 11,
-    color: '#FFFFFF',
-    fontWeight: '500',
+    color: tinta.t700,
+    fontWeight: '400',
+    lineHeight: 15,
   },
 
   freudWrap: {
@@ -641,9 +687,9 @@ const s = StyleSheet.create({
     borderColor: COLORS.border,
     zIndex: 5,
     elevation: 5,
-    shadowColor: '#000',
+    shadowColor: '#4E4941',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
+    shadowOpacity: 0.08,
     shadowRadius: 6,
   },
   toggleBtn: {
@@ -653,11 +699,11 @@ const s = StyleSheet.create({
     alignItems: 'center',
   },
   toggleBtnActive: {
-    backgroundColor: COLORS.btnBlue,
+    backgroundColor: COLORS.acao,
   },
   toggleText: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '500',
     color: COLORS.textMid,
   },
   toggleTextActive: {
@@ -681,7 +727,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 14,
     borderWidth: 1,
     borderColor: COLORS.border,
-    shadowColor: '#000',
+    shadowColor: '#4E4941',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.06,
     shadowRadius: 4,
@@ -696,11 +742,11 @@ const s = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: COLORS.btnBlue,
+    backgroundColor: COLORS.acao,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: COLORS.btnBlue,
+    borderWidth: 1,
+    borderColor: COLORS.acao,
     overflow: 'hidden',
   },
   userBannerAvatarImg: {
@@ -709,7 +755,7 @@ const s = StyleSheet.create({
   },
   userBannerAvatarText: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '500',
     color: '#FFFFFF',
   },
   userBannerInfo: {
@@ -724,7 +770,7 @@ const s = StyleSheet.create({
   },
   userBannerName: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '500',
     color: COLORS.textDark,
   },
   userBannerArrow: {
@@ -740,22 +786,38 @@ const s = StyleSheet.create({
     marginBottom: 16,
   },
 
-  // Fundo azul sólido, igual ao tom dos botões das outras abas — só
-  // Afazeres/Agenda (acima) mantêm a moldura com borda.
-  arquivoBtnAzul: {
+  // Mesma moldura tripla dos botões da grade e dos dois widgets — é o
+  // gesto que amarra a tela inteira.
+  buscaExterna: {
+    marginHorizontal: 20,
+    backgroundColor: COLORS.surface,
+    borderRadius: 19,
+    borderWidth: 1,
+    borderColor: salvia.suave,
+    padding: 2,
+    shadowColor: COLORS.sombra,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.07,
+    shadowRadius: 18,
+    elevation: 3,
+  },
+  buscaCentral: { flex: 1, borderRadius: 16, borderWidth: 3, borderColor: salvia.tinta, padding: 2 },
+  buscaInterna: {
+    flex: 1,
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: salvia.suave,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    marginHorizontal: 20,
-    backgroundColor: COLORS.btnBlue,
-    borderRadius: 15,
-    paddingHorizontal: 18,
+    paddingHorizontal: 14,
   },
-  arquivoBtnAzulText: {
+  buscaBtnText: {
     flex: 1,
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '500',
+    color: tinta.t900,
+    lineHeight: 20,
   },
 
   grid: {
@@ -766,40 +828,48 @@ const s = StyleSheet.create({
     columnGap: GRID_COL_GAP,
     rowGap: GRID_ROW_GAP,
   },
-  cell: {
-    // width/height vêm inline (calcularAlturasDaGrade, com insets reais —
-    // ver useMemo no componente), não são mais fixos aqui.
-    backgroundColor: COLORS.btnBlue,
-    borderRadius: 22,
-    paddingVertical: 22,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2.5,
-    borderColor: 'rgba(255,255,255,0.35)',
-    shadowColor: COLORS.btnShadow,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.28,
-    shadowRadius: 10,
-    elevation: 6,
+  cellExterna: {
+    // width/height vêm inline (calcularAlturasDaGrade, com insets reais).
+    backgroundColor: COLORS.surface,
+    borderRadius: 21,
+    borderWidth: 1,
+    borderColor: salvia.suave,
+    padding: 2,
+    shadowColor: COLORS.sombra,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.07,
+    shadowRadius: 18,
+    elevation: 3,
   },
-  // Selo de tamanho fixo para o ícone — usar @expo/vector-icons (em vez de
-  // emoji) garante que cada glifo tenha exatamente o mesmo bounding box,
-  // eliminando a inconsistência de alinhamento entre ícones diferentes.
-  cellIconBadge: {
-    width: 60,
-    height: 60,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.16)',
+  cellCentral: { flex: 1, borderRadius: 18, borderWidth: 3, borderColor: salvia.tinta, padding: 2 },
+  cellInterna: { flex: 1, borderRadius: 13, borderWidth: 1, borderColor: salvia.suave, overflow: 'hidden' },
+  cellCampo: {
+    flex: 1,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    gap: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    overflow: 'hidden',
+  },
+  // Medalhão: círculo em papel com aro na cor da seção. O ícone vetorial
+  // garante o mesmo bounding box para todos os glifos.
+  cellMedalhao: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 1,
+    backgroundColor: papel.alto,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   cellLabel: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    lineHeight: 21,
+    fontSize: 15,
+    fontWeight: '500',
+    color: tinta.t900,
+    lineHeight: 19,
+    letterSpacing: -0.1,
     textAlign: 'center',
   },
 });

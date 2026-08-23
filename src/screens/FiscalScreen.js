@@ -18,7 +18,7 @@ import { CLINICA_BUTTONS, ADMIN_BUTTONS } from '../constants/menuBotoes';
 function Vazio({ texto }) {
   return (
     <View style={s.vazio}>
-      <Ionicons name="document-text-outline" size={36} color="#C7CDD6" />
+      <Ionicons name="document-text-outline" size={36} color="#A9A299" />
       <Text style={s.vazioTexto}>{texto}</Text>
     </View>
   );
@@ -62,7 +62,7 @@ export default function FiscalScreen() {
     navigation.setOptions({
       headerRight: () => (
         <TouchableOpacity onPress={() => setMenuAberto(true)} style={{ paddingHorizontal: 12 }}>
-          <Ionicons name="menu-outline" size={26} color="#1A1A2E" />
+          <Ionicons name="menu-outline" size={26} color="#302C28" />
         </TouchableOpacity>
       ),
     });
@@ -157,11 +157,11 @@ export default function FiscalScreen() {
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
         <View style={s.navMes}>
           <TouchableOpacity onPress={() => mudarMes(-1)}>
-            <Ionicons name="chevron-back" size={22} color="#3D5A80" />
+            <Ionicons name="chevron-back" size={22} color="#497363" />
           </TouchableOpacity>
           <Text style={s.navMesTexto}>{mesLabel} de {ano}</Text>
           <TouchableOpacity onPress={() => mudarMes(1)}>
-            <Ionicons name="chevron-forward" size={22} color="#3D5A80" />
+            <Ionicons name="chevron-forward" size={22} color="#497363" />
           </TouchableOpacity>
         </View>
 
@@ -169,7 +169,7 @@ export default function FiscalScreen() {
           <Text style={s.secaoTitulo}>Recibos/Notas por analisante</Text>
           {carregando ? (
             <View style={s.carregandoWrap}>
-              <ActivityIndicator size="large" color="#3D5A80" />
+              <ActivityIndicator size="large" color="#497363" />
             </View>
           ) : recebimentos.length === 0 ? (
             <Vazio texto={'Nenhum analisante com cobrança definida para este mês.'} />
@@ -197,7 +197,7 @@ export default function FiscalScreen() {
                     {item.fiscal_frequencia_automatica ? (
                       <Ionicons name="checkmark-circle" size={14} color="#fff" />
                     ) : (
-                      <Ionicons name="repeat-outline" size={14} color="#3D5A80" />
+                      <Ionicons name="repeat-outline" size={14} color="#497363" />
                     )}
                     <Text style={[s.automaticoBtnTexto, item.fiscal_frequencia_automatica && s.automaticoBtnTextoAtivo]}>
                       Automático
@@ -247,43 +247,43 @@ export default function FiscalScreen() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F7FA' },
+  container: { flex: 1, backgroundColor: '#F7F5F0' },
   scroll: { padding: 16, paddingBottom: 32, gap: 16 },
 
   navMes: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#fff',
+    backgroundColor: '#FDFCFA',
     borderRadius: 14,
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderWidth: 1,
-    borderColor: '#E0E4EA',
+    borderColor: '#EAE5DC',
   },
-  navMesTexto: { fontSize: 15, fontWeight: '700', color: '#1A1A2E' },
+  navMesTexto: { fontSize: 15, fontWeight: '500', color: '#302C28', lineHeight: 22 },
 
   secao: {
-    backgroundColor: '#fff',
+    backgroundColor: '#FDFCFA',
     borderRadius: 16,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#E0E4EA',
+    borderColor: '#EAE5DC',
   },
   secaoTitulo: {
     fontSize: 12,
-    fontWeight: '700',
-    color: '#888',
+    fontWeight: '500',
+    color: '#8C857B',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 6,
   },
-  secaoHint: { fontSize: 13, color: '#6B6860', lineHeight: 18, marginTop: 4 },
+  secaoHint: { fontSize: 13, color: '#756E66', lineHeight: 18, marginTop: 4 },
 
   linha: {
     paddingVertical: 10,
     borderTopWidth: 1,
-    borderTopColor: '#F0F2F5',
+    borderTopColor: '#EAE5DC',
     gap: 8,
   },
   linhaTopo: {
@@ -292,12 +292,12 @@ const s = StyleSheet.create({
     gap: 10,
   },
   linhaInfo: { flex: 1 },
-  linhaNome: { fontSize: 14, fontWeight: '700', color: '#1A1A2E' },
-  linhaSub: { fontSize: 12, color: '#888', marginTop: 2 },
+  linhaNome: { fontSize: 14, fontWeight: '500', color: '#302C28', lineHeight: 20 },
+  linhaSub: { fontSize: 12, color: '#8C857B', marginTop: 2, lineHeight: 17 },
 
   toggle: {
     flexDirection: 'row',
-    backgroundColor: '#F0F2F5',
+    backgroundColor: '#EAE5DC',
     borderRadius: 10,
     padding: 2,
   },
@@ -306,8 +306,8 @@ const s = StyleSheet.create({
     paddingHorizontal: 10,
     borderRadius: 8,
   },
-  toggleOpcaoAtiva: { backgroundColor: '#3D5A80' },
-  toggleTexto: { fontSize: 11, fontWeight: '700', color: '#777' },
+  toggleOpcaoAtiva: { backgroundColor: '#497363' },
+  toggleTexto: { fontSize: 11, fontWeight: '500', color: '#8C857B', lineHeight: 16 },
   toggleTextoAtivo: { color: '#fff' },
 
   linhaAcoes: {
@@ -324,28 +324,28 @@ const s = StyleSheet.create({
     paddingHorizontal: 10,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#3D5A80',
+    borderColor: '#497363',
   },
   automaticoBtnAtivo: {
-    backgroundColor: '#1e9e63',
-    borderColor: '#1e9e63',
+    backgroundColor: '#44745B',
+    borderColor: '#44745B',
   },
-  automaticoBtnTexto: { color: '#3D5A80', fontSize: 12, fontWeight: '700' },
+  automaticoBtnTexto: { color: '#497363', fontSize: 12, fontWeight: '500', lineHeight: 17 },
   automaticoBtnTextoAtivo: { color: '#fff' },
 
   emitirBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#3D5A80',
+    backgroundColor: '#497363',
     borderRadius: 10,
     paddingVertical: 8,
     paddingHorizontal: 12,
   },
-  emitirBtnDesabilitado: { backgroundColor: '#C7CDD6' },
-  emitirBtnTexto: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  emitirBtnDesabilitado: { backgroundColor: '#A9A299' },
+  emitirBtnTexto: { color: '#fff', fontSize: 13, fontWeight: '500', lineHeight: 19 },
 
   vazio: { alignItems: 'center', paddingVertical: 24, gap: 10 },
-  vazioTexto: { fontSize: 13, color: '#999', textAlign: 'center', lineHeight: 19 },
+  vazioTexto: { fontSize: 13, color: '#8C857B', textAlign: 'center', lineHeight: 19 },
   carregandoWrap: { alignItems: 'center', paddingVertical: 24 },
 });

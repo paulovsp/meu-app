@@ -572,7 +572,7 @@ export default function PerfilScreen({ navigation }) {
     return (
       <SafeAreaView style={st.safe}>
         <View style={st.loadingWrap}>
-          <ActivityIndicator size="large" color="#3D5A80" />
+          <ActivityIndicator size="large" color="#497363" />
         </View>
       </SafeAreaView>
     );
@@ -599,11 +599,12 @@ export default function PerfilScreen({ navigation }) {
 
   return (
     <SafeAreaView style={st.safe} edges={['bottom']}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={st.scrollInner} keyboardShouldPersistTaps="handled">
         {/* ── Cabeçalho ── */}
-        <View style={st.headerMolduraGrossa}>
-          <View style={st.headerMolduraFina}>
+        <View style={st.headerMolduraExterna}>
+          <View style={st.headerMolduraCentral}>
+            <View style={st.headerMolduraInterna}>
             <TouchableOpacity
               style={st.headerCard}
               onPress={trocarCapa}
@@ -623,7 +624,7 @@ export default function PerfilScreen({ navigation }) {
                 </View>
               )}
               <View style={st.headerCapaHint}>
-                <Text style={st.headerCapaHintText}>📷 Toque pra trocar o fundo</Text>
+                <Text style={st.headerCapaHintText}>Toque pra trocar o fundo</Text>
               </View>
 
               <View style={st.headerConteudo} pointerEvents="box-none">
@@ -660,11 +661,12 @@ export default function PerfilScreen({ navigation }) {
                 {user.crp ? <Text style={st.crpHeader}>{user.crp}</Text> : null}
               </View>
             </TouchableOpacity>
+            </View>
           </View>
         </View>
 
         {/* ── Sua atividade ── */}
-        <Text style={st.sectionTitle}>📊 Sua atividade</Text>
+        <Text style={st.sectionTitle}>Sua atividade</Text>
         <View style={st.statsRow}>
           <View style={st.statCard}>
             <Text style={st.statNumber}>{plano?.itensDiario?.length ?? 0}</Text>
@@ -748,10 +750,10 @@ export default function PerfilScreen({ navigation }) {
 
         {/* ── Dados cadastrais ── */}
         <View style={st.sectionTitleRow}>
-          <Text style={st.sectionTitle}>👤 Dados cadastrais</Text>
+          <Text style={st.sectionTitle}>Dados cadastrais</Text>
           {!editando && (
             <TouchableOpacity style={st.editBtn} onPress={() => setEditando(true)}>
-              <Text style={st.editBtnText}>✏️ Editar</Text>
+              <Text style={st.editBtnText}>Editar</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -829,7 +831,7 @@ export default function PerfilScreen({ navigation }) {
             />
 
             {/* ── Contador (para envio do resumo mensal de recebimentos) ── */}
-            <Text style={st.sectionTitle}>📊 Contador</Text>
+            <Text style={st.sectionTitle}>Contador</Text>
 
             <Text style={st.label}>Nome do contador</Text>
             <TextInput style={st.input} value={contadorNome} onChangeText={setContadorNome} />
@@ -922,10 +924,10 @@ export default function PerfilScreen({ navigation }) {
               style={st.mensagensLink}
               onPress={() => navigation.navigate('MensagensPersonalizadas')}
             >
-              <Text style={st.mensagensLinkText}>✉️ Mensagens personalizadas</Text>
+              <Text style={st.mensagensLinkText}>Mensagens personalizadas</Text>
             </TouchableOpacity>
 
-            <Text style={st.sectionTitle}>✍️ Assinatura</Text>
+            <Text style={st.sectionTitle}>Assinatura</Text>
             <View style={st.assinaturaBox}>
               {user.assinatura ? (
                 <Image source={{ uri: user.assinatura }} style={st.assinaturaImg} resizeMode="contain" />
@@ -942,7 +944,7 @@ export default function PerfilScreen({ navigation }) {
               </TouchableOpacity>
             </View>
 
-            <Text style={st.sectionTitle}>🤖 Créditos de IA</Text>
+            <Text style={st.sectionTitle}>Créditos de IA</Text>
             <View style={st.infoRow}>
               <Text style={st.infoLabel}>Saldo disponível</Text>
               <Text style={[st.infoValue, Number(user.creditos_ia) <= 0 && st.infoValueAlerta]}>
@@ -988,7 +990,7 @@ export default function PerfilScreen({ navigation }) {
               </TouchableOpacity>
             </View>
 
-            <Text style={st.sectionTitle}>📊 Contador</Text>
+            <Text style={st.sectionTitle}>Contador</Text>
             <View style={st.infoRow}>
               <Text style={st.infoLabel}>Nome</Text>
               <Text style={st.infoValue}>{user.contador_nome || '—'}</Text>
@@ -1002,17 +1004,17 @@ export default function PerfilScreen({ navigation }) {
               <Text style={st.infoValue}>{user.contador_telefone || '—'}</Text>
             </View>
 
-            <Text style={st.sectionTitle}>🎓 Cursos</Text>
+            <Text style={st.sectionTitle}>Cursos</Text>
             <TouchableOpacity style={st.trocarSenhaBtn} onPress={() => navigation.navigate('Cursos')}>
               <Text style={st.trocarSenhaBtnText}>Meu currículo de cursos</Text>
             </TouchableOpacity>
 
-            <Text style={st.sectionTitle}>💬 WhatsApp Business</Text>
+            <Text style={st.sectionTitle}>WhatsApp Business</Text>
             {user.whatsapp_phone_number_id && !whatsappEditando ? (
               <>
                 <View style={st.infoRow}>
                   <Text style={st.infoLabel}>Status</Text>
-                  <Text style={[st.infoValue, { color: '#2E8B57' }]}>Configurado ✓</Text>
+                  <Text style={[st.infoValue, { color: '#44745B' }]}>Configurado</Text>
                 </View>
 
                 {comprovantesWhatsapp.length > 0 && (
@@ -1035,7 +1037,7 @@ export default function PerfilScreen({ navigation }) {
                           </Text>
                         </View>
                         {comprovanteProcessandoId === c.id ? (
-                          <ActivityIndicator color="#3D5A80" />
+                          <ActivityIndicator color="#497363" />
                         ) : (
                           <View style={{ flexDirection: 'row', gap: 8 }}>
                             {c.patient_id && (
@@ -1075,7 +1077,7 @@ export default function PerfilScreen({ navigation }) {
                   Passo a passo: 1) crie um app em developers.facebook.com e adicione o produto
                   WhatsApp; 2) vincule uma conta comercial (WABA) verificada; 3) gere um token de
                   acesso permanente do sistema; 4) configure o webhook com a URL{' '}
-                  <Text style={{ fontWeight: '700' }}>{SUPABASE_URL}/functions/v1/whatsapp-webhook</Text>
+                  <Text style={{ fontWeight: '500' }}>{SUPABASE_URL}/functions/v1/whatsapp-webhook</Text>
                   {' '}e o Verify Token combinado com o suporte do Dr.Sig; 5) cole o Phone Number ID e
                   o token abaixo.
                 </Text>
@@ -1105,7 +1107,7 @@ export default function PerfilScreen({ navigation }) {
                   disabled={whatsappSalvando}
                 >
                   {whatsappSalvando ? (
-                    <ActivityIndicator color="#3D5A80" />
+                    <ActivityIndicator color="#497363" />
                   ) : (
                     <Text style={st.trocarSenhaBtnText}>Salvar credenciais</Text>
                   )}
@@ -1118,7 +1120,7 @@ export default function PerfilScreen({ navigation }) {
               </>
             )}
 
-            <Text style={st.sectionTitle}>🔒 Segurança</Text>
+            <Text style={st.sectionTitle}>Segurança</Text>
             <View style={st.bioRow}>
               <View style={{ flex: 1 }}>
                 <Text style={st.bioLabel}>Entrar com digital</Text>
@@ -1129,7 +1131,7 @@ export default function PerfilScreen({ navigation }) {
                 </Text>
               </View>
               {bioProcessando ? (
-                <ActivityIndicator color="#3D5A80" />
+                <ActivityIndicator color="#497363" />
               ) : (
                 <Switch
                   value={bioAtiva}
@@ -1143,7 +1145,7 @@ export default function PerfilScreen({ navigation }) {
               <Text style={st.trocarSenhaBtnText}>Alterar senha</Text>
             </TouchableOpacity>
 
-            <Text style={st.sectionTitle}>🔔 Notificações</Text>
+            <Text style={st.sectionTitle}>Notificações</Text>
             <View style={st.notifMatrizCard}>
               <View style={st.notifMatrizHeader}>
                 <Text style={st.notifMatrizHeaderTipo} />
@@ -1158,7 +1160,7 @@ export default function PerfilScreen({ navigation }) {
                 </View>
                 <View style={st.notifMatrizCanalCol}>
                   {notifSalvando === 'notif_transcricao_push' ? (
-                    <ActivityIndicator color="#3D5A80" />
+                    <ActivityIndicator color="#497363" />
                   ) : (
                     <Switch
                       value={notifTranscricaoPush}
@@ -1168,7 +1170,7 @@ export default function PerfilScreen({ navigation }) {
                 </View>
                 <View style={st.notifMatrizCanalCol}>
                   {notifSalvando === 'notif_transcricao_email' ? (
-                    <ActivityIndicator color="#3D5A80" />
+                    <ActivityIndicator color="#497363" />
                   ) : (
                     <Switch
                       value={notifTranscricaoEmail}
@@ -1185,7 +1187,7 @@ export default function PerfilScreen({ navigation }) {
                 </View>
                 <View style={st.notifMatrizCanalCol}>
                   {notifSalvando === 'notif_atraso_push' ? (
-                    <ActivityIndicator color="#3D5A80" />
+                    <ActivityIndicator color="#497363" />
                   ) : (
                     <Switch
                       value={notifAtrasoPush}
@@ -1195,7 +1197,7 @@ export default function PerfilScreen({ navigation }) {
                 </View>
                 <View style={st.notifMatrizCanalCol}>
                   {notifSalvando === 'notif_atraso_email' ? (
-                    <ActivityIndicator color="#3D5A80" />
+                    <ActivityIndicator color="#497363" />
                   ) : (
                     <Switch
                       value={notifAtrasoEmail}
@@ -1208,9 +1210,9 @@ export default function PerfilScreen({ navigation }) {
 
             <TouchableOpacity style={st.exportarBtn} onPress={exportarDados} disabled={exportando}>
               {exportando ? (
-                <ActivityIndicator color="#3D5A80" />
+                <ActivityIndicator color="#497363" />
               ) : (
-                <Text style={st.exportarBtnText}>📤 Exportar meus dados</Text>
+                <Text style={st.exportarBtnText}>Exportar meus dados</Text>
               )}
             </TouchableOpacity>
 
@@ -1240,7 +1242,7 @@ export default function PerfilScreen({ navigation }) {
               value={senhaAtual}
               onChangeText={setSenhaAtual}
               placeholder="Sua senha atual"
-              placeholderTextColor="#B0ADA6"
+              placeholderTextColor="#756E66"
               secureTextEntry
             />
 
@@ -1250,7 +1252,7 @@ export default function PerfilScreen({ navigation }) {
               value={novaSenha}
               onChangeText={setNovaSenha}
               placeholder="Mínimo 6 caracteres"
-              placeholderTextColor="#B0ADA6"
+              placeholderTextColor="#756E66"
               secureTextEntry
             />
 
@@ -1260,7 +1262,7 @@ export default function PerfilScreen({ navigation }) {
               value={confirmarNovaSenha}
               onChangeText={setConfirmarNovaSenha}
               placeholder="Repita a nova senha"
-              placeholderTextColor="#B0ADA6"
+              placeholderTextColor="#756E66"
               secureTextEntry
             />
 
@@ -1290,44 +1292,44 @@ export default function PerfilScreen({ navigation }) {
 const st = StyleSheet.create({
   bioRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: '#FFFFFF', borderRadius: 14, padding: 16, marginBottom: 20,
+    backgroundColor: '#FDFCFA', borderRadius: 14, padding: 16, marginBottom: 20,
   },
-  bioLabel: { fontSize: 15, fontWeight: '700', color: '#1C1C1E' },
-  bioSub: { fontSize: 12, color: '#6B6860', marginTop: 4, lineHeight: 17 },
+  bioLabel: { fontSize: 15, fontWeight: '500', color: '#302C28', lineHeight: 22 },
+  bioSub: { fontSize: 12, color: '#756E66', marginTop: 4, lineHeight: 17 },
   trocarSenhaBtn: {
-    backgroundColor: '#FFFFFF', borderRadius: 14, padding: 16, marginBottom: 20,
-    borderWidth: 1, borderColor: '#E8E4DD',
+    backgroundColor: '#FDFCFA', borderRadius: 14, padding: 16, marginBottom: 20,
+    borderWidth: 1, borderColor: '#EAE5DC',
   },
-  trocarSenhaBtnText: { fontSize: 15, fontWeight: '700', color: '#3D5A80' },
+  trocarSenhaBtnText: { fontSize: 15, fontWeight: '500', color: '#497363', lineHeight: 22 },
   whatsappComprovanteCard: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: '#F7F6F3', borderRadius: 12, padding: 12, marginTop: 8,
-    borderWidth: 1, borderColor: '#E8E4DD',
+    backgroundColor: '#F7F5F0', borderRadius: 12, padding: 12, marginTop: 8,
+    borderWidth: 1, borderColor: '#EAE5DC',
   },
-  whatsappComprovanteNome: { fontSize: 14, fontWeight: '700', color: '#1C1C1E' },
+  whatsappComprovanteNome: { fontSize: 14, fontWeight: '500', color: '#302C28', lineHeight: 20 },
   whatsappComprovanteBtnOk: {
-    backgroundColor: '#2E8B57', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8,
+    backgroundColor: '#44745B', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8,
   },
-  whatsappComprovanteBtnOkTexto: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  whatsappComprovanteBtnOkTexto: { color: '#fff', fontSize: 12, fontWeight: '500', lineHeight: 17 },
   whatsappComprovanteBtnIgnorar: {
-    backgroundColor: '#F0F0F0', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8,
+    backgroundColor: '#F1EDE5', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8,
   },
-  whatsappComprovanteBtnIgnorarTexto: { color: '#6B6860', fontSize: 12, fontWeight: '700' },
+  whatsappComprovanteBtnIgnorarTexto: { color: '#756E66', fontSize: 12, fontWeight: '500', lineHeight: 17 },
   notifMatrizCard: {
-    backgroundColor: '#FFFFFF', borderRadius: 14, marginBottom: 20,
-    borderWidth: 1, borderColor: '#E8E4DD', overflow: 'hidden',
+    backgroundColor: '#FDFCFA', borderRadius: 14, marginBottom: 20,
+    borderWidth: 1, borderColor: '#EAE5DC', overflow: 'hidden',
   },
   notifMatrizHeader: {
     flexDirection: 'row', alignItems: 'center', paddingTop: 12, paddingHorizontal: 16,
   },
   notifMatrizHeaderTipo: { flex: 1 },
   notifMatrizHeaderCanal: {
-    width: 64, textAlign: 'center', fontSize: 11, fontWeight: '700', color: '#A5A19A',
+    width: 64, textAlign: 'center', fontSize: 11, fontWeight: '500', color: '#8C857B',
   },
   notifMatrizLinha: {
     flexDirection: 'row', alignItems: 'center',
     paddingVertical: 14, paddingHorizontal: 16,
-    borderBottomWidth: 1, borderBottomColor: '#F0EEE9',
+    borderBottomWidth: 1, borderBottomColor: '#F1EDE5',
   },
   notifMatrizLinhaUltima: { borderBottomWidth: 0 },
   notifMatrizTipo: { flex: 1, paddingRight: 8 },
@@ -1337,61 +1339,69 @@ const st = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center', padding: 24,
   },
   modalCard: {
-    width: '100%', maxWidth: 420, backgroundColor: '#FFFFFF',
+    width: '100%', maxWidth: 420, backgroundColor: '#FDFCFA',
     borderRadius: 18, padding: 24,
   },
-  modalTitulo: { fontSize: 18, fontWeight: '700', color: '#1C1C1E', marginBottom: 16 },
-  modalLabel: { fontSize: 13, fontWeight: '600', color: '#1C1C1E', marginBottom: 6, marginTop: 12 },
+  modalTitulo: { fontSize: 18, fontWeight: '500', color: '#302C28', marginBottom: 16 },
+  modalLabel: { fontSize: 13, fontWeight: '600', color: '#302C28', marginBottom: 6, marginTop: 12, lineHeight: 19 },
   modalInput: {
-    backgroundColor: '#F7F6F3', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
-    fontSize: 15, color: '#1C1C1E', borderWidth: 1, borderColor: '#E8E4DD',
+    backgroundColor: '#F7F5F0', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 15, color: '#302C28', borderWidth: 1, borderColor: '#EAE5DC',
   },
   modalBtnRow: { flexDirection: 'row', gap: 12, marginTop: 24 },
   modalBtnCancelar: {
     flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center',
-    backgroundColor: '#F0EEE9',
+    backgroundColor: '#F1EDE5',
   },
-  modalBtnCancelarText: { fontSize: 15, fontWeight: '700', color: '#6B6860' },
+  modalBtnCancelarText: { fontSize: 15, fontWeight: '500', color: '#756E66', lineHeight: 22 },
   modalBtnConfirmar: {
     flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center',
-    backgroundColor: '#3D5A80',
+    backgroundColor: '#497363',
   },
-  modalBtnConfirmarText: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
-  safe: { flex: 1, backgroundColor: '#F5F7FA' },
+  modalBtnConfirmarText: { fontSize: 15, fontWeight: '500', color: '#FFFFFF', lineHeight: 22 },
+  safe: { flex: 1, backgroundColor: '#F7F5F0' },
   scrollInner: { padding: 20, paddingBottom: 50 },
   loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32, gap: 12 },
-  erroTitulo: { fontSize: 17, fontWeight: '700', color: '#1C1C1E', textAlign: 'center' },
-  erroTexto: { fontSize: 14, color: '#6B6860', textAlign: 'center', lineHeight: 20 },
+  erroTitulo: { fontSize: 17, fontWeight: '500', color: '#302C28', textAlign: 'center' },
+  erroTexto: { fontSize: 14, color: '#756E66', textAlign: 'center', lineHeight: 20 },
 
   // Header — moldura em 3 linhas (grossa + fina + fina) ao redor de todo o
   // cabeçalho (foto de fundo) e, dentro dele, ao redor do avatar também,
   // pra criar contraste/limite nítido entre as duas imagens (item 9).
-  headerMolduraGrossa: {
-    borderRadius: 24,
-    borderWidth: 3.5, borderColor: '#3D5A80',
-    padding: 3,
+  // Moldura tripla: fina · grossa (3 dp ≈ 0,5 mm) · fina — a mesma dos
+  // botões da Início e das barrinhas de horário.
+  headerMolduraExterna: {
+    borderRadius: 23,
+    borderWidth: 1, borderColor: '#A8CBBA',
+    padding: 2,
     marginBottom: 24,
-    shadowColor: '#1A2D45',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 6,
+    backgroundColor: '#FDFCFA',
+    shadowColor: '#4E4941',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    elevation: 3,
   },
-  headerMolduraFina: {
-    borderRadius: 21,
-    borderWidth: 1, borderColor: '#3D5A80',
+  headerMolduraCentral: {
+    borderRadius: 20,
+    borderWidth: 3, borderColor: '#497363',
     padding: 2,
   },
+  headerMolduraInterna: {
+    borderRadius: 15,
+    borderWidth: 1, borderColor: '#A8CBBA',
+    overflow: 'hidden',
+  },
   headerCard: {
-    borderRadius: 19,
+    borderRadius: 14,
     overflow: 'hidden',
     minHeight: 200,
   },
   headerCapaImg: { ...StyleSheet.absoluteFillObject },
-  headerCapaVazia: { ...StyleSheet.absoluteFillObject, backgroundColor: '#3D5A80' },
+  headerCapaVazia: { ...StyleSheet.absoluteFillObject, backgroundColor: '#6B9E8A' },
   headerOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(26,45,69,0.38)',
+    backgroundColor: 'rgba(48,44,40,0.30)',
   },
   headerCapaLoadingOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -1408,15 +1418,23 @@ const st = StyleSheet.create({
     padding: 28,
     alignItems: 'center',
   },
+  // Avatar: anel de papel por fora, filete verde por dentro — o mesmo par
+  // do cabeçalho, em escala menor.
   avatarMolduraGrossa: {
-    borderRadius: 42,
-    borderWidth: 3, borderColor: '#FFFFFF',
-    padding: 2,
+    borderRadius: 44,
+    borderWidth: 1, borderColor: '#FDFCFA',
+    backgroundColor: '#FDFCFA',
+    padding: 4,
     marginBottom: 6,
+    shadowColor: '#4E4941',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.14,
+    shadowRadius: 14,
+    elevation: 4,
   },
   avatarMolduraFina: {
     borderRadius: 39,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.7)',
+    borderWidth: 1, borderColor: '#A8CBBA',
     padding: 1,
   },
   avatar: {
@@ -1432,20 +1450,19 @@ const st = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
   },
   avatarText: {
-    fontSize: 24, fontWeight: '700', color: '#FFFFFF',
+    fontSize: 24, fontWeight: '500', color: '#FFFFFF',
   },
   avatarHint: {
     fontSize: 11, color: 'rgba(255,255,255,0.85)', marginBottom: 8,
   },
   nomeHeader: {
-    fontSize: 22, fontWeight: '700', color: '#FFFFFF',
-    textShadowColor: 'rgba(0,0,0,0.4)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3,
+    fontSize: 22, fontWeight: '500', color: '#FFFFFF',
   },
-  crpHeader: { fontSize: 13, color: 'rgba(255,255,255,0.9)', marginTop: 4 },
+  crpHeader: { fontSize: 13, color: 'rgba(255,255,255,0.9)', marginTop: 4, lineHeight: 19 },
 
   // Seção
   sectionTitle: {
-    fontSize: 17, fontWeight: '700', color: '#1C1C1E',
+    fontSize: 17, fontWeight: '500', color: '#302C28',
     marginBottom: 14, marginTop: 8,
   },
   sectionTitleRow: {
@@ -1455,81 +1472,81 @@ const st = StyleSheet.create({
   // Stats
   statsRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
   statCard: {
-    flex: 1, backgroundColor: '#FFFFFF', borderRadius: 14,
+    flex: 1, backgroundColor: '#FDFCFA', borderRadius: 14,
     padding: 18, alignItems: 'center',
-    borderWidth: 1, borderColor: '#E8E4DD',
+    borderWidth: 1, borderColor: '#EAE5DC',
   },
-  statCardAlerta: { backgroundColor: '#FCEBEA', borderColor: '#F0C4C0' },
-  statCardAtencao: { backgroundColor: '#FFF3E0', borderColor: '#F0D9A8' },
-  statCardOk: { backgroundColor: '#E8F5E9', borderColor: '#B7DDB9' },
-  statNumber: { fontSize: 20, fontWeight: '700', color: '#3D5A80' },
-  statNumberAlerta: { color: '#C0392B' },
-  statNumberAtencao: { color: '#B4780A' },
-  statNumberOk: { color: '#2E7D32' },
-  statLabel: { fontSize: 12, color: '#6B6860', marginTop: 4 },
+  statCardAlerta: { backgroundColor: '#F1E4E3', borderColor: '#E3C9C7' },
+  statCardAtencao: { backgroundColor: '#F2E9DC', borderColor: '#E3D5BC' },
+  statCardOk: { backgroundColor: '#E2EFE8', borderColor: '#C3DFCF' },
+  statNumber: { fontSize: 20, fontWeight: '500', color: '#497363' },
+  statNumberAlerta: { color: '#975451' },
+  statNumberAtencao: { color: '#7D6540' },
+  statNumberOk: { color: '#44745B' },
+  statLabel: { fontSize: 12, color: '#756E66', marginTop: 4, lineHeight: 17 },
 
   // Info rows
   infoRow: {
     flexDirection: 'row', justifyContent: 'space-between',
-    paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#E8E4DD',
+    paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#EAE5DC',
   },
-  infoLabel: { fontSize: 14, color: '#6B6860' },
-  infoValue: { fontSize: 14, fontWeight: '600', color: '#1C1C1E' },
-  infoValueAlerta: { color: '#C0392B' },
+  infoLabel: { fontSize: 14, color: '#756E66', lineHeight: 20 },
+  infoValue: { fontSize: 14, fontWeight: '600', color: '#302C28', lineHeight: 20 },
+  infoValueAlerta: { color: '#975451' },
   creditosAviso: {
-    fontSize: 12, color: '#C0392B', lineHeight: 17, marginTop: -6, marginBottom: 12,
+    fontSize: 12, color: '#975451', lineHeight: 17, marginTop: -6, marginBottom: 12,
   },
   creditosDetalheBox: {
-    backgroundColor: '#FFFFFF', borderRadius: 14, padding: 14,
-    borderWidth: 1, borderColor: '#E8E4DD', marginBottom: 8, gap: 4,
+    backgroundColor: '#FDFCFA', borderRadius: 14, padding: 14,
+    borderWidth: 1, borderColor: '#EAE5DC', marginBottom: 8, gap: 4,
   },
 
   // Assinatura
   assinaturaBox: {
-    backgroundColor: '#FFFFFF', borderRadius: 14, padding: 14,
-    borderWidth: 1, borderColor: '#E8E4DD', alignItems: 'center', gap: 10,
+    backgroundColor: '#FDFCFA', borderRadius: 14, padding: 14,
+    borderWidth: 1, borderColor: '#EAE5DC', alignItems: 'center', gap: 10,
     marginBottom: 8,
   },
   assinaturaImg: { width: '100%', height: 80 },
-  assinaturaVazia: { fontSize: 13, color: '#A5A19A', fontStyle: 'italic' },
+  assinaturaVazia: { fontSize: 13, color: '#8C857B', fontStyle: 'italic', lineHeight: 19 },
   assinaturaBtn: {
-    borderWidth: 1, borderColor: '#3D5A80', borderRadius: 10,
+    borderWidth: 1, borderColor: '#497363', borderRadius: 10,
     paddingVertical: 10, paddingHorizontal: 16,
   },
-  assinaturaBtnTexto: { color: '#3D5A80', fontWeight: '700', fontSize: 13 },
+  assinaturaBtnTexto: { color: '#497363', fontWeight: '500', fontSize: 13, lineHeight: 19 },
 
   // Edit
   editBtn: { paddingVertical: 4, paddingLeft: 12 },
   mensagensLink: {
-    backgroundColor: '#FFFFFF', borderRadius: 14, padding: 16, marginBottom: 20,
+    backgroundColor: '#FDFCFA', borderRadius: 14, padding: 16, marginBottom: 20,
   },
-  mensagensLinkText: { fontSize: 15, fontWeight: '700', color: '#3D5A80' },
-  editBtnText: { fontSize: 14, color: '#3D5A80', fontWeight: '600' },
+  mensagensLinkText: { fontSize: 15, fontWeight: '500', color: '#497363', lineHeight: 22 },
+  editBtnText: { fontSize: 14, color: '#497363', fontWeight: '600', lineHeight: 20 },
 
   sairBtn: { alignItems: 'center', marginTop: 24 },
-  sairBtnText: { fontSize: 14, color: '#c0392b', fontWeight: '600' },
+  sairBtnText: { fontSize: 14, color: '#975451', fontWeight: '600', lineHeight: 20 },
 
   exportarBtn: {
-    backgroundColor: '#FFFFFF', borderRadius: 14, padding: 16,
-    alignItems: 'center', marginTop: 12, borderWidth: 1, borderColor: '#E8E4DD',
+    backgroundColor: '#FDFCFA', borderRadius: 14, padding: 16,
+    alignItems: 'center', marginTop: 12, borderWidth: 1, borderColor: '#EAE5DC',
   },
-  exportarBtnText: { fontSize: 14, color: '#3D5A80', fontWeight: '700' },
+  exportarBtnText: { fontSize: 14, color: '#497363', fontWeight: '500', lineHeight: 20 },
   excluirContaBtn: { alignItems: 'center', marginTop: 16, paddingBottom: 8 },
-  excluirContaBtnText: { fontSize: 12, color: '#999', fontWeight: '600', textDecorationLine: 'underline' },
+  excluirContaBtnText: { fontSize: 12, color: '#8C857B', fontWeight: '600', textDecorationLine: 'underline', lineHeight: 17 },
 
   // Edit mode
-  label: { fontSize: 13, fontWeight: '600', color: '#1C1C1E', marginBottom: 6, marginTop: 14 },
+  label: { fontSize: 13, fontWeight: '600', color: '#302C28', marginBottom: 6, marginTop: 14, lineHeight: 19 },
   input: {
-    backgroundColor: '#FFFFFF', borderRadius: 12, paddingHorizontal: 16,
-    paddingVertical: 12, fontSize: 15, color: '#1C1C1E',
-    borderWidth: 1, borderColor: '#E8E4DD',
+    backgroundColor: '#FDFCFA', borderRadius: 12, paddingHorizontal: 16,
+    paddingVertical: 12, fontSize: 15, color: '#302C28',
+    borderWidth: 1, borderColor: '#EAE5DC',
   },
-  inputSelecionadoTexto: { fontSize: 15, color: '#1C1C1E' },
-  inputPlaceholderTexto: { fontSize: 15, color: '#B0ADA6' },
+  inputSelecionadoTexto: { fontSize: 15, color: '#302C28', lineHeight: 22 },
+  inputPlaceholderTexto: { fontSize: 15, color: '#756E66', lineHeight: 22 },
   btnRow: { flexDirection: 'row', gap: 12, marginTop: 20 },
   btn: { flex: 1, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
-  btnCancel: { backgroundColor: '#F0F0F0' },
-  btnCancelText: { fontSize: 15, fontWeight: '600', color: '#6B6860' },
-  btnSave: { backgroundColor: '#3D5A80' },
-  btnSaveText: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
+  btnCancel: { backgroundColor: '#F1EDE5' },
+  btnCancelText: { fontSize: 15, fontWeight: '600', color: '#756E66', lineHeight: 22 },
+  btnSave: { backgroundColor: '#497363' },
+  btnSaveText: { fontSize: 15, fontWeight: '500', color: '#FFFFFF', lineHeight: 22 },
 });

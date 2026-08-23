@@ -1,35 +1,44 @@
 // Testes de integração da pseudonimização em buscaChat.js — diferente de
 // pseudonimizacao.test.js (que testa o algoritmo de redigir/restaurar em
-// isolamento), estes cobrem a FIAÇÃO: que montarContextoPaciente e
+// isolamento), estes cobrem a FIAÇÃO: que montarContextoSelecionados e
 // chamarBuscaChat realmente aplicam redigir/restaurar antes de qualquer
-// coisa sair pro DeepSeek, e não deixam o nome vazar por nenhum caminho
-// (cabeçalho, corpo do histórico clínico, ou mensagens do chat).
+// coisa sair pro DeepSeek, com marcadores indexados por pessoa acumulados
+// na sessão de redação da janela, e que o histórico de mensagens da
+// conversa é de fato reenviado a cada chamada (memória dentro da janela).
 jest.mock('../database', () => ({
   getSessions: jest.fn(),
   getRecords: jest.fn(),
-  listarPacientes: jest.fn(),
 }));
 jest.mock('../supabase', () => ({
   supabase: { functions: { invoke: jest.fn() } },
 }));
 
-const { getSessions, getRecords, listarPacientes } = require('../database');
+const { getSessions, getRecords } = require('../database');
 const { supabase } = require('../supabase');
-const { montarContextoPaciente, chamarBuscaChat, identificarPacienteNaPergunta } = require('../buscaChat');
+const {
+  montarContextoSelecionados, chamarBuscaChat, estimarCustoResposta, criarSessaoRedacao,
+} = require('../buscaChat');
 
-const paciente = {
+const maria = {
   id: 'p1',
   nome: 'Maria Aparecida Souza',
   nascimento: '1990-05-20',
   data_inicio: '2023-01-10',
+};
+const joao = {
+  id: 'p2',
+  nome: 'João Pereira Lima',
+  nascimento: '1985-02-11',
+  data_inicio: '2022-06-01',
+  eh_supervisionando: true,
 };
 
 beforeEach(() => {
   jest.clearAllMocks();
 });
 
-describe('montarContextoPaciente', () => {
-  it('nunca inclui o nome real nem a data de nascimento — só [ANALISANTE] e idade', async () => {
+describe('montarContextoSelecionados — uma pessoa', () => {
+  it('nunca inclui o nome real nem a data de nascimento — só [PESSOA 1] e idade', async () => {
     getSessions.mockResolvedValue([
       { date: '2026-07-20', type: 'presencial', transcript: 'A: Como você está, Maria?\nP: Estou ansiosa, doutor.' },
     ]);
@@ -37,22 +46,16 @@ describe('montarContextoPaciente', () => {
       { date: '2026-07-15', type: 'estudo', title: 'Anotação', content: '<p>Maria mencionou episódios de insônia.</p>' },
     ]);
 
-    const contexto = await montarContextoPaciente(paciente);
+    const { contexto } = await montarContextoSelecionados([maria], criarSessaoRedacao());
 
     expect(contexto).not.toMatch(/maria/i);
     expect(contexto).not.toMatch(/1990/);
     expect(contexto).not.toMatch(/Nascimento/);
-    expect(contexto).toContain('[ANALISANTE]');
+    expect(contexto).toContain('[PESSOA 1]');
     expect(contexto).toMatch(/Idade: \d+ anos/);
   });
-});
 
-describe('montarContextoPaciente — envia todo o histórico, sem seleção por relevância', () => {
   it('inclui uma sessão bem antiga mesmo com dezenas de sessões recentes na frente — sem corte de quantidade', async () => {
-    // 40 sessões recentes + 1 sessão antiga sem nenhuma palavra em comum
-    // com as outras — decisão deliberada de não selecionar/truncar por
-    // relevância: a ferramenta manda o máximo de acesso ao material, não
-    // "economiza" adivinhando o que parece relevante pra pergunta.
     const sessoesRecentes = Array.from({ length: 40 }, (_, i) => ({
       date: `2026-0${(i % 9) + 1}-01`,
       type: 'presencial',
@@ -64,69 +67,90 @@ describe('montarContextoPaciente — envia todo o histórico, sem seleção por 
     ]);
     getRecords.mockResolvedValue([]);
 
-    const contexto = await montarContextoPaciente(paciente);
+    const { contexto } = await montarContextoSelecionados([maria], criarSessaoRedacao());
 
     expect(contexto).toMatch(/antiquíssima/i);
   });
 });
 
-describe('identificarPacienteNaPergunta (item 11 — nome com acento)', () => {
-  it('acha o analisante mesmo quando a pergunta digita o nome sem o acento que o cadastro tem', async () => {
-    listarPacientes.mockResolvedValue([{ id: 'x1', nome: 'João Amélio Simões' }]);
-    const achado = await identificarPacienteNaPergunta('como está o joao hoje?');
-    expect(achado?.id).toBe('x1');
-  });
+describe('montarContextoSelecionados — múltiplas pessoas', () => {
+  it('usa marcador indexado por pessoa e restaura cada nome no lugar certo', async () => {
+    getSessions.mockImplementation(async (id) => (
+      id === 'p1'
+        ? [{ date: '2026-07-20', type: 'presencial', transcript: 'Maria falou sobre o trabalho.' }]
+        : [{ date: '2026-07-18', type: 'online', transcript: 'João comentou sobre um caso supervisionado.' }]
+    ));
+    getRecords.mockResolvedValue([]);
 
-  it('acha o analisante mesmo quando o cadastro tem acento e a pergunta também, com grafias diferentes', async () => {
-    listarPacientes.mockResolvedValue([{ id: 'x2', nome: 'Amelia' }]);
-    const achado = await identificarPacienteNaPergunta('como a amélia está indo?');
-    expect(achado?.id).toBe('x2');
-  });
+    const sessaoRedacao = criarSessaoRedacao();
+    const { contexto } = await montarContextoSelecionados([maria, joao], sessaoRedacao);
 
-  it('retorna ambíguo (não escolhe nenhum) quando dois analisantes têm o mesmo primeiro nome', async () => {
-    listarPacientes.mockResolvedValue([
-      { id: 'a1', nome: 'Ana Silva' },
-      { id: 'a2', nome: 'Ana Costa' },
-    ]);
-    const achado = await identificarPacienteNaPergunta('como a ana está?');
-    expect(achado?.ambiguo).toBe(true);
-    expect(achado?.candidatos).toHaveLength(2);
-  });
+    expect(contexto).toContain('[PESSOA 1]');
+    expect(contexto).toContain('[PESSOA 2]');
+    expect(contexto).not.toMatch(/maria/i);
+    expect(contexto).not.toMatch(/joão|joao/i);
 
-  it('nome completo desambigua entre dois analisantes de mesmo primeiro nome', async () => {
-    listarPacientes.mockResolvedValue([
-      { id: 'a1', nome: 'Ana Silva' },
-      { id: 'a2', nome: 'Ana Costa' },
-    ]);
-    const achado = await identificarPacienteNaPergunta('como a ana silva está?');
-    expect(achado?.id).toBe('a1');
+    const respostaBruta = '[PESSOA 1] apresenta melhora, enquanto [PESSOA 2] trouxe uma questão técnica.';
+    expect(sessaoRedacao.restaurar(respostaBruta)).toBe(
+      'Maria Aparecida Souza apresenta melhora, enquanto João Pereira Lima trouxe uma questão técnica.'
+    );
   });
+});
 
-  it('retorna null quando nenhum analisante bate com a pergunta', async () => {
-    listarPacientes.mockResolvedValue([{ id: 'x1', nome: 'Carlos' }]);
-    const achado = await identificarPacienteNaPergunta('como estão as coisas em geral?');
-    expect(achado).toBeNull();
+describe('criarSessaoRedacao — memória entre perguntas da mesma janela', () => {
+  it('continua protegendo o nome de uma pessoa já mencionada mesmo se ela for desmarcada depois', async () => {
+    getSessions.mockResolvedValue([]);
+    getRecords.mockResolvedValue([]);
+
+    const sessaoRedacao = criarSessaoRedacao();
+    await montarContextoSelecionados([maria, joao], sessaoRedacao);
+
+    // segunda pergunta: só a Maria continua selecionada, João foi desmarcado,
+    // mas o histórico da conversa ainda cita o nome dele numa mensagem antiga
+    const mensagemAntiga = 'João comentou algo parecido antes.';
+    expect(sessaoRedacao.redigir(mensagemAntiga)).toBe('[PESSOA 2] comentou algo parecido antes.');
   });
 });
 
 describe('chamarBuscaChat', () => {
-  it('redige o nome digitado na própria pergunta antes de mandar pro DeepSeek, e restaura na resposta', async () => {
+  it('reenvia o histórico inteiro da conversa (memória dentro da janela) e restaura o nome na resposta', async () => {
+    getSessions.mockResolvedValue([]);
+    getRecords.mockResolvedValue([]);
     supabase.functions.invoke.mockResolvedValue({
-      data: { resposta: '[ANALISANTE] relatou melhora na última sessão, mas ainda apresenta ansiedade.', custo: 0.00021 },
+      data: { resposta: '[PESSOA 1] relatou melhora na última sessão, mas ainda apresenta ansiedade.', custo: 0.00021 },
       error: null,
     });
 
-    const contexto = '`Histórico de [ANALISANTE] (mais recentes primeiro):\nIdade: 35 anos\n  [20/07/2026] Sessão: A: [ANALISANTE], como você está?';
-    const historico = [{ role: 'user', content: 'Como está a Maria hoje?' }];
+    const sessaoRedacao = criarSessaoRedacao();
+    const { contexto } = await montarContextoSelecionados([maria], sessaoRedacao);
+    const historico = [
+      { role: 'user', content: 'Como está a Maria hoje?' },
+      { role: 'assistant', content: 'Maria Aparecida Souza segue estável.' },
+      { role: 'user', content: 'E na sessão anterior, como ela estava?' },
+    ];
 
-    const resultado = await chamarBuscaChat(contexto, historico, paciente);
+    const resultado = await chamarBuscaChat(historico, contexto, sessaoRedacao);
 
     const payloadEnviado = supabase.functions.invoke.mock.calls[0][1].body;
-    const mensagemUsuario = payloadEnviado.mensagens.find((m) => m.role === 'user');
+    expect(payloadEnviado.mensagens).toHaveLength(4); // system + 3 do histórico
+    const mensagensUsuario = payloadEnviado.mensagens.filter((m) => m.role !== 'system');
 
-    expect(mensagemUsuario.content).not.toMatch(/maria/i);
-    expect(mensagemUsuario.content).toContain('[ANALISANTE]');
+    for (const m of mensagensUsuario) {
+      expect(m.content).not.toMatch(/maria/i);
+    }
+    expect(mensagensUsuario[0].content).toContain('[PESSOA 1]');
     expect(resultado.texto).toContain('Maria Aparecida Souza');
-    expect(resultado.texto).not.toContain('[ANALISANTE]');
+    expect(resultado.texto).not.toContain('[PESSOA 1]');
+  });
+});
+
+describe('estimarCustoResposta', () => {
+  it('cresce com o tamanho do histórico da conversa', () => {
+    const custoPequeno = estimarCustoResposta({ contexto: 'abc', historico: [{ content: 'oi' }] });
+    const custoGrande = estimarCustoResposta({
+      contexto: 'abc',
+      historico: [{ content: 'a'.repeat(10000) }, { content: 'oi' }],
+    });
+    expect(custoGrande).toBeGreaterThan(custoPequeno);
   });
 });

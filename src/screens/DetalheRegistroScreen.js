@@ -16,15 +16,17 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { WebView } from 'react-native-webview';
 import { deleteRecord } from '../services/database';
 import { mensagemDeErro } from '../services/erros';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // ⚠️ NOVO: Labels de autor
 const AUTHOR_LABELS = {
-  analyst:   { icon: '🧑‍⚕️', label: 'Analista',       color: '#4A90D9', bg: '#EBF3FB' },
-  analysand: { icon: '🗣️', label: 'Analisante',     color: '#F57C00', bg: '#FFF8E1' },
-  alternado: { icon: '🔄', label: 'Alternado (A:/P:)', color: '#7C3AED', bg: '#F0E8FF' },
+  analyst:   { icon: 'medkit-outline',        label: 'Analista',       color: '#4D6B88', bg: '#E3EAF1' },
+  analysand: { icon: 'chatbubble-outline',    label: 'Analisante',     color: '#7D6540', bg: '#F2E9DC' },
+  alternado: { icon: 'swap-horizontal-outline', label: 'Alternado (A:/P:)', color: '#675A9A', bg: '#E2DFEF' },
 };
 
 export default function DetalheRegistroScreen() {
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const route = useRoute();
   const { record } = route.params;
@@ -42,10 +44,10 @@ export default function DetalheRegistroScreen() {
           <TouchableOpacity
             onPress={() => navigation.navigate('AddRecord', { record, patientId: record.patient_id })}
           >
-            <Ionicons name="pencil-outline" size={22} color="#4A90D9" />
+            <Ionicons name="pencil-outline" size={22} color="#4D6B88" />
           </TouchableOpacity>
           <TouchableOpacity onPress={handleDelete}>
-            <Ionicons name="trash-outline" size={22} color="#e53e3e" />
+            <Ionicons name="trash-outline" size={22} color="#975451" />
           </TouchableOpacity>
         </View>
       ),
@@ -104,9 +106,9 @@ export default function DetalheRegistroScreen() {
 
   const renderTypeBadge = () => {
     const tipos = {
-      text:  { label: 'Texto',   icon: 'document-text-outline', color: '#6c63ff' },
-      file:  { label: 'Arquivo', icon: 'attach-outline',        color: '#3182ce' },
-      image: { label: 'Imagem',  icon: 'image-outline',         color: '#38a169' },
+      text:  { label: 'Texto',   icon: 'document-text-outline', color: '#497363' },
+      file:  { label: 'Arquivo', icon: 'attach-outline',        color: '#497363' },
+      image: { label: 'Imagem',  icon: 'image-outline',         color: '#44745B' },
     };
     const tipo = tipos[record.type] || tipos.text;
     return (
@@ -120,13 +122,13 @@ export default function DetalheRegistroScreen() {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#6c63ff" />
+        <ActivityIndicator size="large" color="#497363" />
       </View>
     );
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}>
       {/* Cabeçalho */}
       <View style={styles.header}>
         <Text style={styles.title}>{record.title || 'Sem título'}</Text>
@@ -135,7 +137,7 @@ export default function DetalheRegistroScreen() {
           {/* ⚠️ NOVO: Badge de autor */}
           <View style={[styles.badge, { backgroundColor: authorInfo.bg }]}>
             <Text style={[styles.badgeText, { color: authorInfo.color }]}>
-              {authorInfo.icon} {authorInfo.label}
+              <Ionicons name={authorInfo.icon} size={11} color={authorInfo.color} />{' '}{authorInfo.label}
             </Text>
           </View>
           <Text style={styles.date}>
@@ -158,8 +160,8 @@ export default function DetalheRegistroScreen() {
           {record.author === 'alternado' && (
             <View style={styles.alternadoHint}>
               <Text style={styles.alternadoHintText}>
-                🔄 Este registro contém falas alternadas entre analista (A:) e analisante (P:).
-              </Text>
+Este registro contém falas alternadas entre analista (A:) e analisante (P:).
+</Text>
             </View>
           )}
           <View style={styles.webviewContainer}>
@@ -177,7 +179,7 @@ export default function DetalheRegistroScreen() {
                       body {
                         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
                         font-size: 16px;
-                        color: #2d3748;
+                        color: #302C28;
                         line-height: 1.65;
                         padding: 0;
                         word-wrap: break-word;
@@ -193,7 +195,7 @@ export default function DetalheRegistroScreen() {
                       ul, ol { padding-left: 24px; margin-bottom: 10px; }
                       li { margin-bottom: 4px; line-height: 1.5; }
                       br { line-height: 0.8; }
-                      span { font-size: 16px; color: #2d3748; line-height: 1.65; }
+                      span { font-size: 16px; color: #302C28; line-height: 1.65; }
                     </style>
                   </head>
                   <body>
@@ -238,7 +240,7 @@ export default function DetalheRegistroScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Arquivo vinculado</Text>
           <View style={styles.fileBox}>
-            <Ionicons name="document-attach-outline" size={24} color="#3182ce" />
+            <Ionicons name="document-attach-outline" size={24} color="#497363" />
             <Text style={styles.fileUri} numberOfLines={2}>{record.file_uri}</Text>
           </View>
           <TouchableOpacity
@@ -254,7 +256,7 @@ export default function DetalheRegistroScreen() {
       {/* Sem conteúdo */}
       {!record.content && !record.file_uri ? (
         <View style={styles.emptyBox}>
-          <Ionicons name="archive-outline" size={48} color="#cbd5e0" />
+          <Ionicons name="archive-outline" size={48} color="#DDD6CA" />
           <Text style={styles.emptyText}>Nenhum conteúdo neste registro.</Text>
         </View>
       ) : null}
@@ -263,35 +265,35 @@ export default function DetalheRegistroScreen() {
 }
 
 const styles = StyleSheet.create({
-  container:    { flex: 1, backgroundColor: '#f7f8fc' },
+  container:    { flex: 1, backgroundColor: '#F7F5F0' },
   content:      { padding: 20, paddingBottom: 40 },
   centered:     { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header:       { marginBottom: 12 },
-  title:        { fontSize: 22, fontWeight: '700', color: '#1a202c', marginBottom: 8 },
+  title:        { fontSize: 22, fontWeight: '500', color: '#302C28', marginBottom: 8 },
   metaRow:      { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
   badge:        { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
-  badgeText:    { fontSize: 12, fontWeight: '600' },
-  date:         { fontSize: 13, color: '#718096' },
-  divider:      { height: 1, backgroundColor: '#e2e8f0', marginVertical: 16 },
+  badgeText: { fontSize: 12, fontWeight: '600', lineHeight: 17 },
+  date: { fontSize: 13, color: '#756E66', lineHeight: 19 },
+  divider:      { height: 1, backgroundColor: '#EAE5DC', marginVertical: 16 },
   section:      { marginBottom: 24 },
-  sectionLabel: { fontSize: 12, fontWeight: '700', color: '#a0aec0', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 },
+  sectionLabel: { fontSize: 12, fontWeight: '500', color: '#8C857B', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8, lineHeight: 17 },
 
   // ⚠️ NOVO
   alternadoHint: {
-    backgroundColor: '#F0E8FF', borderRadius: 8, padding: 10,
-    borderLeftWidth: 3, borderLeftColor: '#7C3AED', marginBottom: 12,
+    backgroundColor: '#E2DFEF', borderRadius: 8, padding: 10,
+    borderLeftWidth: 3, borderLeftColor: '#675A9A', marginBottom: 12,
   },
-  alternadoHintText: { fontSize: 12, color: '#5B21B6', fontStyle: 'italic' },
+  alternadoHintText: { fontSize: 12, color: '#675A9A', fontStyle: 'italic', lineHeight: 17 },
 
   webviewContainer: {
-    borderRadius: 12, overflow: 'hidden', backgroundColor: '#fff',
-    borderWidth: 1, borderColor: '#e2e8f0',
+    borderRadius: 12, overflow: 'hidden', backgroundColor: '#FDFCFA',
+    borderWidth: 1, borderColor: '#EAE5DC',
   },
-  image:        { width: '100%', height: 300, borderRadius: 12, backgroundColor: '#e2e8f0', marginBottom: 12 },
-  fileBox:      { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#ebf8ff', borderRadius: 10, padding: 14, marginBottom: 12 },
-  fileUri:      { flex: 1, fontSize: 13, color: '#2b6cb0' },
-  btnAbrir:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#3182ce', borderRadius: 10, padding: 14 },
-  btnAbrirTxt:  { color: '#fff', fontWeight: '700', fontSize: 15 },
+  image:        { width: '100%', height: 300, borderRadius: 12, backgroundColor: '#EAE5DC', marginBottom: 12 },
+  fileBox:      { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#E3EAF1', borderRadius: 10, padding: 14, marginBottom: 12 },
+  fileUri: { flex: 1, fontSize: 13, color: '#497363', lineHeight: 19 },
+  btnAbrir:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#497363', borderRadius: 10, padding: 14 },
+  btnAbrirTxt: { color: '#fff', fontWeight: '500', fontSize: 15, lineHeight: 22 },
   emptyBox:     { alignItems: 'center', marginTop: 60, gap: 12 },
-  emptyText:    { fontSize: 15, color: '#a0aec0' },
+  emptyText: { fontSize: 15, color: '#8C857B', lineHeight: 22 },
 });

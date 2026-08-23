@@ -1,4 +1,5 @@
 import React, { useCallback, useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import {
   Alert,
   ActivityIndicator,
@@ -26,6 +27,9 @@ import {
 import { mensagemDeErro } from '../services/erros';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
 import { TIPOS_EVENTO, infoTipoEvento, corTipoEvento, ehTipoGrupo, tipoTemPacienteUnico } from '../services/tiposEvento';
+import { dataBRParaISO, dataISOParaBR } from '../services/validacao';
+
+const SEMANAS_CICLO = [1, 2, 3, 4];
 
 const DIAS = [
   { value: 0, label: 'Domingo' },
@@ -49,6 +53,40 @@ function horarioValido(horario) {
   return /^([01]\d|2[0-3]):([0-5]\d)$/.test(horario);
 }
 
+function formatarData(texto, setter) {
+  const numeros = texto.replace(/\D/g, '').slice(0, 8);
+  let formatado = numeros;
+  if (numeros.length > 2 && numeros.length <= 4) {
+    formatado = `${numeros.slice(0, 2)}/${numeros.slice(2)}`;
+  } else if (numeros.length > 4) {
+    formatado = `${numeros.slice(0, 2)}/${numeros.slice(2, 4)}/${numeros.slice(4)}`;
+  }
+  setter(formatado);
+}
+
+function dataValida(dataBR) {
+  const iso = dataBRParaISO(dataBR);
+  if (!iso) return false;
+  const [ano, mes, dia] = iso.split('-').map(Number);
+  const data = new Date(ano, mes - 1, dia);
+  return data.getFullYear() === ano && data.getMonth() === mes - 1 && data.getDate() === dia;
+}
+
+function diaSemanaDeISO(dataISO) {
+  const [ano, mes, dia] = dataISO.split('-').map(Number);
+  return new Date(ano, mes - 1, dia).getDay();
+}
+
+// Horário de supervisão (individual ou em grupo) só pode envolver
+// supervisionandos — analisante não pode aparecer nessa lista, e
+// vice-versa pros tipos de sessão.
+function pacientesElegiveis(tipoEvento, pacientes) {
+  if (tipoEvento === 'supervisao_individual' || tipoEvento === 'supervisao_grupo') {
+    return pacientes.filter((p) => p.eh_supervisionando);
+  }
+  return pacientes.filter((p) => p.eh_analisante);
+}
+
 function horarioParaMinutos(horario) {
   const [horas, minutos] = horario.split(':').map(Number);
   return horas * 60 + minutos;
@@ -60,17 +98,17 @@ function obterDiaLabel(dayOfWeek) {
 }
 
 function corDaModalidade(modality) {
-  if (modality === 'online') return '#C8E6C9';
-  if (modality === 'presencial') return '#A5D6A7';
+  if (modality === 'online') return '#C3DFCF';
+  if (modality === 'presencial') return '#C3DFCF';
 
-  return '#FFE0B2';
+  return '#F2E9DC';
 }
 
 function modalidadeLabel(modality) {
-  if (modality === 'online') return '💻 Online';
-  if (modality === 'presencial') return '🏠 Presencial';
+  if (modality === 'online') return 'Online';
+  if (modality === 'presencial') return 'Presencial';
 
-  return '🏠 💻 Ambos';
+  return 'Ambos';
 }
 
 export default function DisponibilidadeScreen() {
@@ -97,6 +135,14 @@ export default function DisponibilidadeScreen() {
   const [novoAnalisanteNome, setNovoAnalisanteNome] = useState('');
   const [salvando, setSalvando] = useState(false);
   const [excluindoId, setExcluindoId] = useState(null);
+
+  // ── Recorrência: avulso (uma data só) ou recorrente (semanal, quinzenal,
+  // ou personalizada — semanas escolhidas dentro de um ciclo de 4) ──
+  const [escopo, setEscopo] = useState('recorrente');
+  const [recorrenciaTipo, setRecorrenciaTipo] = useState('semanal');
+  const [dataAvulsa, setDataAvulsa] = useState('');
+  const [dataReferencia, setDataReferencia] = useState('');
+  const [semanasAtivas, setSemanasAtivas] = useState(SEMANAS_CICLO);
 
   /**
    * Atualiza a tela sempre que ela ganha foco, e trata os parâmetros
@@ -176,6 +222,17 @@ export default function DisponibilidadeScreen() {
     setAnalisanteNome('');
     setMostrarNovoAnalisante(false);
     setNovoAnalisanteNome('');
+    setEscopo('recorrente');
+    setRecorrenciaTipo('semanal');
+    setDataAvulsa('');
+    setDataReferencia('');
+    setSemanasAtivas(SEMANAS_CICLO);
+  }
+
+  function alternarSemanaAtiva(semana) {
+    setSemanasAtivas((atual) =>
+      atual.includes(semana) ? atual.filter((s) => s !== semana) : [...atual, semana].sort()
+    );
   }
 
   function alternarParticipante(patientId) {
@@ -206,7 +263,15 @@ export default function DisponibilidadeScreen() {
     }
 
     try {
-      const criado = await addPatient?.(nome);
+      // Criado a partir de um horário de supervisão individual: marca como
+      // supervisionando (não analisante) — sem isso, ia sempre parar como
+      // analisante por padrão, mesmo quando quem está sendo cadastrada é
+      // uma supervisionanda.
+      const ehSupervisao = tipoEvento === 'supervisao_individual';
+      const criado = await addPatient?.(nome, {
+        ehAnalisante: !ehSupervisao,
+        ehSupervisionando: ehSupervisao,
+      });
       const novoId = criado?.id || null;
 
       setAnalisanteId(novoId);
@@ -256,13 +321,51 @@ export default function DisponibilidadeScreen() {
       Alert.alert('Título obrigatório', 'Dê um título pro evento.');
       return;
     }
+    // Sessão/supervisão individual sem paciente vinculado sempre quebrava
+    // ao abrir na Agenda ("null value in column patient_id") — o campo
+    // dizia "(opcional)" mas o compromisso materializado exige um
+    // paciente. Passa a ser obrigatório pra estes dois tipos.
+    if (tipoTemPacienteUnico(tipoEvento) && !analisanteId) {
+      Alert.alert(
+        'Obrigatório',
+        tipoEvento === 'supervisao_individual'
+          ? 'Selecione o supervisionando deste horário.'
+          : 'Selecione o analisante deste horário.'
+      );
+      return;
+    }
+
+    // ── Recorrência: avulso precisa de uma data válida; quinzenal e
+    // personalizada precisam da data da 1ª sessão (âncora do ciclo de 4
+    // semanas); personalizada também precisa de ao menos 1 semana marcada.
+    if (escopo === 'avulso' && !dataValida(dataAvulsa)) {
+      Alert.alert('Data inválida', 'Informe a data desse horário avulso no formato DD/MM/AAAA.');
+      return;
+    }
+    if (escopo === 'recorrente' && (recorrenciaTipo === 'quinzenal' || recorrenciaTipo === 'personalizada') && !dataValida(dataReferencia)) {
+      Alert.alert('Data inválida', 'Informe a data da 1ª sessão no formato DD/MM/AAAA.');
+      return;
+    }
+    if (escopo === 'recorrente' && recorrenciaTipo === 'personalizada' && semanasAtivas.length === 0) {
+      Alert.alert('Semanas obrigatórias', 'Marque ao menos uma semana do ciclo pra recorrência personalizada.');
+      return;
+    }
+
+    const diaSemanaEfetivo = escopo === 'avulso' ? diaSemanaDeISO(dataBRParaISO(dataAvulsa)) : diaSemana;
+    const recorrencia = escopo === 'avulso'
+      ? { tipo: 'avulso', data_avulsa: dataBRParaISO(dataAvulsa) }
+      : recorrenciaTipo === 'semanal'
+        ? { tipo: 'semanal' }
+        : recorrenciaTipo === 'quinzenal'
+          ? { tipo: 'quinzenal', data_referencia: dataBRParaISO(dataReferencia) }
+          : { tipo: 'personalizada', data_referencia: dataBRParaISO(dataReferencia), semanas_ativas: semanasAtivas };
 
     setSalvando(true);
     let ocupado, livres, modalidadeNormalizada;
     try {
       ({ ocupado, livres, modalidadeNormalizada } = await verificarConflitoSlot({
         id: slotEditandoId,
-        day_of_week: diaSemana,
+        day_of_week: diaSemanaEfetivo,
         start_time: inicio,
         end_time: fim,
         modality: modalidade,
@@ -286,7 +389,7 @@ export default function DisponibilidadeScreen() {
       try {
         await aplicarSlot({
           id: slotEditandoId,
-          day_of_week: diaSemana,
+          day_of_week: diaSemanaEfetivo,
           start_time: inicio,
           end_time: fim,
           modality: modalidadeNormalizada,
@@ -295,6 +398,7 @@ export default function DisponibilidadeScreen() {
           tipo: tipoEvento,
           titulo: tipoEvento === 'outros' ? titulo.trim() : null,
           participantes: ehTipoGrupo(tipoEvento) ? participantesIds : [],
+          recorrencia,
         });
         await carregarSlots();
         limparFormulario();
@@ -338,6 +442,13 @@ export default function DisponibilidadeScreen() {
     setAnalisanteNome(slot.patient_name || '');
     setMostrarNovoAnalisante(false);
     setNovoAnalisanteNome('');
+
+    const tipoRecorrencia = slot.recorrencia_tipo || 'semanal';
+    setEscopo(tipoRecorrencia === 'avulso' ? 'avulso' : 'recorrente');
+    setRecorrenciaTipo(tipoRecorrencia === 'avulso' ? 'semanal' : tipoRecorrencia);
+    setDataAvulsa(dataISOParaBR(slot.data_avulsa));
+    setDataReferencia(dataISOParaBR(slot.recorrencia_data_referencia));
+    setSemanasAtivas(slot.recorrencia_semanas_ativas?.length ? slot.recorrencia_semanas_ativas : SEMANAS_CICLO);
   }
 
   function confirmarExclusao(slot) {
@@ -429,7 +540,7 @@ export default function DisponibilidadeScreen() {
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
       <KeyboardAvoidingView
         style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -448,30 +559,112 @@ export default function DisponibilidadeScreen() {
             {slotEditandoId ? 'Editar disponibilidade' : 'Novo horário disponível'}
           </Text>
 
-          <Text style={styles.label}>Dia da semana</Text>
-
-          <View style={styles.diasContainer}>
-            {DIAS.map((dia) => (
+          <Text style={styles.label}>Avulso ou recorrente?</Text>
+          <View style={styles.modalidadeRow}>
+            {[{ valor: 'recorrente', label: 'Recorrente' }, { valor: 'avulso', label: 'Avulso (uma data só)' }].map((op) => (
               <TouchableOpacity
-                key={`day-${dia.value}`}
-                style={[
-                  styles.diaBtn,
-                  diaSemana === dia.value && styles.diaBtnAtivo,
-                ]}
-                onPress={() => setDiaSemana(dia.value)}
+                key={`escopo-${op.valor}`}
+                style={[styles.modalidadeBtn, escopo === op.valor && styles.modalidadeBtnAtivo]}
+                onPress={() => setEscopo(op.valor)}
               >
-                <Text
-                  style={
-                    diaSemana === dia.value
-                      ? styles.diaBtnTxtAtivo
-                      : styles.diaBtnTxt
-                  }
-                >
-                  {dia.label.slice(0, 3)}
+                <Text style={escopo === op.valor ? styles.modalidadeBtnTxtAtivo : styles.modalidadeBtnTxt}>
+                  {op.label}
                 </Text>
               </TouchableOpacity>
             ))}
           </View>
+
+          {escopo === 'avulso' ? (
+            <>
+              <Text style={styles.label}>Data</Text>
+              <TextInput
+                value={dataAvulsa}
+                onChangeText={(texto) => formatarData(texto, setDataAvulsa)}
+                placeholder="DD/MM/AAAA"
+                keyboardType="numeric"
+                maxLength={10}
+                style={[styles.input, { marginBottom: 16 }]}
+              />
+            </>
+          ) : (
+            <>
+              <Text style={styles.label}>Dia da semana</Text>
+
+              <View style={styles.diasContainer}>
+                {DIAS.map((dia) => (
+                  <TouchableOpacity
+                    key={`day-${dia.value}`}
+                    style={[
+                      styles.diaBtn,
+                      diaSemana === dia.value && styles.diaBtnAtivo,
+                    ]}
+                    onPress={() => setDiaSemana(dia.value)}
+                  >
+                    <Text
+                      style={
+                        diaSemana === dia.value
+                          ? styles.diaBtnTxtAtivo
+                          : styles.diaBtnTxt
+                      }
+                    >
+                      {dia.label.slice(0, 3)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.label}>Recorrência</Text>
+              <View style={styles.modalidadeRow}>
+                {[{ valor: 'semanal', label: 'Semanal' }, { valor: 'quinzenal', label: 'Quinzenal' }, { valor: 'personalizada', label: 'Personalizada' }].map((op) => (
+                  <TouchableOpacity
+                    key={`recorrencia-${op.valor}`}
+                    style={[styles.modalidadeBtn, recorrenciaTipo === op.valor && styles.modalidadeBtnAtivo]}
+                    onPress={() => setRecorrenciaTipo(op.valor)}
+                  >
+                    <Text style={recorrenciaTipo === op.valor ? styles.modalidadeBtnTxtAtivo : styles.modalidadeBtnTxt}>
+                      {op.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {(recorrenciaTipo === 'quinzenal' || recorrenciaTipo === 'personalizada') && (
+                <>
+                  <Text style={styles.label}>Data da 1ª sessão</Text>
+                  <TextInput
+                    value={dataReferencia}
+                    onChangeText={(texto) => formatarData(texto, setDataReferencia)}
+                    placeholder="DD/MM/AAAA"
+                    keyboardType="numeric"
+                    maxLength={10}
+                    style={[styles.input, { marginBottom: 16 }]}
+                  />
+                </>
+              )}
+
+              {recorrenciaTipo === 'personalizada' && (
+                <>
+                  <Text style={styles.label}>Semanas ativas do ciclo (a partir da 1ª sessão)</Text>
+                  <View style={[styles.modalidadeRow, { marginBottom: 18 }]}>
+                    {SEMANAS_CICLO.map((semana) => {
+                      const ativa = semanasAtivas.includes(semana);
+                      return (
+                        <TouchableOpacity
+                          key={`semana-${semana}`}
+                          style={[styles.modalidadeBtn, ativa && styles.modalidadeBtnAtivo]}
+                          onPress={() => alternarSemanaAtiva(semana)}
+                        >
+                          <Text style={ativa ? styles.modalidadeBtnTxtAtivo : styles.modalidadeBtnTxt}>
+                            Semana {semana}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </>
+              )}
+            </>
+          )}
 
           <View style={styles.horariosRow}>
             <View style={styles.inputGroup}>
@@ -538,10 +731,10 @@ export default function DisponibilidadeScreen() {
                   }
                 >
                   {item === 'presencial'
-                    ? '🏠 Presencial'
+                    ? 'Presencial'
                     : item === 'online'
-                      ? '💻 Online'
-                      : '🏠💻 Ambos'}
+                      ? 'Online'
+                      : 'Ambos'}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -549,7 +742,9 @@ export default function DisponibilidadeScreen() {
 
           {tipoTemPacienteUnico(tipoEvento) && (
             <>
-              <Text style={styles.label}>Analisante (opcional)</Text>
+              <Text style={styles.label}>
+                {tipoEvento === 'supervisao_individual' ? 'Supervisionando *' : 'Analisante *'}
+              </Text>
 
               {analisanteNome ? (
                 <View style={styles.analisanteSelecionado}>
@@ -557,13 +752,13 @@ export default function DisponibilidadeScreen() {
                     {analisanteNome}
                   </Text>
                   <TouchableOpacity onPress={limparAnalisante}>
-                    <Text style={styles.analisanteRemover}>Remover ✕</Text>
+                    <Text style={styles.analisanteRemover}>Remover</Text>
                   </TouchableOpacity>
                 </View>
               ) : (
                 <>
                   <View style={styles.analisantesLista}>
-                    {pacientes.map((paciente) => (
+                    {pacientesElegiveis(tipoEvento, pacientes).map((paciente) => (
                       <TouchableOpacity
                         key={`patient-${paciente.id}`}
                         style={styles.analisanteBtn}
@@ -580,7 +775,7 @@ export default function DisponibilidadeScreen() {
                       onPress={() => setMostrarNovoAnalisante((v) => !v)}
                     >
                       <Text style={styles.analisanteBtnNovoTxt}>
-                        + Novo analisante
+                        {tipoEvento === 'supervisao_individual' ? '+ Novo supervisionando' : '+ Novo analisante'}
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -590,7 +785,7 @@ export default function DisponibilidadeScreen() {
                       <TextInput
                         value={novoAnalisanteNome}
                         onChangeText={setNovoAnalisanteNome}
-                        placeholder="Nome do novo analisante"
+                        placeholder={tipoEvento === 'supervisao_individual' ? 'Nome do novo supervisionando' : 'Nome do novo analisante'}
                         style={styles.input}
                       />
                       <TouchableOpacity
@@ -610,7 +805,7 @@ export default function DisponibilidadeScreen() {
             <>
               <Text style={styles.label}>Participantes *</Text>
               <View style={styles.analisantesLista}>
-                {pacientes.map((paciente) => {
+                {pacientesElegiveis(tipoEvento, pacientes).map((paciente) => {
                   const selecionado = participantesIds.includes(paciente.id);
                   return (
                     <TouchableOpacity
@@ -619,7 +814,7 @@ export default function DisponibilidadeScreen() {
                       onPress={() => alternarParticipante(paciente.id)}
                     >
                       <Text style={[styles.analisanteBtnTxt, selecionado && styles.analisanteBtnTxtSelecionado]}>
-                        {selecionado ? '✓ ' : ''}{paciente.name || paciente.nome}
+                        {selecionado ? '• ' : ''}{paciente.name || paciente.nome}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -662,8 +857,8 @@ export default function DisponibilidadeScreen() {
               disabled={salvando || excluindoId != null}
             >
               {excluindoId === slotEditandoId
-                ? <ActivityIndicator color="#c62828" />
-                : <Text style={styles.btnExcluirFormTxt}>🗑️ Excluir horário</Text>}
+                ? <ActivityIndicator color="#975451" />
+                : <Text style={styles.btnExcluirFormTxt}>Excluir horário</Text>}
             </TouchableOpacity>
           )}
 
@@ -701,7 +896,11 @@ export default function DisponibilidadeScreen() {
           >
             <View style={styles.slotInfo}>
               <Text style={styles.slotDia}>
-                {obterDiaLabel(slot.day_of_week)}
+                {slot.recorrencia_tipo === 'avulso'
+                  ? `Avulso · ${dataISOParaBR(slot.data_avulsa)}`
+                  : obterDiaLabel(slot.day_of_week)}
+                {slot.recorrencia_tipo === 'quinzenal' && ' · Quinzenal'}
+                {slot.recorrencia_tipo === 'personalizada' && ' · Personalizada'}
               </Text>
 
               <Text style={styles.slotHorario}>
@@ -718,16 +917,16 @@ export default function DisponibilidadeScreen() {
 
               {slot.patient_name && (
                 <Text style={styles.slotAnalisante}>
-                  👤 {slot.patient_name}
+                  {slot.patient_name}
                 </Text>
               )}
               {slot.participantes?.length > 0 && (
                 <Text style={styles.slotAnalisante}>
-                  👥 {slot.participantes.map((p) => p.nome).join(', ')}
+                  {slot.participantes.map((p) => p.nome).join(', ')}
                 </Text>
               )}
               {slot.titulo && (
-                <Text style={styles.slotAnalisante}>📌 {slot.titulo}</Text>
+                <Text style={styles.slotAnalisante}>{slot.titulo}</Text>
               )}
             </View>
 
@@ -737,7 +936,7 @@ export default function DisponibilidadeScreen() {
                 onPress={() => editarSlot(slot)}
                 disabled={excluindoId === slot.id}
               >
-                <Text style={styles.btnAcaoTexto}>✏️</Text>
+                <Ionicons name="pencil-outline" size={18} color="#497363" />
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -746,8 +945,8 @@ export default function DisponibilidadeScreen() {
                 disabled={excluindoId === slot.id}
               >
                 {excluindoId === slot.id
-                  ? <ActivityIndicator size="small" color="#c62828" />
-                  : <Text style={styles.btnAcaoTexto}>🗑️</Text>}
+                  ? <ActivityIndicator size="small" color="#975451" />
+                  : <Ionicons name="trash-outline" size={18} color="#A9A299" />}
               </TouchableOpacity>
             </View>
           </View>
@@ -763,33 +962,33 @@ export default function DisponibilidadeScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F5F7FA' },
-  container: { flex: 1, backgroundColor: '#F5F7FA' },
+  safeArea: { flex: 1, backgroundColor: '#F7F5F0' },
+  container: { flex: 1, backgroundColor: '#F7F5F0' },
   scrollContent: { padding: 16, paddingBottom: 36 },
-  title: { fontSize: 22, fontWeight: 'bold', color: '#1A1A2E' },
+  title: { fontSize: 22, fontWeight: '500', color: '#302C28' },
   subtitle: {
     fontSize: 13,
-    color: '#666666',
+    color: '#756E66',
     lineHeight: 19,
     marginTop: 5,
     marginBottom: 16,
   },
   formCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FDFCFA',
     borderRadius: 16,
     padding: 16,
     elevation: 2,
   },
   formTitulo: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1A1A2E',
+    fontWeight: '500',
+    color: '#302C28',
     marginBottom: 16,
   },
   label: {
     fontSize: 12,
-    color: '#555555',
-    fontWeight: '700',
+    color: '#756E66',
+    fontWeight: '500',
     marginBottom: 7,
   },
   diasContainer: {
@@ -804,21 +1003,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     alignItems: 'center',
     borderRadius: 8,
-    backgroundColor: '#EEEEEE',
+    backgroundColor: '#EAE5DC',
   },
-  diaBtnAtivo: { backgroundColor: '#1976D2' },
-  diaBtnTxt: { fontSize: 12, color: '#333333' },
-  diaBtnTxtAtivo: { fontSize: 12, color: '#FFFFFF', fontWeight: 'bold' },
+  diaBtnAtivo: { backgroundColor: '#497363' },
+  diaBtnTxt: { fontSize: 12, color: '#4E4941', lineHeight: 17 },
+  diaBtnTxtAtivo: { fontSize: 12, color: '#FFFFFF', fontWeight: '500', lineHeight: 17 },
   horariosRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
   inputGroup: { flex: 1 },
   input: {
     height: 44,
     borderWidth: 1,
-    borderColor: '#D8DEE7',
+    borderColor: '#EAE5DC',
     borderRadius: 9,
     paddingHorizontal: 12,
-    color: '#1A1A2E',
-    backgroundColor: '#FFFFFF',
+    color: '#302C28',
+    backgroundColor: '#FDFCFA',
   },
   tipoEventoContainer: {
     flexDirection: 'row',
@@ -830,10 +1029,10 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     paddingHorizontal: 10,
     borderRadius: 8,
-    borderWidth: 1.5,
+    borderWidth: 1,
   },
-  tipoEventoBtnTxt: { fontSize: 12, color: '#333333', fontWeight: '600' },
-  tipoEventoBtnTxtAtivo: { color: '#FFFFFF', fontWeight: 'bold' },
+  tipoEventoBtnTxt: { fontSize: 12, color: '#4E4941', fontWeight: '600', lineHeight: 17 },
+  tipoEventoBtnTxtAtivo: { color: '#FFFFFF', fontWeight: '500' },
   modalidadeRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -844,14 +1043,14 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     paddingHorizontal: 10,
     borderRadius: 8,
-    backgroundColor: '#EEEEEE',
+    backgroundColor: '#EAE5DC',
   },
-  modalidadeBtnAtivo: { backgroundColor: '#1976D2' },
-  modalidadeBtnTxt: { fontSize: 12, color: '#333333' },
+  modalidadeBtnAtivo: { backgroundColor: '#497363' },
+  modalidadeBtnTxt: { fontSize: 12, color: '#4E4941', lineHeight: 17 },
   modalidadeBtnTxtAtivo: {
     fontSize: 12,
     color: '#FFFFFF',
-    fontWeight: 'bold',
+    fontWeight: '500',
   },
   analisantesLista: {
     flexDirection: 'row',
@@ -863,16 +1062,16 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 10,
     borderRadius: 8,
-    backgroundColor: '#EEEEEE',
+    backgroundColor: '#EAE5DC',
   },
-  analisanteBtnTxt: { fontSize: 12, color: '#333333' },
-  analisanteBtnSelecionado: { backgroundColor: '#3D5A80' },
-  analisanteBtnTxtSelecionado: { color: '#FFFFFF', fontWeight: '700' },
-  analisanteBtnNovo: { backgroundColor: '#E3F2FD' },
-  analisanteBtnNovoTxt: { fontSize: 12, color: '#1976D2', fontWeight: '700' },
+  analisanteBtnTxt: { fontSize: 12, color: '#4E4941', lineHeight: 17 },
+  analisanteBtnSelecionado: { backgroundColor: '#497363' },
+  analisanteBtnTxtSelecionado: { color: '#FFFFFF', fontWeight: '500' },
+  analisanteBtnNovo: { backgroundColor: '#E3EAF1' },
+  analisanteBtnNovoTxt: { fontSize: 12, color: '#497363', fontWeight: '500', lineHeight: 17 },
   novoAnalisanteBox: { marginBottom: 16, gap: 8 },
   btnConfirmarAnalisante: {
-    backgroundColor: '#1976D2',
+    backgroundColor: '#497363',
     paddingVertical: 10,
     borderRadius: 8,
     alignItems: 'center',
@@ -881,45 +1080,45 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#FFEBEE',
+    backgroundColor: '#F1E4E3',
     padding: 10,
     borderRadius: 8,
     marginBottom: 16,
   },
   analisanteSelecionadoTxt: {
     fontSize: 13,
-    fontWeight: '700',
-    color: '#B71C1C',
+    fontWeight: '500',
+    color: '#7E4441',
   },
-  analisanteRemover: { fontSize: 12, color: '#B71C1C' },
+  analisanteRemover: { fontSize: 12, color: '#7E4441', lineHeight: 17 },
   btnSalvar: {
-    backgroundColor: '#1976D2',
+    backgroundColor: '#497363',
     paddingVertical: 13,
     borderRadius: 10,
     alignItems: 'center',
   },
-  btnSalvarTxt: { color: '#FFFFFF', fontWeight: 'bold' },
+  btnSalvarTxt: { color: '#FFFFFF', fontWeight: '500' },
   btnExcluirForm: {
-    backgroundColor: '#FDECEA',
+    backgroundColor: '#F1E4E3',
     borderWidth: 1,
-    borderColor: '#E57373',
+    borderColor: '#975451',
     paddingVertical: 12,
     borderRadius: 10,
     alignItems: 'center',
     marginTop: 10,
   },
-  btnExcluirFormTxt: { color: '#C62828', fontWeight: 'bold' },
+  btnExcluirFormTxt: { color: '#975451', fontWeight: '500' },
   btnCancelar: { marginTop: 10, paddingVertical: 10, alignItems: 'center' },
-  btnCancelarTxt: { color: '#1976D2', fontWeight: '600' },
+  btnCancelarTxt: { color: '#497363', fontWeight: '600' },
   listaHeader: { marginTop: 24, marginBottom: 10 },
-  listaTitulo: { fontSize: 16, fontWeight: 'bold', color: '#1A1A2E' },
-  vazio: { backgroundColor: '#FFFFFF', padding: 20, borderRadius: 12 },
-  vazioTexto: { textAlign: 'center', color: '#888888' },
+  listaTitulo: { fontSize: 16, fontWeight: '500', color: '#302C28', lineHeight: 23 },
+  vazio: { backgroundColor: '#FDFCFA', padding: 20, borderRadius: 12 },
+  vazioTexto: { textAlign: 'center', color: '#8C857B' },
   slotItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FDFCFA',
     borderRadius: 12,
     marginBottom: 10,
     padding: 14,
@@ -927,20 +1126,20 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   slotInfo: { flex: 1 },
-  slotDia: { fontSize: 12, color: '#777777', marginBottom: 3 },
-  slotHorario: { fontSize: 16, fontWeight: 'bold', color: '#1A1A2E' },
-  slotTipo: { fontSize: 12, fontWeight: '700', marginTop: 4 },
-  slotModalidade: { fontSize: 12, color: '#555555', marginTop: 4 },
-  slotAnalisante: { fontSize: 12, color: '#B71C1C', marginTop: 4, fontWeight: '600' },
+  slotDia: { fontSize: 12, color: '#8C857B', marginBottom: 3, lineHeight: 17 },
+  slotHorario: { fontSize: 16, fontWeight: '500', color: '#302C28', lineHeight: 23 },
+  slotTipo: { fontSize: 12, fontWeight: '500', marginTop: 4, lineHeight: 17 },
+  slotModalidade: { fontSize: 12, color: '#756E66', marginTop: 4, lineHeight: 17 },
+  slotAnalisante: { fontSize: 12, color: '#7E4441', marginTop: 4, fontWeight: '600', lineHeight: 17 },
   slotAcoes: { flexDirection: 'row', gap: 6 },
   btnAcao: { padding: 7 },
   btnAcaoTexto: { fontSize: 18 },
   btnConcluir: {
-    backgroundColor: '#3D5A80',
+    backgroundColor: '#497363',
     paddingVertical: 14,
     marginTop: 14,
     borderRadius: 10,
     alignItems: 'center',
   },
-  btnConcluirTxt: { color: '#FFFFFF', fontWeight: 'bold' },
+  btnConcluirTxt: { color: '#FFFFFF', fontWeight: '500' },
 });

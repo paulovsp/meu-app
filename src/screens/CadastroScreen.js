@@ -12,13 +12,13 @@ import { validarCPF, dataBRParaISO } from '../services/validacao';
 import SeletorCidadeEstado from '../components/SeletorCidadeEstado';
 
 const COLORS = {
-  bg: '#F7F6F3',
+  bg: '#F7F5F0',
   accent: '#6B9E8A',
-  accentMid: '#8FBFA8',
-  btnBlue: '#3D5A80',
-  btnLight: '#5B7FA6',
-  textDark: '#1C1C1E',
-  textMid: '#6B6860',
+  accentMid: '#A8CBBA',
+  btnBlue: '#497363',
+  btnLight: '#4E7767',
+  textDark: '#302C28',
+  textMid: '#756E66',
 };
 
 const HEADER_H = 220;
@@ -178,7 +178,7 @@ export default function CadastroScreen({ navigation }) {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
           style={s.scroll}
@@ -197,7 +197,7 @@ export default function CadastroScreen({ navigation }) {
             value={nome}
             onChangeText={setNome}
             placeholder="Ex: Sigmund Freud"
-            placeholderTextColor="#B0ADA6"
+            placeholderTextColor="#756E66"
             autoFocus
           />
 
@@ -208,7 +208,7 @@ export default function CadastroScreen({ navigation }) {
             onChangeText={formatarCpf}
             keyboardType="numeric"
             placeholder="000.000.000-00"
-            placeholderTextColor="#B0ADA6"
+            placeholderTextColor="#756E66"
             maxLength={14}
           />
 
@@ -219,7 +219,7 @@ export default function CadastroScreen({ navigation }) {
             onChangeText={formatarData}
             keyboardType="numeric"
             placeholder="00/00/0000"
-            placeholderTextColor="#B0ADA6"
+            placeholderTextColor="#756E66"
             maxLength={10}
           />
 
@@ -245,7 +245,7 @@ export default function CadastroScreen({ navigation }) {
             value={crp}
             onChangeText={setCrp}
             placeholder="Ex: CRP 06/123456"
-            placeholderTextColor="#B0ADA6"
+            placeholderTextColor="#756E66"
           />
 
           <Text style={s.label}>E-mail *</Text>
@@ -254,7 +254,7 @@ export default function CadastroScreen({ navigation }) {
             value={email}
             onChangeText={setEmail}
             placeholder="Ex: sigmund.freud@email.com"
-            placeholderTextColor="#B0ADA6"
+            placeholderTextColor="#756E66"
             keyboardType="email-address"
             autoCapitalize="none"
           />
@@ -266,7 +266,7 @@ export default function CadastroScreen({ navigation }) {
               value={senha}
               onChangeText={setSenha}
               placeholder="Pelo menos 6 caracteres"
-              placeholderTextColor="#B0ADA6"
+              placeholderTextColor="#756E66"
               secureTextEntry={!mostrarSenha}
             />
             <TouchableOpacity style={s.olhoBtn} onPress={() => setMostrarSenha((v) => !v)}>
@@ -281,7 +281,7 @@ export default function CadastroScreen({ navigation }) {
               value={confirmarSenha}
               onChangeText={setConfirmarSenha}
               placeholder="Repita a senha"
-              placeholderTextColor="#B0ADA6"
+              placeholderTextColor="#756E66"
               secureTextEntry={!mostrarSenha}
             />
             <TouchableOpacity style={s.olhoBtn} onPress={() => setMostrarSenha((v) => !v)}>
@@ -315,17 +315,17 @@ const s = StyleSheet.create({
     paddingTop: 30,
   },
   appName: {
-    fontSize: 44, fontWeight: '700', fontStyle: 'italic',
+    fontSize: 44, fontWeight: '500', fontStyle: 'italic',
     color: COLORS.btnBlue, letterSpacing: 2,
   },
   appSub: {
-    fontSize: 12, fontWeight: '700', color: COLORS.btnLight,
+    fontSize: 12, fontWeight: '500', color: COLORS.btnLight,
     letterSpacing: 2.5, textTransform: 'uppercase', marginTop: 4,
   },
   scroll: { flex: 1 },
   scrollInner: { paddingHorizontal: 28, paddingTop: 24, paddingBottom: 50 },
   title: {
-    fontSize: 26, fontWeight: '700', color: COLORS.textDark, marginBottom: 6,
+    fontSize: 26, fontWeight: '500', color: COLORS.textDark, marginBottom: 6,
   },
   subtitle: {
     fontSize: 14, color: COLORS.textMid, lineHeight: 20, marginBottom: 28,
@@ -335,17 +335,17 @@ const s = StyleSheet.create({
     marginBottom: 6, marginTop: 16,
   },
   input: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FDFCFA',
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 15,
     color: COLORS.textDark,
     borderWidth: 1,
-    borderColor: '#E8E4DD',
+    borderColor: '#EAE5DC',
   },
-  inputSelecionadoTexto: { fontSize: 15, color: COLORS.textDark },
-  inputPlaceholderTexto: { fontSize: 15, color: '#B0ADA6' },
+  inputSelecionadoTexto: { fontSize: 15, color: COLORS.textDark, lineHeight: 22 },
+  inputPlaceholderTexto: { fontSize: 15, color: '#756E66', lineHeight: 22 },
   senhaRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   olhoBtn: { padding: 4 },
   btn: {
@@ -354,15 +354,15 @@ const s = StyleSheet.create({
     paddingVertical: 16,
     alignItems: 'center',
     marginTop: 32,
-    shadowColor: '#1A2D45',
+    shadowColor: '#4E4941',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 5,
   },
   btnText: {
-    color: '#FFFFFF', fontSize: 16, fontWeight: '700',
+    color: '#FFFFFF', fontSize: 16, fontWeight: '500',
   },
   linkCadastro: { alignItems: 'center', marginTop: 20 },
-  linkCadastroTexto: { color: COLORS.btnLight, fontSize: 14, fontWeight: '600' },
+  linkCadastroTexto: { color: COLORS.btnLight, fontSize: 14, fontWeight: '600', lineHeight: 20 },
 });

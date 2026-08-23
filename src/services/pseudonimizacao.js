@@ -38,7 +38,11 @@ function extrairTermos(nomeCompleto) {
   return Array.from(termos).sort((a, b) => b.length - a.length);
 }
 
-export function criarPseudonimizador(paciente) {
+/** `marcador` é opcional (default `[ANALISANTE]`) — o Busca Dr.Sig passa um
+ * marcador indexado por pessoa (`[PESSOA 1]`, `[PESSOA 2]`...) quando mais
+ * de um analisante/supervisionando está selecionado na mesma pergunta, pra
+ * cada nome real voltar no lugar certo na hora de restaurar. */
+export function criarPseudonimizador(paciente, marcador = MARCADOR_ANALISANTE) {
   const nomeReal = (paciente?.nome || '').trim();
   const termos = extrairTermos(nomeReal);
   const regex = termos.length
@@ -53,7 +57,7 @@ export function criarPseudonimizador(paciente) {
     let m;
     regex.lastIndex = 0;
     while ((m = regex.exec(chave)) !== null) {
-      resultado += texto.slice(ultimoIndex, m.index) + MARCADOR_ANALISANTE;
+      resultado += texto.slice(ultimoIndex, m.index) + marcador;
       ultimoIndex = m.index + m[0].length;
     }
     resultado += texto.slice(ultimoIndex);
@@ -62,7 +66,7 @@ export function criarPseudonimizador(paciente) {
 
   function restaurar(texto) {
     if (!texto || !nomeReal) return texto || '';
-    return texto.split(MARCADOR_ANALISANTE).join(nomeReal);
+    return texto.split(marcador).join(nomeReal);
   }
 
   return { redigir, restaurar };

@@ -13,13 +13,13 @@ import { solicitarRedefinicaoSenha } from '../services/conta';
 import { mensagemDeErro } from '../services/erros';
 
 const COLORS = {
-  bg: '#F7F6F3',
+  bg: '#F7F5F0',
   accent: '#6B9E8A',
-  accentMid: '#8FBFA8',
-  btnBlue: '#3D5A80',
-  btnLight: '#5B7FA6',
-  textDark: '#1C1C1E',
-  textMid: '#6B6860',
+  accentMid: '#A8CBBA',
+  btnBlue: '#497363',
+  btnLight: '#4E7767',
+  textDark: '#302C28',
+  textMid: '#756E66',
 };
 
 const HEADER_H = 220;
@@ -146,7 +146,7 @@ export default function LoginScreen({ navigation }) {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
           style={s.scroll}
@@ -174,7 +174,7 @@ export default function LoginScreen({ navigation }) {
             value={email}
             onChangeText={setEmail}
             placeholder="Ex: sigmund.freud@email.com"
-            placeholderTextColor="#B0ADA6"
+            placeholderTextColor="#756E66"
             keyboardType="email-address"
             autoCapitalize="none"
             autoFocus
@@ -187,7 +187,7 @@ export default function LoginScreen({ navigation }) {
               value={senha}
               onChangeText={setSenha}
               placeholder="Sua senha"
-              placeholderTextColor="#B0ADA6"
+              placeholderTextColor="#756E66"
               secureTextEntry={!mostrarSenha}
             />
             <TouchableOpacity style={s.olhoBtn} onPress={() => setMostrarSenha((v) => !v)}>
@@ -230,7 +230,7 @@ export default function LoginScreen({ navigation }) {
               value={emailEsqueci}
               onChangeText={setEmailEsqueci}
               placeholder="Ex: sigmund.freud@email.com"
-              placeholderTextColor="#B0ADA6"
+              placeholderTextColor="#756E66"
               keyboardType="email-address"
               autoCapitalize="none"
               autoFocus
@@ -271,17 +271,17 @@ const s = StyleSheet.create({
     paddingTop: 30,
   },
   appName: {
-    fontSize: 44, fontWeight: '700', fontStyle: 'italic',
+    fontSize: 44, fontWeight: '500', fontStyle: 'italic',
     color: COLORS.btnBlue, letterSpacing: 2,
   },
   appSub: {
-    fontSize: 12, fontWeight: '700', color: COLORS.btnLight,
+    fontSize: 12, fontWeight: '500', color: COLORS.btnLight,
     letterSpacing: 2.5, textTransform: 'uppercase', marginTop: 4,
   },
   scroll: { flex: 1 },
   scrollInner: { paddingHorizontal: 28, paddingTop: 24, paddingBottom: 50 },
   title: {
-    fontSize: 26, fontWeight: '700', color: COLORS.textDark, marginBottom: 6,
+    fontSize: 26, fontWeight: '500', color: COLORS.textDark, marginBottom: 6,
   },
   subtitle: {
     fontSize: 14, color: COLORS.textMid, lineHeight: 20, marginBottom: 28,
@@ -291,14 +291,14 @@ const s = StyleSheet.create({
     marginBottom: 6, marginTop: 16,
   },
   input: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FDFCFA',
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 15,
     color: COLORS.textDark,
     borderWidth: 1,
-    borderColor: '#E8E4DD',
+    borderColor: '#EAE5DC',
   },
   btn: {
     backgroundColor: COLORS.btnBlue,
@@ -306,44 +306,44 @@ const s = StyleSheet.create({
     paddingVertical: 16,
     alignItems: 'center',
     marginTop: 32,
-    shadowColor: '#1A2D45',
+    shadowColor: '#4E4941',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 5,
   },
   btnText: {
-    color: '#FFFFFF', fontSize: 16, fontWeight: '700',
+    color: '#FFFFFF', fontSize: 16, fontWeight: '500',
   },
   linkCadastro: { alignItems: 'center', marginTop: 20 },
-  linkCadastroTexto: { color: COLORS.btnLight, fontSize: 14, fontWeight: '600' },
+  linkCadastroTexto: { color: COLORS.btnLight, fontSize: 14, fontWeight: '600', lineHeight: 20 },
   linkEsqueci: { alignItems: 'flex-end', marginTop: 10 },
-  linkEsqueciTexto: { color: COLORS.btnLight, fontSize: 13, fontWeight: '600' },
+  linkEsqueciTexto: { color: COLORS.btnLight, fontSize: 13, fontWeight: '600', lineHeight: 19 },
   modalOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'center', alignItems: 'center', padding: 24,
   },
   modalCard: {
-    width: '100%', maxWidth: 420, backgroundColor: '#FFFFFF',
+    width: '100%', maxWidth: 420, backgroundColor: '#FDFCFA',
     borderRadius: 18, padding: 24,
   },
-  modalTitulo: { fontSize: 18, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 },
+  modalTitulo: { fontSize: 18, fontWeight: '500', color: COLORS.textDark, marginBottom: 8 },
   modalSubtitulo: { fontSize: 13, color: COLORS.textMid, lineHeight: 19, marginBottom: 16 },
   modalInput: {
-    backgroundColor: '#F7F6F3', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
-    fontSize: 15, color: COLORS.textDark, borderWidth: 1, borderColor: '#E8E4DD',
+    backgroundColor: '#F7F5F0', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 15, color: COLORS.textDark, borderWidth: 1, borderColor: '#EAE5DC',
   },
   modalBtnRow: { flexDirection: 'row', gap: 12, marginTop: 20 },
   modalBtnCancelar: {
     flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center',
-    backgroundColor: '#F0EEE9',
+    backgroundColor: '#F1EDE5',
   },
-  modalBtnCancelarText: { fontSize: 15, fontWeight: '700', color: COLORS.textMid },
+  modalBtnCancelarText: { fontSize: 15, fontWeight: '500', color: COLORS.textMid, lineHeight: 22 },
   modalBtnConfirmar: {
     flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center',
     backgroundColor: COLORS.btnBlue,
   },
-  modalBtnConfirmarText: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
+  modalBtnConfirmarText: { fontSize: 15, fontWeight: '500', color: '#FFFFFF', lineHeight: 22 },
   senhaRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   olhoBtn: { padding: 4 },
   btnDigital: {
@@ -354,13 +354,13 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    shadowColor: '#1A2D45',
+    shadowColor: '#4E4941',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 4,
   },
-  btnDigitalText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  btnDigitalText: { color: '#FFFFFF', fontSize: 16, fontWeight: '500', lineHeight: 23 },
   ouTexto: {
     textAlign: 'center', color: COLORS.textMid, fontSize: 13,
     marginTop: 14, marginBottom: 4,

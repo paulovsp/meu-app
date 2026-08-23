@@ -9,6 +9,7 @@ import { Alert } from 'react-native';
 import {
   updateAppointmentStatus, parsePreco, converterParaBRL,
   confirmarPagamentoSessao as confirmarPagamentoSessaoDB,
+  marcarPresencaParticipante,
 } from './database';
 import { dispararFiscalPorSessao } from './fiscalAutomatico';
 import { ehTipoGrupo } from './tiposEvento';
@@ -31,7 +32,16 @@ export function nomeExibicaoCompromisso(compromisso) {
 // cobrada). Resolve a Promise só depois que a analisante escolhe uma opção
 // (ou de imediato, se a cobrança for mensal), pra quem chama poder aguardar
 // antes de seguir pro próximo passo.
+//
+// Compromisso em grupo (tem `participantes`) segue um caminho totalmente
+// diferente: não existe um "patient_tipo_cobranca" único pro evento todo
+// — cada integrante tem sua própria cobrança, e precisa também confirmar
+// PRESENÇA individual (o status do compromisso é só um, pro grupo como um
+// todo; quem esteve ou não em cada sessão é por integrante).
 export function perguntarPagamentoSessao(compromisso) {
+  if ((compromisso.participantes || []).length > 0) {
+    return perguntarPresencaEPagamentoGrupo(compromisso);
+  }
   return new Promise((resolve) => {
     if (compromisso.patient_tipo_cobranca !== 'por_sessao') {
       resolve();
@@ -58,6 +68,81 @@ export function perguntarPagamentoSessao(compromisso) {
         },
       ]
     );
+  });
+}
+
+function perguntarPagamentoParticipante(compromisso, participante) {
+  return new Promise((resolve) => {
+    Alert.alert(
+      'Pagamento da sessão',
+      `O pagamento de ${participante.nome || 'este integrante'} nesta sessão já foi recebido?`,
+      [
+        { text: 'Ainda não', onPress: () => resolve() },
+        {
+          text: 'Sim, recebido',
+          onPress: async () => {
+            try {
+              const valor = await converterParaBRL(parsePreco(participante.precoSessao), participante.precoMoeda);
+              await confirmarPagamentoSessaoDB(compromisso.id, participante.id, compromisso.date, valor);
+              dispararFiscalPorSessao(participante.id, compromisso.date, valor);
+            } catch (e) {
+              Alert.alert('Erro ao confirmar pagamento', mensagemDeErro(e));
+            } finally {
+              resolve();
+            }
+          },
+        },
+      ]
+    );
+  });
+}
+
+/** Presença + pagamento de cada integrante de uma sessão/supervisão em
+ * grupo, um de cada vez — só pergunta pagamento pra quem esteve presente
+ * E é cobrado "por sessão" (mensal/mensal fixo desse integrante segue o
+ * fechamento do mês, igual paciente individual). */
+function perguntarPresencaEPagamentoGrupo(compromisso) {
+  const participantes = compromisso.participantes || [];
+  return new Promise((resolveTudo) => {
+    function processar(indice) {
+      if (indice >= participantes.length) {
+        resolveTudo();
+        return;
+      }
+      const participante = participantes[indice];
+      Alert.alert(
+        'Presença',
+        `${participante.nome || 'Este integrante'} esteve presente nesta sessão?`,
+        [
+          {
+            text: 'Faltou',
+            onPress: async () => {
+              try {
+                await marcarPresencaParticipante(compromisso.id, participante.id, false);
+              } catch (e) {
+                Alert.alert('Erro', mensagemDeErro(e));
+              }
+              processar(indice + 1);
+            },
+          },
+          {
+            text: 'Esteve presente',
+            onPress: async () => {
+              try {
+                await marcarPresencaParticipante(compromisso.id, participante.id, true);
+              } catch (e) {
+                Alert.alert('Erro', mensagemDeErro(e));
+              }
+              if (participante.tipoCobranca === 'por_sessao') {
+                await perguntarPagamentoParticipante(compromisso, participante);
+              }
+              processar(indice + 1);
+            },
+          },
+        ]
+      );
+    }
+    processar(0);
   });
 }
 

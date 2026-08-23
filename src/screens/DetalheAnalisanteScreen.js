@@ -83,16 +83,16 @@ const MOTIVO_REJEICAO_LABEL = {
 
 function getAutorizacaoInfo(autorizacao) {
   if (!autorizacao) {
-    return { texto: 'Ainda não solicitada', cor: '#888', botao: 'Solicitar autorização' };
+    return { texto: 'Ainda não solicitada', cor: '#8C857B', botao: 'Solicitar autorização' };
   }
   if (autorizacao.status === 'autorizada') {
     const data = autorizacao.respondido_em
       ? new Date(autorizacao.respondido_em).toLocaleDateString('pt-BR')
       : '';
-    return { texto: `Autorizada${data ? ` em ${data}` : ''}`, cor: '#2E8B57', botao: 'Solicitar novamente' };
+    return { texto: `Autorizada${data ? ` em ${data}` : ''}`, cor: '#44745B', botao: 'Solicitar novamente' };
   }
   if (autorizacao.status === 'negada') {
-    return { texto: 'Não autorizada pelo analisante', cor: '#C0392B', botao: 'Solicitar novamente' };
+    return { texto: 'Não autorizada pelo analisante', cor: '#975451', botao: 'Solicitar novamente' };
   }
 
   // status === 'pendente' — ainda sem resposta, ou já tentou enviar o
@@ -103,26 +103,26 @@ function getAutorizacaoInfo(autorizacao) {
   if (bloqueada) {
     return {
       texto: `Bloqueada — esgotou as tentativas${motivo ? ` (${motivo})` : ''}`,
-      cor: '#C0392B',
+      cor: '#975451',
       botao: 'Solicitar novamente',
     };
   }
   if (motivo) {
     return {
       texto: `Aguardando reenvio — última tentativa falhou (${motivo})`,
-      cor: '#F09B4A',
+      cor: '#7D6540',
       botao: 'Reenviar e-mail',
     };
   }
-  return { texto: 'Aguardando confirmação do analisante', cor: '#F09B4A', botao: 'Reenviar e-mail' };
+  return { texto: 'Aguardando confirmação do analisante', cor: '#7D6540', botao: 'Reenviar e-mail' };
 }
 
 // ⚠️ NOVO: Badge de autor para registros
 function getAuthorBadge(author) {
   switch (author) {
-    case 'analyst':   return { icon: '🧑‍⚕️', label: 'A.',   color: '#4A90D9', bg: '#EBF3FB' };
-    case 'analysand': return { icon: '🗣️', label: 'P.',    color: '#F57C00', bg: '#FFF8E1' };
-    case 'alternado': return { icon: '🔄', label: 'A/P',  color: '#7C3AED', bg: '#F0E8FF' };
+    case 'analyst':   return { icon: 'medkit-outline',        label: 'A.',   color: '#4D6B88', bg: '#E3EAF1' };
+    case 'analysand': return { icon: 'chatbubble-outline',    label: 'P.',   color: '#7D6540', bg: '#F2E9DC' };
+    case 'alternado': return { icon: 'swap-horizontal-outline', label: 'A/P',  color: '#675A9A', bg: '#E2DFEF' };
     default:          return null;
   }
 }
@@ -130,19 +130,19 @@ function getAuthorBadge(author) {
 function getItemTipoLabel(item) {
   if (item._itemType === 'session') {
     return item.transcript
-      ? { icon: '🎙️', label: 'Sessão Transcrita', color: '#4A90D9', bg: '#E8F4FD' }
-      : { icon: '📝', label: 'Sessão Anotada',   color: '#F09B4A', bg: '#FFF3E8' };
+      ? { icon: 'mic-outline', label: 'Sessão Transcrita', color: '#4D6B88', bg: '#E3EAF1' }
+      : { icon: 'document-text-outline', label: 'Sessão Anotada',   color: '#7D6540', bg: '#F2E9DC' };
   }
   // Registros salvos antes da correção do Novo Registro gravavam o tipo
   // (sessão/estudo/outro) na coluna `type` por engano, em vez de `category`
   // — sem esse fallback, todo registro antigo caía no rótulo genérico "Nota".
   const cat = item.category || (['sessao', 'estudo', 'outro'].includes(item.type) ? item.type : null);
-  if (cat === 'sessao') return { icon: '📝', label: 'Sessão Anotada', color: '#F09B4A', bg: '#FFF3E8' };
-  if (cat === 'estudo') return { icon: '📚', label: 'Estudo', color: '#7C3AED', bg: '#F0E8FF' };
-  if (cat === 'outro')  return { icon: '📌', label: 'Outro',  color: '#888',   bg: '#F0F0F0' };
-  if (item.type === 'image') return { icon: '🖼️', label: 'Imagem', color: '#E06B6B', bg: '#FDE8E8' };
-  if (item.type === 'file')  return { icon: '📎', label: 'Arquivo', color: '#888',   bg: '#F0F0F0' };
-  return { icon: '📝', label: 'Nota', color: '#7C3AED', bg: '#F0E8FF' };
+  if (cat === 'sessao') return { icon: 'document-text-outline', label: 'Sessão Anotada', color: '#7D6540', bg: '#F2E9DC' };
+  if (cat === 'estudo') return { icon: 'library-outline', label: 'Estudo', color: '#675A9A', bg: '#E2DFEF' };
+  if (cat === 'outro')  return { icon: 'bookmark-outline', label: 'Outro',  color: '#8C857B',   bg: '#F1EDE5' };
+  if (item.type === 'image') return { icon: 'image-outline', label: 'Imagem', color: '#975451', bg: '#F1E4E3' };
+  if (item.type === 'file')  return { icon: 'attach-outline', label: 'Arquivo', color: '#8C857B',   bg: '#F1EDE5' };
+  return { icon: 'document-text-outline', label: 'Nota', color: '#675A9A', bg: '#E2DFEF' };
 }
 
 // Item 10 (v13): agrupa o histórico em 3 pastas — sessões (transcritas ou
@@ -169,7 +169,7 @@ function InfoRow({ label, value, icon }) {
   if (!value) return null;
   return (
     <View style={styles.infoRow}>
-      <Text style={styles.infoRowIcon}>{icon}</Text>
+      <Ionicons name={icon} size={17} color="#8C857B" style={styles.infoRowIcon} />
       <View style={styles.infoRowContent}>
         <Text style={styles.infoRowLabel}>{label}</Text>
         <Text style={styles.infoRowValue}>{value}</Text>
@@ -525,7 +525,9 @@ export default function DetalheAnalisanteScreen() {
           onPress={() => abrirItem(item)}
           activeOpacity={0.7}
         >
-          <Text style={styles.itemIcone}>{tipo.icon}</Text>
+          <View style={[styles.itemIcone, { backgroundColor: tipo.bg }]}>
+            <Ionicons name={tipo.icon} size={18} color={tipo.color} />
+          </View>
           <View style={styles.itemInfo}>
             <View style={styles.itemTopRow}>
               <Text style={styles.itemData}>{formatarData(item.date)}</Text>
@@ -536,8 +538,9 @@ export default function DetalheAnalisanteScreen() {
                 </View>
                 {authorBadge && (
                   <View style={[styles.itemTag, { backgroundColor: authorBadge.bg }]}>
+                    <Ionicons name={authorBadge.icon} size={11} color={authorBadge.color} />
                     <Text style={[styles.itemTagText, { color: authorBadge.color }]}>
-                      {authorBadge.icon} {authorBadge.label}
+                      {authorBadge.label}
                     </Text>
                   </View>
                 )}
@@ -563,7 +566,7 @@ export default function DetalheAnalisanteScreen() {
             onPress={() => editarItem(item)}
             disabled={removendoItemId === item.id}
           >
-            <Text style={styles.actionBtnText}>✏️</Text>
+            <Ionicons name="pencil-outline" size={18} color="#497363" />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.actionBtn}
@@ -571,8 +574,8 @@ export default function DetalheAnalisanteScreen() {
             disabled={removendoItemId === item.id}
           >
             {removendoItemId === item.id
-              ? <ActivityIndicator size="small" color="#c0392b" />
-              : <Text style={styles.actionBtnText}>🗑️</Text>}
+              ? <ActivityIndicator size="small" color="#975451" />
+              : <Ionicons name="trash-outline" size={18} color="#A9A299" />}
           </TouchableOpacity>
         </View>
       </View>
@@ -598,20 +601,20 @@ export default function DetalheAnalisanteScreen() {
           <View style={styles.infoTextos}>
             <Text style={styles.infoNome}>{paciente.nome || 'Analisante'}</Text>
             {paciente.telefone ? (
-              <Text style={styles.infoSub}>📞 {paciente.telefone}</Text>
+              <Text style={styles.infoSub}>{paciente.telefone}</Text>
             ) : null}
             {paciente.email ? (
-              <Text style={styles.infoSub}>✉️ {paciente.email}</Text>
+              <Text style={styles.infoSub}>{paciente.email}</Text>
             ) : null}
             {paciente.nascimento ? (
               <Text style={styles.infoSub}>
-                🎂 {dataISOParaBR(paciente.nascimento) || paciente.nascimento}
+                {dataISOParaBR(paciente.nascimento) || paciente.nascimento}
                 {idadeText ? ` • ${idadeText}` : ''}
               </Text>
             ) : null}
             {paciente.data_inicio ? (
               <Text style={styles.infoSub}>
-                🗓 Início: {dataISOParaBR(paciente.data_inicio) || paciente.data_inicio}
+                Início: {dataISOParaBR(paciente.data_inicio) || paciente.data_inicio}
                 {tempoAnaliseText ? ` • ${tempoAnaliseText}` : ''}
               </Text>
             ) : null}
@@ -622,7 +625,7 @@ export default function DetalheAnalisanteScreen() {
               </Text>
             ) : null}
           </View>
-          <Text style={styles.infoCardEditHint}>✏️</Text>
+          <Ionicons name="chevron-forward" size={18} color="#A9A299" style={styles.infoCardEditHint} />
         </TouchableOpacity>
 
         {/* Paralisação ⇄ Retorno da análise (item G.20) */}
@@ -632,7 +635,7 @@ export default function DetalheAnalisanteScreen() {
           disabled={alternandoParalizacao}
         >
           {alternandoParalizacao ? (
-            <ActivityIndicator color={paciente.data_paralizacao ? '#1e9e63' : '#c0392b'} />
+            <ActivityIndicator color={paciente.data_paralizacao ? '#44745B' : '#975451'} />
           ) : (
             <Text style={[styles.btnParalizacaoTexto, paciente.data_paralizacao && styles.btnRetornoTexto]}>
               {paciente.data_paralizacao ? '▶ Retorno à análise' : '⏸ Paralisação da análise'}
@@ -654,14 +657,14 @@ export default function DetalheAnalisanteScreen() {
               {' → '}
               {p.data_fim ? `▶ ${dataISOParaBR(p.data_fim) || p.data_fim}` : 'em aberto'}
             </Text>
-            <Text style={styles.historicoItemEditar}>✏️</Text>
+            <Ionicons name="pencil-outline" size={17} color="#497363" style={styles.historicoItemEditar} />
           </TouchableOpacity>
         ))}
 
         {/* Autorização de gravação/transcrição pelo analisante */}
         <View style={styles.cardAutorizacao}>
           <View style={styles.autorizacaoTopo}>
-            <Ionicons name="shield-checkmark-outline" size={18} color="#3D5A80" />
+            <Ionicons name="shield-checkmark-outline" size={18} color="#497363" />
             <Text style={styles.autorizacaoTitulo}>Autorização de gravação</Text>
           </View>
           <Text style={[styles.autorizacaoStatus, { color: autorizacaoInfo.cor }]}>
@@ -682,23 +685,23 @@ export default function DetalheAnalisanteScreen() {
 
         {/* Acompanhamento */}
         <View style={styles.dadosCard}>
-          <InfoRow label="Modalidade" value={getModalidadeLabel(modalidadeDerivada)} icon="🖥️" />
-          <InfoRow label="Horário" value={paciente.horario} icon="🕐" />
-          <InfoRow label="Preço da sessão" value={getPrecoLabel(paciente, cotacaoCache)} icon="💰" />
+          <InfoRow label="Modalidade" value={getModalidadeLabel(modalidadeDerivada)} icon="desktop-outline" />
+          <InfoRow label="Horário" value={paciente.horario} icon="time-outline" />
+          <InfoRow label="Preço da sessão" value={getPrecoLabel(paciente, cotacaoCache)} icon="cash-outline" />
           <InfoRow
             label="Dia de pagamento"
             value={paciente.dia_pagamento ? `Todo dia ${paciente.dia_pagamento}` : null}
-            icon="💳"
+            icon="card-outline"
           />
-          <InfoRow label="Indicação" value={paciente.como_chegou} icon="👋" />
-          <InfoRow label="Informações importantes" value={paciente.info_relevantes} icon="📌" />
+          <InfoRow label="Indicação" value={paciente.como_chegou} icon="hand-left-outline" />
+          <InfoRow label="Informações importantes" value={paciente.info_relevantes} icon="bookmark-outline" />
         </View>
 
         {/* Dados administrativos */}
         <View style={styles.dadosCard}>
-          <InfoRow label="CPF" value={paciente.cpf} icon="🪪" />
-          <InfoRow label="Endereço" value={paciente.endereco} icon="📍" />
-          <InfoRow label="Telefone de emergência" value={paciente.contato_emergencia} icon="🚨" />
+          <InfoRow label="CPF" value={paciente.cpf} icon="id-card-outline" />
+          <InfoRow label="Endereço" value={paciente.endereco} icon="location-outline" />
+          <InfoRow label="Telefone de emergência" value={paciente.contato_emergencia} icon="alert-circle-outline" />
         </View>
 
         {todosItens.length > 0 && (
@@ -749,7 +752,7 @@ export default function DetalheAnalisanteScreen() {
         ListHeaderComponent={ListHeader}
         ListEmptyComponent={
           <View style={styles.vazio}>
-            <Text style={styles.vazioIcone}>📭</Text>
+            <Ionicons name="leaf-outline" size={34} color="#A8CBBA" style={styles.vazioIcone} />
             <Text style={styles.vazioTexto}>Nenhuma sessão ou registro ainda</Text>
           </View>
         }
@@ -819,56 +822,56 @@ export default function DetalheAnalisanteScreen() {
 
 // ─── ESTILOS ───────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F7FA' },
+  container: { flex: 1, backgroundColor: '#F7F5F0' },
 
   // Header fixo
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: '#fff', paddingHorizontal: 16, paddingVertical: 14,
-    borderBottomWidth: 1, borderBottomColor: '#eee',
+    backgroundColor: '#FDFCFA', paddingHorizontal: 16, paddingVertical: 14,
+    borderBottomWidth: 1, borderBottomColor: '#EAE5DC',
   },
   backBtn: { width: 70 },
-  backBtnText: { color: '#4A90D9', fontSize: 15, fontWeight: '600' },
-  headerTitle: { flex: 1, fontSize: 17, fontWeight: 'bold', color: '#1A1A2E', textAlign: 'center' },
+  backBtnText: { color: '#4D6B88', fontSize: 15, fontWeight: '600', lineHeight: 22 },
+  headerTitle: { flex: 1, fontSize: 17, fontWeight: '500', color: '#302C28', textAlign: 'center' },
 
   // Info do paciente
   infoCard: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff',
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#FDFCFA',
     marginHorizontal: 16, marginTop: 16, borderRadius: 16, padding: 16, elevation: 2,
   },
   avatar: {
-    width: 56, height: 56, borderRadius: 28, backgroundColor: '#4A90D9',
+    width: 56, height: 56, borderRadius: 28, backgroundColor: '#4D6B88',
     justifyContent: 'center', alignItems: 'center', marginRight: 16,
   },
-  avatarText: { color: '#fff', fontSize: 24, fontWeight: 'bold' },
+  avatarText: { color: '#fff', fontSize: 24, fontWeight: '500' },
   infoTextos: { flex: 1 },
-  infoNome: { fontSize: 18, fontWeight: 'bold', color: '#1A1A2E', marginBottom: 4 },
-  infoSub: { fontSize: 13, color: '#888', marginTop: 2 },
-  infoCardEditHint: { fontSize: 16, opacity: 0.5, marginLeft: 8 },
+  infoNome: { fontSize: 18, fontWeight: '500', color: '#302C28', marginBottom: 4 },
+  infoSub: { fontSize: 13, color: '#8C857B', marginTop: 2, lineHeight: 19 },
+  infoCardEditHint: { opacity: 0.5, marginLeft: 8, lineHeight: 23 },
 
   divisoria: {
-    height: 1, backgroundColor: '#E0E4EA', marginHorizontal: 16, marginTop: 16,
+    height: 1, backgroundColor: '#EAE5DC', marginHorizontal: 16, marginTop: 16,
   },
 
   // Paralisação ⇄ Retorno
   btnParalizacao: {
     marginHorizontal: 16, marginTop: 12,
-    backgroundColor: '#FCEBEA', borderRadius: 12, paddingVertical: 12,
-    alignItems: 'center', borderWidth: 1, borderColor: '#E5A19B',
+    backgroundColor: '#F1E4E3', borderRadius: 12, paddingVertical: 12,
+    alignItems: 'center', borderWidth: 1, borderColor: '#E3C9C7',
   },
-  btnParalizacaoTexto: { color: '#c0392b', fontWeight: '700', fontSize: 14 },
-  btnRetorno: { backgroundColor: '#E6F5EE', borderColor: '#9ED9BE' },
-  btnRetornoTexto: { color: '#1e9e63' },
+  btnParalizacaoTexto: { color: '#975451', fontWeight: '500', fontSize: 14, lineHeight: 20 },
+  btnRetorno: { backgroundColor: '#E2EFE8', borderColor: '#C3DFCF' },
+  btnRetornoTexto: { color: '#44745B' },
   historicoLink: {
-    fontSize: 12.5, color: '#3D5A80', fontWeight: '600',
+    fontSize: 12.5, color: '#497363', fontWeight: '600',
     marginHorizontal: 16, marginTop: 8,
   },
   historicoItem: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     marginHorizontal: 16, marginTop: 4, paddingVertical: 4,
   },
-  historicoItemTexto: { fontSize: 12.5, color: '#6B6860' },
-  historicoItemEditar: { fontSize: 12, opacity: 0.5, marginLeft: 8 },
+  historicoItemTexto: { fontSize: 12.5, color: '#756E66', lineHeight: 18 },
+  historicoItemEditar: { opacity: 0.5, marginLeft: 8, lineHeight: 17 },
 
   // Modal de edição de período de paralisação
   modalOverlay: {
@@ -876,44 +879,44 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center', padding: 24,
   },
   modalCard: {
-    width: '100%', backgroundColor: '#fff', borderRadius: 16, padding: 20, gap: 8,
+    width: '100%', backgroundColor: '#FDFCFA', borderRadius: 16, padding: 20, gap: 8,
   },
-  modalTitulo: { fontSize: 16, fontWeight: 'bold', color: '#1A1A2E', marginBottom: 8 },
-  modalLabel: { fontSize: 12, fontWeight: '600', color: '#777', textTransform: 'uppercase' },
+  modalTitulo: { fontSize: 16, fontWeight: '500', color: '#302C28', marginBottom: 8, lineHeight: 23 },
+  modalLabel: { fontSize: 12, fontWeight: '600', color: '#8C857B', textTransform: 'uppercase', lineHeight: 17 },
   modalInput: {
-    backgroundColor: '#F5F7FA', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12,
-    fontSize: 15, color: '#1A1A2E', borderWidth: 1, borderColor: '#E0E4EA', marginBottom: 4,
+    backgroundColor: '#F7F5F0', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 15, color: '#302C28', borderWidth: 1, borderColor: '#EAE5DC', marginBottom: 4,
   },
   modalBtnSalvar: {
-    backgroundColor: '#3D5A80', borderRadius: 10, paddingVertical: 12,
+    backgroundColor: '#497363', borderRadius: 10, paddingVertical: 12,
     alignItems: 'center', marginTop: 8,
   },
-  modalBtnSalvarTexto: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  modalBtnSalvarTexto: { color: '#fff', fontWeight: '500', fontSize: 14, lineHeight: 20 },
   modalBtnExcluir: {
     borderRadius: 10, paddingVertical: 12, alignItems: 'center',
-    borderWidth: 1, borderColor: '#E5A19B', marginTop: 4,
+    borderWidth: 1, borderColor: '#E3C9C7', marginTop: 4,
   },
-  modalBtnExcluirTexto: { color: '#c0392b', fontWeight: '700', fontSize: 14 },
+  modalBtnExcluirTexto: { color: '#975451', fontWeight: '500', fontSize: 14, lineHeight: 20 },
   modalBtnCancelar: { alignItems: 'center', paddingVertical: 10, marginTop: 2 },
-  modalBtnCancelarTexto: { color: '#888', fontSize: 14 },
+  modalBtnCancelarTexto: { color: '#8C857B', fontSize: 14, lineHeight: 20 },
 
   // Card de autorização de gravação/transcrição
   cardAutorizacao: {
-    backgroundColor: '#fff', marginHorizontal: 16, marginTop: 12,
-    borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#E0E4EA',
+    backgroundColor: '#FDFCFA', marginHorizontal: 16, marginTop: 12,
+    borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#EAE5DC',
   },
   autorizacaoTopo: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
-  autorizacaoTitulo: { fontSize: 14, fontWeight: '700', color: '#1A1A2E' },
-  autorizacaoStatus: { fontSize: 13, marginBottom: 10 },
+  autorizacaoTitulo: { fontSize: 14, fontWeight: '500', color: '#302C28', lineHeight: 20 },
+  autorizacaoStatus: { fontSize: 13, marginBottom: 10, lineHeight: 19 },
   btnAutorizacao: {
-    backgroundColor: '#EBF3FB', borderRadius: 10, paddingVertical: 10,
-    alignItems: 'center', borderWidth: 1, borderColor: '#C7D9EC',
+    backgroundColor: '#E3EAF1', borderRadius: 10, paddingVertical: 10,
+    alignItems: 'center', borderWidth: 1, borderColor: '#C4D3E0',
   },
-  btnAutorizacaoTexto: { fontSize: 13, fontWeight: '700', color: '#3D5A80' },
+  btnAutorizacaoTexto: { fontSize: 13, fontWeight: '500', color: '#497363', lineHeight: 19 },
 
   // Dados do acompanhamento
   dadosCard: {
-    backgroundColor: '#fff',
+    backgroundColor: '#FDFCFA',
     marginHorizontal: 16,
     marginTop: 12,
     borderRadius: 16,
@@ -923,21 +926,21 @@ const styles = StyleSheet.create({
   infoRow: {
     flexDirection: 'row', alignItems: 'flex-start', marginBottom: 12,
   },
-  infoRowIcon: { fontSize: 18, width: 28, marginTop: 2 },
+  infoRowIcon: { width: 28, marginTop: 2 },
   infoRowContent: { flex: 1 },
   infoRowLabel: {
-    fontSize: 12, color: '#888', fontWeight: '600', marginBottom: 2,
+    fontSize: 12, color: '#8C857B', fontWeight: '600', marginBottom: 2,
     textTransform: 'uppercase', letterSpacing: 0.5,
   },
-  infoRowValue: { fontSize: 15, color: '#1A1A2E', lineHeight: 20 },
+  infoRowValue: { fontSize: 15, color: '#302C28', lineHeight: 20 },
 
   // Cabeçalho da lista
   listaHeader: {
     marginHorizontal: 16, marginTop: 20, marginBottom: 8,
-    paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: '#E0E4EA',
+    paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: '#EAE5DC',
   },
   listaHeaderText: {
-    fontSize: 15, fontWeight: '700', color: '#1A1A2E',
+    fontSize: 15, fontWeight: '500', color: '#302C28',
   },
 
   // Cabeçalho de pasta (item 10, v13)
@@ -945,7 +948,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 16, marginTop: 16, marginBottom: 6,
   },
   pastaHeaderText: {
-    fontSize: 13, fontWeight: '700', color: '#6B6860',
+    fontSize: 13, fontWeight: '500', color: '#756E66',
     textTransform: 'uppercase', letterSpacing: 0.5,
   },
 
@@ -954,29 +957,34 @@ const styles = StyleSheet.create({
 
   // Cards de item
   itemCard: {
-    backgroundColor: '#fff', borderRadius: 14, padding: 14,
+    backgroundColor: '#FDFCFA', borderRadius: 14, padding: 14,
     flexDirection: 'row', alignItems: 'flex-start', elevation: 1,
     marginBottom: 10,
   },
   itemLeft: { flex: 1, flexDirection: 'row', alignItems: 'flex-start' },
-  itemIcone: { fontSize: 28, marginRight: 12, marginTop: 2 },
+  itemIcone: {
+    width: 36, height: 36, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: 12, marginTop: 2,
+  },
   itemInfo: { flex: 1 },
   itemTopRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     marginBottom: 4,
   },
-  itemData: { fontSize: 12, color: '#aaa', fontWeight: '500' },
+  itemData: { fontSize: 12, color: '#A9A299', fontWeight: '500', lineHeight: 17 },
   // ⚠️ NOVO estilo: container das tags lado a lado com wrap
   itemTagsRow: {
     flexDirection: 'row', gap: 4, flexWrap: 'wrap', maxWidth: '55%',
   },
   itemTag: {
-    borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
   },
-  itemTagText: { fontSize: 11, fontWeight: '700' },
-  itemTitulo: { fontSize: 15, fontWeight: '700', color: '#1A1A2E', marginBottom: 4 },
-  itemPreview: { fontSize: 13, color: '#666', lineHeight: 18 },
-  itemSemConteudo: { fontSize: 12, color: '#bbb', marginTop: 4, fontStyle: 'italic' },
+  itemTagText: { fontSize: 11, fontWeight: '500', lineHeight: 16 },
+  itemTitulo: { fontSize: 15, fontWeight: '500', color: '#302C28', marginBottom: 4, lineHeight: 22 },
+  itemPreview: { fontSize: 13, color: '#756E66', lineHeight: 18 },
+  itemSemConteudo: { fontSize: 12, color: '#A9A299', marginTop: 4, fontStyle: 'italic', lineHeight: 17 },
 
   // Ações
   itemActions: {
@@ -987,6 +995,6 @@ const styles = StyleSheet.create({
 
   // Vazio
   vazio: { alignItems: 'center', paddingTop: 48 },
-  vazioIcone: { fontSize: 48, marginBottom: 12 },
-  vazioTexto: { fontSize: 15, color: '#aaa' },
+  vazioIcone: { marginBottom: 12 },
+  vazioTexto: { fontSize: 15, color: '#A9A299', lineHeight: 22 },
 });

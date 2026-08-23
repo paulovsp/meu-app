@@ -1,12 +1,16 @@
+// Antes "Arquivo e Relatórios" — as seções de Sessões/Registros do paciente
+// foram removidas (viraram simples duplicata do que DetalheAnalisanteScreen.js
+// já mostra, com edição/exclusão e tudo mais). Esta tela agora é só a geração
+// de relatórios por IA/local + o histórico dos já gerados.
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList,
   ScrollView, ActivityIndicator, Alert, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { listarPacientes, getSessions, getRecords } from '../services/database';
+import { listarPacientes } from '../services/database';
 import {
   TIPOS_RELATORIO, OPCOES_ULTIMAS_SESSOES, gerarRelatorio, listarRelatorios, estimarCustoRelatorio,
 } from '../services/relatorios';
@@ -14,13 +18,13 @@ import { mensagemDeErro } from '../services/erros';
 import { formatarSaldoBRL } from '../services/creditosIA';
 
 const COLORS = {
-  bg: '#F7F6F3',
+  bg: '#F7F5F0',
   surface: '#FFFFFF',
-  border: '#E8E4DD',
-  textDark: '#1C1C1E',
-  textMid: '#6B6860',
-  textLight: '#A5A19A',
-  btnBlue: '#3D5A80',
+  border: '#EAE5DC',
+  textDark: '#302C28',
+  textMid: '#756E66',
+  textLight: '#8C857B',
+  btnBlue: '#497363',
 };
 
 function formatarDataHora(iso) {
@@ -29,15 +33,12 @@ function formatarDataHora(iso) {
   return d.toLocaleDateString('pt-BR');
 }
 
-export default function ArquivoRelatoriosScreen() {
-  const navigation = useNavigation();
+export default function RelatoriosScreen() {
   const [pacientes, setPacientes] = useState([]);
   const [filtro, setFiltro] = useState('');
   const [carregandoLista, setCarregandoLista] = useState(true);
 
   const [paciente, setPaciente] = useState(null);
-  const [sessoes, setSessoes] = useState([]);
-  const [registros, setRegistros] = useState([]);
   const [historicoRelatorios, setHistoricoRelatorios] = useState([]);
   const [carregandoDetalhe, setCarregandoDetalhe] = useState(false);
 
@@ -58,13 +59,7 @@ export default function ArquivoRelatoriosScreen() {
     setPaciente(p);
     setCarregandoDetalhe(true);
     try {
-      const [s, r, h] = await Promise.all([
-        getSessions(p.id),
-        getRecords(p.id),
-        listarRelatorios(p.id),
-      ]);
-      setSessoes(s);
-      setRegistros(r);
+      const h = await listarRelatorios(p.id);
       setHistoricoRelatorios(h);
     } catch (err) {
       Alert.alert('Erro ao carregar', mensagemDeErro(err));
@@ -133,7 +128,7 @@ export default function ArquivoRelatoriosScreen() {
             value={filtro}
             onChangeText={setFiltro}
             placeholder="Buscar analisante..."
-            placeholderTextColor="#B0ADA6"
+            placeholderTextColor="#756E66"
           />
         </View>
 
@@ -221,44 +216,6 @@ export default function ArquivoRelatoriosScreen() {
               ))}
             </>
           )}
-
-          <Text style={s.sectionTitle}>Sessões ({sessoes.length})</Text>
-          {sessoes.length === 0 ? (
-            <Text style={s.vazio}>Nenhuma sessão registrada.</Text>
-          ) : (
-            sessoes.slice(0, 20).map((sess) => (
-              <TouchableOpacity
-                key={sess.id}
-                style={s.itemLinha}
-                onPress={() => navigation.navigate('SessionDetail', { sessionId: sess.id })}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={s.itemTitulo}>Sessão — {formatarDataHora(sess.date)}</Text>
-                  <Text style={s.itemMeta} numberOfLines={1}>{sess.transcript || 'Sem transcrição'}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={16} color={COLORS.textLight} />
-              </TouchableOpacity>
-            ))
-          )}
-
-          <Text style={s.sectionTitle}>Registros ({registros.length})</Text>
-          {registros.length === 0 ? (
-            <Text style={s.vazio}>Nenhum registro adicionado.</Text>
-          ) : (
-            registros.slice(0, 20).map((reg) => (
-              <TouchableOpacity
-                key={reg.id}
-                style={s.itemLinha}
-                onPress={() => navigation.navigate('RecordDetail', { record: reg })}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={s.itemTitulo}>{reg.title}</Text>
-                  <Text style={s.itemMeta}>{formatarDataHora(reg.created_at)}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={16} color={COLORS.textLight} />
-              </TouchableOpacity>
-            ))
-          )}
         </ScrollView>
       )}
 
@@ -292,52 +249,52 @@ const s = StyleSheet.create({
     backgroundColor: COLORS.surface, margin: 16, marginBottom: 8, borderRadius: 12,
     paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: COLORS.border,
   },
-  buscaInput: { flex: 1, fontSize: 15, color: COLORS.textDark },
+  buscaInput: { flex: 1, fontSize: 15, color: COLORS.textDark, lineHeight: 22 },
   loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   lista: { paddingHorizontal: 16, paddingBottom: 16 },
-  vazio: { textAlign: 'center', color: COLORS.textMid, fontSize: 13, marginTop: 12 },
+  vazio: { textAlign: 'center', color: COLORS.textMid, fontSize: 13, marginTop: 12, lineHeight: 19 },
   pacienteLinha: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     backgroundColor: COLORS.surface, borderRadius: 12, padding: 14, marginBottom: 8,
     borderWidth: 1, borderColor: COLORS.border,
   },
-  pacienteNome: { fontSize: 15, color: COLORS.textDark, fontWeight: '600' },
+  pacienteNome: { fontSize: 15, color: COLORS.textDark, fontWeight: '600', lineHeight: 22 },
   pacienteHeader: {
     flexDirection: 'row', alignItems: 'center', padding: 14,
     backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
   trocarBtn: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  trocarBtnText: { fontSize: 16, fontWeight: '700', color: COLORS.textDark },
+  trocarBtnText: { fontSize: 16, fontWeight: '500', color: COLORS.textDark, lineHeight: 23 },
   scrollInner: { padding: 16, paddingBottom: 40 },
-  sectionTitle: { fontSize: 14, fontWeight: '700', color: COLORS.textDark, marginTop: 18, marginBottom: 8 },
+  sectionTitle: { fontSize: 14, fontWeight: '500', color: COLORS.textDark, marginTop: 18, marginBottom: 8, lineHeight: 20 },
   relatorioCard: {
     backgroundColor: COLORS.surface, borderRadius: 14, padding: 14, marginBottom: 10,
     borderWidth: 1, borderColor: COLORS.border,
   },
-  relatorioLabel: { fontSize: 14, fontWeight: '600', color: COLORS.textDark, marginBottom: 8 },
+  relatorioLabel: { fontSize: 14, fontWeight: '600', color: COLORS.textDark, marginBottom: 8, lineHeight: 20 },
   chipsRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
   chip: {
     width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
     backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border,
   },
   chipAtivo: { backgroundColor: COLORS.btnBlue, borderColor: COLORS.btnBlue },
-  chipTexto: { fontSize: 13, fontWeight: '700', color: COLORS.textMid },
+  chipTexto: { fontSize: 13, fontWeight: '500', color: COLORS.textMid, lineHeight: 19 },
   chipTextoAtivo: { color: '#FFFFFF' },
   gerarBtn: {
     backgroundColor: COLORS.btnBlue, borderRadius: 10, paddingVertical: 10, alignItems: 'center',
   },
-  gerarBtnText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
+  gerarBtnText: { fontSize: 14, fontWeight: '500', color: '#FFFFFF', lineHeight: 20 },
   itemLinha: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: COLORS.surface, borderRadius: 12, padding: 12, marginBottom: 8,
     borderWidth: 1, borderColor: COLORS.border,
   },
-  itemTitulo: { fontSize: 14, fontWeight: '600', color: COLORS.textDark },
-  itemMeta: { fontSize: 12, color: COLORS.textMid, marginTop: 2 },
+  itemTitulo: { fontSize: 14, fontWeight: '600', color: COLORS.textDark, lineHeight: 20 },
+  itemMeta: { fontSize: 12, color: COLORS.textMid, marginTop: 2, lineHeight: 17 },
   modalHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     padding: 16, borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
-  modalHeaderTitulo: { fontSize: 17, fontWeight: '700', color: COLORS.textDark, flex: 1 },
+  modalHeaderTitulo: { fontSize: 17, fontWeight: '500', color: COLORS.textDark, flex: 1 },
   relatorioConteudo: { fontSize: 14.5, color: COLORS.textDark, lineHeight: 22 },
 });

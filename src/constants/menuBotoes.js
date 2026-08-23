@@ -7,15 +7,15 @@
 // aqui evita a "piscada" de abrir a tela pra só então mostrar o aviso e
 // voltar.
 export const CLINICA_BUTTONS = [
-  { id: 'session',  icon: 'mic-outline',      label: 'Nova Sessão',   screen: 'NewSession', corBadge: '#C24949', bloqueiaSemAssinatura: true },
-  { id: 'record',   icon: 'clipboard-outline', label: 'Novo Registro', screen: 'AddRecord',  corBadge: '#4C9F8F', bloqueiaSemAssinatura: true },
-  { id: 'patients', icon: 'people-outline',    label: 'Analisantes e Supervisionandos', screen: 'Patients', corBadge: '#C97B4A' },
-  { id: 'search',   icon: 'sparkles-outline',  label: 'Busca Dr.Sig',  screen: 'Busca',      corBadge: '#7B6FA6' },
+  { id: 'session',  icon: 'mic-outline',      label: 'Nova Sessão',   screen: 'NewSession', corBadge: '#8F5456', bloqueiaSemAssinatura: true },
+  { id: 'record',   icon: 'clipboard-outline', label: 'Novo Registro', screen: 'AddRecord',  corBadge: '#447362', bloqueiaSemAssinatura: true },
+  { id: 'patients', icon: 'people-outline',    label: 'Analisantes e Supervisionandos', screen: 'Patients', corBadge: '#825F4D' },
+  { id: 'relatorios', icon: 'document-text-outline', label: 'Relatórios', screen: 'Relatorios', corBadge: '#776746' },
 ];
 
 export const ADMIN_BUTTONS = [
-  { id: 'pagamentos', icon: 'wallet-outline',     label: 'Pagamentos', screen: 'Pagamentos', corBadge: '#4C8FA6' },
-  { id: 'financeiro', icon: 'stats-chart-outline', label: 'Financeiro',  screen: 'Financeiro', corBadge: '#5B8C5A' },
-  { id: 'cobranca',   icon: 'cash-outline',        label: 'Recebíveis',  screen: 'Cobranca',   corBadge: '#D9A441', corIcone: '#1C1C1E' },
-  { id: 'fiscal',     icon: 'receipt-outline',     label: 'Fiscal',      screen: 'Fiscal',    corBadge: '#A65C4C' },
+  { id: 'pagamentos', icon: 'wallet-outline',     label: 'Pagamentos', screen: 'Pagamentos', corBadge: '#4B6B80' },
+  { id: 'financeiro', icon: 'stats-chart-outline', label: 'Financeiro',  screen: 'Financeiro', corBadge: '#567243' },
+  { id: 'cobranca',   icon: 'cash-outline',        label: 'Recebíveis',  screen: 'Cobranca',   corBadge: '#776746', corIcone: '#302C28' },
+  { id: 'fiscal',     icon: 'receipt-outline',     label: 'Fiscal',      screen: 'Fiscal',    corBadge: '#875B50' },
 ];

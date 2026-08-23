@@ -116,7 +116,7 @@ export default function AssinaturaScreen() {
 
         <View style={s.previewBox}>
           {processando ? (
-            <ActivityIndicator color="#3D5A80" />
+            <ActivityIndicator color="#497363" />
           ) : (
             <Image source={{ uri: preview }} style={s.previewImg} resizeMode="contain" />
           )}
@@ -187,31 +187,31 @@ export default function AssinaturaScreen() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', padding: 16 },
-  dica: { fontSize: 13, color: '#6B6860', lineHeight: 18, marginBottom: 12 },
+  container: { flex: 1, backgroundColor: '#FDFCFA', padding: 16 },
+  dica: { fontSize: 13, color: '#756E66', lineHeight: 18, marginBottom: 12 },
   canvasBox: {
-    flex: 1, borderWidth: 1, borderColor: '#E0E4EA', borderRadius: 12, overflow: 'hidden',
+    flex: 1, borderWidth: 1, borderColor: '#EAE5DC', borderRadius: 12, overflow: 'hidden',
   },
   previewBox: {
-    flex: 1, borderWidth: 1, borderColor: '#E0E4EA', borderRadius: 12,
-    alignItems: 'center', justifyContent: 'center', backgroundColor: '#FAFBFC',
+    flex: 1, borderWidth: 1, borderColor: '#EAE5DC', borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: '#FDFCFA',
   },
   previewImg: { width: '100%', height: '100%' },
   acoes: { flexDirection: 'row', gap: 10, marginTop: 16 },
   btnLimpar: {
-    flex: 1, padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#E0E4EA', alignItems: 'center',
+    flex: 1, padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#EAE5DC', alignItems: 'center',
   },
-  btnLimparTxt: { color: '#1A1A2E', fontWeight: '600' },
+  btnLimparTxt: { color: '#302C28', fontWeight: '600' },
   btnRemover: {
-    flex: 1, padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#C0392B', alignItems: 'center',
+    flex: 1, padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#975451', alignItems: 'center',
   },
-  btnRemoverTxt: { color: '#C0392B', fontWeight: '600' },
+  btnRemoverTxt: { color: '#975451', fontWeight: '600' },
   btnGirar: {
-    flex: 1, padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#3D5A80', alignItems: 'center',
+    flex: 1, padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#497363', alignItems: 'center',
   },
-  btnGirarTxt: { color: '#3D5A80', fontWeight: '700' },
+  btnGirarTxt: { color: '#497363', fontWeight: '500' },
   btnSalvar: {
-    flex: 1, padding: 14, borderRadius: 10, backgroundColor: '#3D5A80', alignItems: 'center',
+    flex: 1, padding: 14, borderRadius: 10, backgroundColor: '#497363', alignItems: 'center',
   },
-  btnSalvarTxt: { color: '#fff', fontWeight: '700' },
+  btnSalvarTxt: { color: '#fff', fontWeight: '500' },
 });

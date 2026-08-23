@@ -25,11 +25,14 @@ export function getEstadoCompromisso({ status, temTranscricao, horarioPassou }) 
   return horarioPassou ? 'aguardando_confirmacao' : 'agendado_futuro';
 }
 
+// Cores de ESTADO (não de tipo de evento — essas ficam em tiposEvento.js,
+// preservadas). Aqui valem as semânticas do tema: info, atenção, sucesso,
+// erro e neutro, todas verificadas em contraste sobre papel.
 export const ESTADO_LABEL = {
-  agendado_futuro: { texto: 'Agendado', cor: '#3D5A80' },
-  aguardando_confirmacao: { texto: 'Aguardando confirmação', cor: '#F09B4A' },
-  realizado_ok: { texto: 'Realizada', cor: '#2E8B57' },
-  realizado_sem_relato: { texto: 'Realizada — sem relato', cor: '#C0392B' },
-  cancelado: { texto: 'Cancelada', cor: '#888' },
-  nao_realizado: { texto: 'Não realizada', cor: '#C0392B' },
+  agendado_futuro: { texto: 'Agendado', cor: '#4D6B88' },
+  aguardando_confirmacao: { texto: 'Aguardando confirmação', cor: '#7D6540' },
+  realizado_ok: { texto: 'Realizada', cor: '#44745B' },
+  realizado_sem_relato: { texto: 'Realizada — sem relato', cor: '#975451' },
+  cancelado: { texto: 'Cancelada', cor: '#8C857B' },
+  nao_realizado: { texto: 'Não realizada', cor: '#975451' },
 };

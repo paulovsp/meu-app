@@ -103,7 +103,7 @@ export default function ConfiguracaoFiscalAutomaticaScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['bottom']}>
         <View style={styles.loading}>
-          <ActivityIndicator color="#3D5A80" />
+          <ActivityIndicator color="#497363" />
         </View>
       </SafeAreaView>
     );
@@ -113,7 +113,7 @@ export default function ConfiguracaoFiscalAutomaticaScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <Text style={styles.titulo}>Envio automático — {patientNome || config.nome}</Text>
         <Text style={styles.hint}>
@@ -164,7 +164,7 @@ export default function ConfiguracaoFiscalAutomaticaScreen() {
             <TextInput
               style={styles.input}
               placeholder="Ex: 10"
-              placeholderTextColor="#bbb"
+              placeholderTextColor="#A9A299"
               value={diaMes}
               onChangeText={formatarDiaMes}
               keyboardType="numeric"
@@ -195,40 +195,40 @@ function OpcaoFrequencia({ label, ativo, onPress }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F7FA' },
+  container: { flex: 1, backgroundColor: '#F7F5F0' },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   scroll: { padding: 20, gap: 16 },
-  titulo: { fontSize: 18, fontWeight: 'bold', color: '#1A1A2E' },
-  hint: { fontSize: 13, color: '#666', lineHeight: 18 },
+  titulo: { fontSize: 18, fontWeight: '500', color: '#302C28' },
+  hint: { fontSize: 13, color: '#756E66', lineHeight: 18 },
   opcoes: { gap: 8 },
   opcao: {
     paddingVertical: 12, paddingHorizontal: 16, borderRadius: 12,
-    backgroundColor: '#fff', borderWidth: 1, borderColor: '#E0E4EA',
+    backgroundColor: '#FDFCFA', borderWidth: 1, borderColor: '#EAE5DC',
   },
-  opcaoAtiva: { backgroundColor: '#3D5A80', borderColor: '#3D5A80' },
-  opcaoTexto: { fontSize: 14, fontWeight: '600', color: '#333' },
+  opcaoAtiva: { backgroundColor: '#497363', borderColor: '#497363' },
+  opcaoTexto: { fontSize: 14, fontWeight: '600', color: '#4E4941', lineHeight: 20 },
   opcaoTextoAtivo: { color: '#fff' },
   bloco: { gap: 8 },
   label: {
-    fontSize: 12, fontWeight: '700', color: '#555',
+    fontSize: 12, fontWeight: '500', color: '#756E66',
     textTransform: 'uppercase', letterSpacing: 0.5,
   },
   diasContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   diaChip: {
     paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20,
-    backgroundColor: '#fff', borderWidth: 1, borderColor: '#E0E4EA',
+    backgroundColor: '#FDFCFA', borderWidth: 1, borderColor: '#EAE5DC',
   },
-  diaChipAtivo: { backgroundColor: '#3D5A80', borderColor: '#3D5A80' },
-  diaChipText: { fontSize: 12, fontWeight: '600', color: '#555' },
+  diaChipAtivo: { backgroundColor: '#497363', borderColor: '#497363' },
+  diaChipText: { fontSize: 12, fontWeight: '600', color: '#756E66', lineHeight: 17 },
   diaChipTextAtivo: { color: '#fff' },
   input: {
-    backgroundColor: '#fff', borderRadius: 12, paddingHorizontal: 16,
-    paddingVertical: 14, fontSize: 16, color: '#1A1A2E',
-    borderWidth: 1, borderColor: '#E0E4EA',
+    backgroundColor: '#FDFCFA', borderRadius: 12, paddingHorizontal: 16,
+    paddingVertical: 14, fontSize: 16, color: '#302C28',
+    borderWidth: 1, borderColor: '#EAE5DC',
   },
   btnSalvar: {
-    backgroundColor: '#3D5A80', borderRadius: 14, paddingVertical: 16,
+    backgroundColor: '#497363', borderRadius: 14, paddingVertical: 16,
     alignItems: 'center', marginTop: 8,
   },
-  btnSalvarTxt: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  btnSalvarTxt: { color: '#fff', fontSize: 16, fontWeight: '500', lineHeight: 23 },
 });

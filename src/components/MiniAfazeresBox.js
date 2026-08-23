@@ -2,13 +2,14 @@ import React, { useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { papel, tinta, salvia } from '../theme';
 import { listarAfazeres } from '../services/afazeres';
 
 const COLORS = {
   surface: '#FFFFFF',
-  borderAzul: '#3D5A80',
-  textDark: '#1C1C1E',
-  textMid: '#6B6860',
+  borderAzul: '#497363',
+  textDark: '#302C28',
+  textMid: '#756E66',
 };
 
 const MAX_LINHAS = 4;
@@ -28,15 +29,17 @@ export default function MiniAfazeresBox({ navigation, altura }) {
   const restantes = itens.length - visiveis.length;
 
   return (
+    // Moldura tripla: fina · grossa (3 dp ≈ 0,5 mm) · fina.
     <TouchableOpacity
-      style={s.molduraGrossa}
+      style={s.molduraExterna}
       activeOpacity={0.75}
       onPress={() => navigation.navigate('Afazeres')}
     >
-      <View style={s.molduraFina}>
-        <View style={[s.caixa, altura ? { height: altura } : null]}>
+      <View style={s.molduraCentral}>
+        <View style={s.molduraInterna}>
+          <View style={[s.caixa, altura ? { height: altura } : null]}>
           <View style={s.header}>
-            <Ionicons name="checkbox-outline" size={18} color={COLORS.borderAzul} />
+            <Ionicons name="checkbox-outline" size={16} color={salvia.tinta} />
             <Text style={s.titulo}>Afazeres</Text>
           </View>
 
@@ -60,7 +63,8 @@ export default function MiniAfazeresBox({ navigation, altura }) {
               </Text>
             ))
           )}
-          {restantes > 0 && <Text style={s.maisTexto}>+{restantes} mais</Text>}
+            {restantes > 0 && <Text style={s.maisTexto}>+{restantes} mais</Text>}
+          </View>
         </View>
       </View>
     </TouchableOpacity>
@@ -68,28 +72,41 @@ export default function MiniAfazeresBox({ navigation, altura }) {
 }
 
 const s = StyleSheet.create({
-  // Moldura em 3 linhas (grossa + fina + fina) pedida pro contraste dos
-  // cards da Início — 3 Views aninhadas, cada uma com sua borda e um
-  // respiro pequeno até a próxima, em vez de uma borda só.
-  molduraGrossa: {
+  // Moldura tripla: fina · grossa (3 dp ≈ 0,5 mm) · fina. A linha central
+  // é a substância; as duas finas dão a leveza. Mesmo gesto do botão da
+  // grade e da barrinha de horário — é a assinatura do app.
+  molduraExterna: {
     flex: 1,
-    borderRadius: 20,
-    borderWidth: 3,
-    borderColor: COLORS.borderAzul,
-    padding: 3,
-  },
-  molduraFina: {
-    flex: 1,
-    borderRadius: 17,
+    borderRadius: 21,
     borderWidth: 1,
-    borderColor: COLORS.borderAzul,
+    borderColor: salvia.suave,
     padding: 2,
+    backgroundColor: papel.alto,
+    shadowColor: '#4E4941',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.07,
+    shadowRadius: 18,
+    elevation: 3,
+  },
+  molduraCentral: {
+    flex: 1,
+    borderRadius: 18,
+    borderWidth: 3,
+    borderColor: salvia.tinta,
+    padding: 2,
+  },
+  molduraInterna: {
+    flex: 1,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: salvia.suave,
+    overflow: 'hidden',
   },
   caixa: {
     flex: 1,
-    backgroundColor: COLORS.surface,
-    borderRadius: 15,
-    padding: 16,
+    backgroundColor: papel.alto,
+    borderRadius: 12,
+    padding: 12,
     // altura agora é fixa (não só um mínimo) e o conteúdo é cortado — a
     // Início não rola mais (item 2), então este widget nunca pode crescer
     // além do espaço reservado pra ele.
@@ -97,8 +114,8 @@ const s = StyleSheet.create({
     minHeight: 150,
   },
   header: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 10 },
-  titulo: { fontSize: 14, fontWeight: '700', color: COLORS.textDark },
-  linha: { fontSize: 14.5, fontWeight: '700', color: COLORS.textDark, marginBottom: 6, lineHeight: 18 },
-  vazio: { fontSize: 13.5, color: COLORS.textMid, fontStyle: 'italic' },
-  maisTexto: { fontSize: 12.5, color: COLORS.textMid, marginTop: 2, fontWeight: '600' },
+  titulo: { fontSize: 13.5, fontWeight: '500', color: tinta.t900, lineHeight: 18 },
+  linha: { fontSize: 13, fontWeight: '400', color: tinta.t700, marginBottom: 7, lineHeight: 18 },
+  vazio: { fontSize: 13, color: tinta.t500, fontStyle: 'italic', lineHeight: 19 },
+  maisTexto: { fontSize: 11.5, color: tinta.t400, marginTop: 'auto', fontWeight: '500', lineHeight: 16 },
 });

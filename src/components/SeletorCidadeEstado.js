@@ -10,7 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { ESTADOS_BR, buscarCidadesPorUF } from '../services/localidades';
 
-const COLORS = { azul: '#3D5A80', textDark: '#1A1A2E', textMid: '#6B6860', border: '#E0E4EA', bg: '#F5F7FA' };
+const COLORS = { azul: '#497363', textDark: '#302C28', textMid: '#756E66', border: '#EAE5DC', bg: '#F7F5F0' };
 
 export default function SeletorCidadeEstado({ visible, onClose, ufInicial, onConfirmar }) {
   const [passo, setPasso] = useState('uf');
@@ -92,7 +92,7 @@ export default function SeletorCidadeEstado({ visible, onClose, ufInicial, onCon
           value={busca}
           onChangeText={setBusca}
           placeholder={passo === 'uf' ? 'Buscar estado...' : 'Buscar cidade...'}
-          placeholderTextColor="#B0ADA6"
+          placeholderTextColor="#756E66"
           autoCorrect={false}
         />
 
@@ -138,13 +138,13 @@ export default function SeletorCidadeEstado({ visible, onClose, ufInicial, onCon
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: '#FDFCFA' },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 8, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
   headerBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '700', color: COLORS.textDark },
+  headerTitle: { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '500', color: COLORS.textDark, lineHeight: 23 },
   busca: {
     margin: 16, marginBottom: 8, backgroundColor: COLORS.bg, borderRadius: 12,
     paddingHorizontal: 16, paddingVertical: 12, fontSize: 15, color: COLORS.textDark,
@@ -153,16 +153,16 @@ const s = StyleSheet.create({
   lista: { paddingHorizontal: 16, paddingBottom: 24 },
   item: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F0F0F0',
+    paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F1EDE5',
   },
   itemSigla: {
-    fontSize: 13, fontWeight: '700', color: '#fff', backgroundColor: COLORS.azul,
+    fontSize: 13, fontWeight: '500', color: '#fff', backgroundColor: COLORS.azul,
     borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3, overflow: 'hidden',
   },
-  itemNome: { fontSize: 15, color: COLORS.textDark },
+  itemNome: { fontSize: 15, color: COLORS.textDark, lineHeight: 22 },
   centro: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, paddingHorizontal: 30 },
-  erroTexto: { fontSize: 14, color: '#C0392B', textAlign: 'center' },
+  erroTexto: { fontSize: 14, color: '#975451', textAlign: 'center', lineHeight: 20 },
   tentarBtn: { backgroundColor: COLORS.azul, borderRadius: 10, paddingHorizontal: 20, paddingVertical: 12 },
-  tentarBtnTexto: { color: '#fff', fontWeight: '700' },
-  vazio: { textAlign: 'center', color: COLORS.textMid, marginTop: 30, fontSize: 14 },
+  tentarBtnTexto: { color: '#fff', fontWeight: '500' },
+  vazio: { textAlign: 'center', color: COLORS.textMid, marginTop: 30, fontSize: 14, lineHeight: 20 },
 });

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import {
   View, Text, TouchableOpacity, StyleSheet,
   SafeAreaView, ScrollView, Alert, ActivityIndicator,
@@ -181,15 +182,15 @@ export default function DetalheSessaoScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <ActivityIndicator size="large" color="#4A90D9" />
+          <ActivityIndicator size="large" color="#4D6B88" />
         </View>
       </SafeAreaView>
     );
   }
 
   const labelTipo = sessao.type === 'presencial'
-    ? '🏠 Presencial'
-    : `🌐 Online${sessao.online_platform ? ' · ' + sessao.online_platform : ''}`;
+    ? 'Presencial'
+    : `Online${sessao.online_platform ? ' · ' + sessao.online_platform : ''}`;
 
   const badgeStyle = sessao.type === 'presencial'
     ? styles.badgePresencial
@@ -200,7 +201,7 @@ export default function DetalheSessaoScreen() {
     if (loadingTurns) {
       return (
         <View style={styles.loadingBox}>
-          <ActivityIndicator size="small" color="#4A90D9" />
+          <ActivityIndicator size="small" color="#4D6B88" />
           <Text style={styles.loadingText}>Carregando turnos...</Text>
         </View>
       );
@@ -209,7 +210,7 @@ export default function DetalheSessaoScreen() {
     if (turns.length === 0) {
       return (
         <View style={styles.semTurnos}>
-          <Text style={styles.semTurnosIcon}>📝</Text>
+          <Ionicons name="document-text-outline" size={30} color="#A9A299" style={styles.semTurnosIcon} />
           <Text style={styles.semTurnosText}>
             Esta sessão não possui turnos organizados por falante.
           </Text>
@@ -236,7 +237,7 @@ export default function DetalheSessaoScreen() {
                 turn.speaker === 'analyst' ? styles.turnoBadgeAnalista : styles.turnoBadgeAnalisante,
               ]}>
                 <Text style={styles.turnoBadgeText}>
-                  {turn.speaker === 'analyst' ? '🧑‍⚕️ Analista' : '🗣️ Analisante'}
+                  {turn.speaker === 'analyst' ? 'Analista' : 'Analisante'}
                 </Text>
               </View>
               <Text style={styles.turnoIndex}>#{idx + 1}</Text>
@@ -266,12 +267,12 @@ export default function DetalheSessaoScreen() {
   function renderTranscricaoProcessando() {
     return (
       <View style={styles.statusBox}>
-        <Text style={styles.statusIcon}>🎙️</Text>
+        <Ionicons name="mic-outline" size={30} color="#497363" style={styles.statusIcon} />
         <Text style={styles.statusText}>Transcrevendo... você será avisada quando terminar.</Text>
         <TouchableOpacity style={styles.btnAtualizar} onPress={atualizarSessao} disabled={atualizando}>
           {atualizando
-            ? <ActivityIndicator color="#4A90D9" />
-            : <Text style={styles.btnAtualizarText}>🔄 Atualizar</Text>
+            ? <ActivityIndicator color="#4D6B88" />
+            : <Text style={styles.btnAtualizarText}>Atualizar</Text>
           }
         </TouchableOpacity>
       </View>
@@ -289,7 +290,7 @@ export default function DetalheSessaoScreen() {
             value={textoManual}
             onChangeText={setTextoManual}
             placeholder={'A: [fala do analista]\nP: [fala do analisante]\nA: ...'}
-            placeholderTextColor="#ccc"
+            placeholderTextColor="#DDD6CA"
           />
           <TouchableOpacity
             style={[styles.btnAtualizar, styles.btnSalvarManual, salvandoManual && { opacity: 0.6 }]}
@@ -298,7 +299,7 @@ export default function DetalheSessaoScreen() {
           >
             {salvandoManual
               ? <ActivityIndicator color="#fff" />
-              : <Text style={styles.btnSalvarManualText}>💾 Salvar transcrição</Text>
+              : <Text style={styles.btnSalvarManualText}>Salvar transcrição</Text>
             }
           </TouchableOpacity>
         </View>
@@ -306,13 +307,13 @@ export default function DetalheSessaoScreen() {
     }
     return (
       <View style={styles.statusBox}>
-        <Text style={styles.statusIcon}>⚠️</Text>
+        <Ionicons name="alert-circle-outline" size={30} color="#975451" style={styles.statusIcon} />
         <Text style={styles.statusText}>Não foi possível transcrever esta sessão.</Text>
         <TouchableOpacity
           style={styles.btnAtualizar}
           onPress={() => { setTextoManual(sessao.transcript || ''); setEditandoManual(true); }}
         >
-          <Text style={styles.btnAtualizarText}>✏️ Digitar manualmente</Text>
+          <Text style={styles.btnAtualizarText}>Digitar manualmente</Text>
         </TouchableOpacity>
       </View>
     );
@@ -329,7 +330,7 @@ export default function DetalheSessaoScreen() {
         <View style={{ width: 70 }} />
       </View>
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
         {/* Info card */}
         <View style={styles.infoCard}>
@@ -341,7 +342,7 @@ export default function DetalheSessaoScreen() {
             {turns.length > 0 && (
               <View style={[styles.badge, styles.badgeTurns]}>
                 <Text style={styles.badgeTurnsText}>
-                  💬 {turns.length} turno{turns.length > 1 ? 's' : ''}
+                  {turns.length} turno{turns.length > 1 ? 's' : ''}
                 </Text>
               </View>
             )}
@@ -362,7 +363,7 @@ export default function DetalheSessaoScreen() {
             sem aviso de "sem áudio" quando não existir (é sempre o caso). */}
         {sessao.audio_uri && (
           <View style={[styles.audioCard, { marginTop: 16 }]}>
-            <Text style={styles.secaoTitulo}>🎵 Áudio da Sessão</Text>
+            <Text style={styles.secaoTitulo}>Áudio da Sessão</Text>
             <View style={styles.playerRow}>
               <TouchableOpacity
                 style={[styles.btnPlay, tocando && styles.btnPause]}
@@ -388,12 +389,12 @@ export default function DetalheSessaoScreen() {
           <View style={styles.transcricaoHeader}>
             <Text style={styles.secaoTitulo}>
               {sessao.transcricao_status === 'processando'
-                ? '🎙️ Transcrevendo...'
+                ? 'Transcrevendo...'
                 : sessao.transcricao_status === 'erro'
-                ? '⚠️ Transcrição'
+                ? 'Transcrição'
                 : exibirTurns && turns.length > 0
-                ? '💬 Turnos por Falante'
-                : '📄 Transcrição / Anotações'}
+                ? 'Turnos por Falante'
+                : 'Transcrição / Anotações'}
             </Text>
             {sessao.transcricao_status !== 'processando' && sessao.transcricao_status !== 'erro' && turns.length > 0 && (
               <View style={styles.toggleRow}>
@@ -403,7 +404,7 @@ export default function DetalheSessaoScreen() {
                 <Switch
                   value={exibirTurns}
                   onValueChange={setExibirTurns}
-                  trackColor={{ false: '#ccc', true: '#4A90D9' }}
+                  trackColor={{ false: '#DDD6CA', true: '#4D6B88' }}
                   thumbColor="#fff"
                 />
               </View>
@@ -425,74 +426,74 @@ export default function DetalheSessaoScreen() {
 }
 
 const styles = StyleSheet.create({
-  container:          { flex: 1, backgroundColor: '#F5F7FA' },
-  header:             { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fff', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#eee' },
+  container:          { flex: 1, backgroundColor: '#F7F5F0' },
+  header:             { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#FDFCFA', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#EAE5DC' },
   backBtn:            { width: 70 },
-  backBtnText:        { color: '#4A90D9', fontSize: 15, fontWeight: '600' },
-  headerTitle:        { fontSize: 17, fontWeight: 'bold', color: '#1A1A2E' },
+  backBtnText: { color: '#4D6B88', fontSize: 15, fontWeight: '600', lineHeight: 22 },
+  headerTitle:        { fontSize: 17, fontWeight: '500', color: '#302C28' },
   scroll:             { padding: 16 },
 
-  infoCard:           { backgroundColor: '#fff', borderRadius: 16, padding: 20, borderWidth: 1, borderColor: '#eee', elevation: 2 },
-  pacienteNome:       { fontSize: 20, fontWeight: 'bold', color: '#1A1A2E', marginBottom: 10 },
+  infoCard:           { backgroundColor: '#FDFCFA', borderRadius: 16, padding: 20, borderWidth: 1, borderColor: '#EAE5DC', elevation: 2 },
+  pacienteNome:       { fontSize: 20, fontWeight: '500', color: '#302C28', marginBottom: 10 },
   badgeRow:           { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
   badge:              { borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6 },
-  badgePresencial:    { backgroundColor: '#EBF5FB' },
-  badgeOnline:        { backgroundColor: '#EAF0FD' },
-  badgeText:          { fontSize: 14, fontWeight: '600', color: '#1A1A2E' },
+  badgePresencial:    { backgroundColor: '#E3EAF1' },
+  badgeOnline:        { backgroundColor: '#E3EAF1' },
+  badgeText: { fontSize: 14, fontWeight: '600', color: '#302C28', lineHeight: 20 },
 
   // ⚠️ NOVOS badges
-  badgeTurns:         { backgroundColor: '#E8F5E9' },
-  badgeTurnsText:     { fontSize: 13, fontWeight: '600', color: '#2E7D32' },
-  badgeDuracao:       { backgroundColor: '#FFF3E0' },
-  badgeDuracaoText:   { fontSize: 13, fontWeight: '600', color: '#E65100' },
+  badgeTurns:         { backgroundColor: '#E2EFE8' },
+  badgeTurnsText: { fontSize: 13, fontWeight: '600', color: '#44745B', lineHeight: 19 },
+  badgeDuracao:       { backgroundColor: '#F2E9DC' },
+  badgeDuracaoText: { fontSize: 13, fontWeight: '600', color: '#7D6540', lineHeight: 19 },
 
-  data:               { fontSize: 14, color: '#888', lineHeight: 20 },
+  data:               { fontSize: 14, color: '#8C857B', lineHeight: 20 },
 
-  audioCard:          { backgroundColor: '#fff', borderRadius: 16, padding: 20, borderWidth: 1, borderColor: '#D5E8D4' },
-  secaoTitulo:        { fontSize: 15, fontWeight: '700', color: '#1A1A2E', marginBottom: 14 },
+  audioCard:          { backgroundColor: '#FDFCFA', borderRadius: 16, padding: 20, borderWidth: 1, borderColor: '#E2EFE8' },
+  secaoTitulo: { fontSize: 15, fontWeight: '500', color: '#302C28', marginBottom: 14, lineHeight: 22 },
   playerRow:          { flexDirection: 'row', gap: 10, alignItems: 'center', marginBottom: 10 },
-  btnPlay:            { backgroundColor: '#27ae60', borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12, minWidth: 150, alignItems: 'center' },
-  btnPause:           { backgroundColor: '#f39c12' },
-  btnPlayText:        { color: '#fff', fontWeight: 'bold', fontSize: 15 },
-  btnStop:            { backgroundColor: '#e74c3c', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, alignItems: 'center' },
+  btnPlay:            { backgroundColor: '#44745B', borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12, minWidth: 150, alignItems: 'center' },
+  btnPause:           { backgroundColor: '#7D6540' },
+  btnPlayText: { color: '#fff', fontWeight: '500', fontSize: 15, lineHeight: 22 },
+  btnStop:            { backgroundColor: '#975451', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, alignItems: 'center' },
   btnStopText:        { color: '#fff', fontSize: 18 },
 
-  transcricaoCard:    { backgroundColor: '#fff', borderRadius: 16, padding: 20, borderWidth: 1, borderColor: '#eee' },
+  transcricaoCard:    { backgroundColor: '#FDFCFA', borderRadius: 16, padding: 20, borderWidth: 1, borderColor: '#EAE5DC' },
   transcricaoHeader:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
   toggleRow:          { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  toggleLabel:        { fontSize: 12, color: '#888', fontWeight: '600' },
-  transcricaoTexto:   { fontSize: 15, color: '#333', lineHeight: 24 },
+  toggleLabel: { fontSize: 12, color: '#8C857B', fontWeight: '600', lineHeight: 17 },
+  transcricaoTexto:   { fontSize: 15, color: '#4E4941', lineHeight: 24 },
   semTranscricao:     { alignItems: 'center', paddingVertical: 16 },
-  semTranscricaoText: { fontSize: 14, color: '#aaa', textAlign: 'center' },
+  semTranscricaoText: { fontSize: 14, color: '#A9A299', textAlign: 'center', lineHeight: 20 },
 
   // ⚠️ NOVOS estilos de turnos
   turnosContainer:    { gap: 12 },
   turnoBubble:        { borderRadius: 14, padding: 14, borderWidth: 1 },
-  turnoAnalista:      { backgroundColor: '#EBF3FB', borderColor: '#B3D4F0', alignSelf: 'flex-start', marginRight: 40 },
-  turnoAnalisante:    { backgroundColor: '#FFF8E1', borderColor: '#FFE082', alignSelf: 'flex-end', marginLeft: 40 },
+  turnoAnalista:      { backgroundColor: '#E3EAF1', borderColor: '#C4D3E0', alignSelf: 'flex-start', marginRight: 40 },
+  turnoAnalisante:    { backgroundColor: '#F2E9DC', borderColor: '#E3D5BC', alignSelf: 'flex-end', marginLeft: 40 },
   turnoHeader:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   turnoBadge:         { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
-  turnoBadgeAnalista: { backgroundColor: '#4A90D9' },
-  turnoBadgeAnalisante: { backgroundColor: '#F57C00' },
-  turnoBadgeText:     { fontSize: 11, fontWeight: '700', color: '#fff' },
-  turnoIndex:         { fontSize: 10, color: '#aaa', fontWeight: '600' },
-  turnoTexto:         { fontSize: 15, color: '#1A1A2E', lineHeight: 22 },
+  turnoBadgeAnalista: { backgroundColor: '#4D6B88' },
+  turnoBadgeAnalisante: { backgroundColor: '#7D6540' },
+  turnoBadgeText: { fontSize: 11, fontWeight: '500', color: '#fff', lineHeight: 16 },
+  turnoIndex:         { fontSize: 10, color: '#A9A299', fontWeight: '600' },
+  turnoTexto:         { fontSize: 15, color: '#302C28', lineHeight: 22 },
 
   semTurnos:          { alignItems: 'center', paddingVertical: 24 },
-  semTurnosIcon:      { fontSize: 36, marginBottom: 8 },
-  semTurnosText:      { fontSize: 14, color: '#888', textAlign: 'center', marginBottom: 6 },
-  semTurnosSub:       { fontSize: 12, color: '#aaa', textAlign: 'center', fontStyle: 'italic' },
+  semTurnosIcon:      { marginBottom: 8 },
+  semTurnosText: { fontSize: 14, color: '#8C857B', textAlign: 'center', marginBottom: 6, lineHeight: 20 },
+  semTurnosSub: { fontSize: 12, color: '#A9A299', textAlign: 'center', fontStyle: 'italic', lineHeight: 17 },
 
   loadingBox:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 20 },
-  loadingText:        { fontSize: 13, color: '#888' },
+  loadingText: { fontSize: 13, color: '#8C857B', lineHeight: 19 },
 
   // ⚠️ NOVOS: estados de transcrição assíncrona (processando/erro)
   statusBox:          { alignItems: 'center', paddingVertical: 24, gap: 10 },
-  statusIcon:         { fontSize: 36 },
-  statusText:         { fontSize: 14, color: '#666', textAlign: 'center', paddingHorizontal: 12 },
-  btnAtualizar:       { backgroundColor: '#EBF3FB', borderRadius: 12, paddingHorizontal: 20, paddingVertical: 10, marginTop: 4 },
-  btnAtualizarText:   { color: '#4A90D9', fontWeight: '700', fontSize: 14 },
-  textAreaManual:     { minHeight: 160, borderWidth: 1, borderColor: '#eee', borderRadius: 12, padding: 12, fontSize: 15, color: '#1A1A2E', textAlignVertical: 'top' },
-  btnSalvarManual:    { backgroundColor: '#27ae60', alignItems: 'center' },
-  btnSalvarManualText:{ color: '#fff', fontWeight: '700', fontSize: 14 },
+  statusIcon:         {},
+  statusText: { fontSize: 14, color: '#756E66', textAlign: 'center', paddingHorizontal: 12, lineHeight: 20 },
+  btnAtualizar:       { backgroundColor: '#E3EAF1', borderRadius: 12, paddingHorizontal: 20, paddingVertical: 10, marginTop: 4 },
+  btnAtualizarText: { color: '#4D6B88', fontWeight: '500', fontSize: 14, lineHeight: 20 },
+  textAreaManual: { minHeight: 160, borderWidth: 1, borderColor: '#EAE5DC', borderRadius: 12, padding: 12, fontSize: 15, color: '#302C28', textAlignVertical: 'top', lineHeight: 22 },
+  btnSalvarManual:    { backgroundColor: '#44745B', alignItems: 'center' },
+  btnSalvarManualText: { color: '#fff', fontWeight: '500', fontSize: 14, lineHeight: 20 },
 });

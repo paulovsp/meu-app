@@ -19,7 +19,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#3D5A80"
+        "backgroundColor": "#497363"
       },
       "permissions": [
         "android.permission.RECORD_AUDIO",
@@ -29,7 +29,7 @@
         "android.permission.POST_NOTIFICATIONS"
       ],
       "package": "br.com.drsig.app",
-      "versionCode": 13
+      "versionCode": 14
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -40,7 +40,7 @@
       [
         "expo-notifications",
         {
-          "color": "#3D5A80"
+          "color": "#497363"
         }
       ],
       "expo-secure-store",

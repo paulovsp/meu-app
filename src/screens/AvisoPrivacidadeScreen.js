@@ -15,7 +15,7 @@ export default function AvisoPrivacidadeScreen({ onAceitar }) {
         </Text>
 
         <View style={s.item}>
-          <Text style={s.itemTitulo}>📋 O que guardamos</Text>
+          <Text style={s.itemTitulo}>O que guardamos</Text>
           <Text style={s.itemTexto}>
             Dados da sua conta e os analisantes que você cadastrar — sessões, registros, agenda,
             financeiro e o Perfil Psicossomático gerado a partir deles.
@@ -23,7 +23,7 @@ export default function AvisoPrivacidadeScreen({ onAceitar }) {
         </View>
 
         <View style={s.item}>
-          <Text style={s.itemTitulo}>🤖 Uso de IA</Text>
+          <Text style={s.itemTitulo}>Uso de IA</Text>
           <Text style={s.itemTexto}>
             Transcrição e análise usam serviços de IA de terceiros. No envio de texto, o nome do
             analisante é substituído por um identificador antes de qualquer envio.
@@ -31,14 +31,14 @@ export default function AvisoPrivacidadeScreen({ onAceitar }) {
         </View>
 
         <View style={s.item}>
-          <Text style={s.itemTitulo}>🎙️ Gravação de sessão</Text>
+          <Text style={s.itemTitulo}>Gravação de sessão</Text>
           <Text style={s.itemTexto}>
             Só acontece com autorização prévia do próprio analisante, pedida por e-mail.
           </Text>
         </View>
 
         <View style={s.item}>
-          <Text style={s.itemTitulo}>🗑️ Seus direitos</Text>
+          <Text style={s.itemTitulo}>Seus direitos</Text>
           <Text style={s.itemTexto}>
             Você pode excluir sua conta e todos os dados ligados a ela a qualquer momento, direto
             pelo app (Meu Perfil → Excluir minha conta).
@@ -61,20 +61,20 @@ export default function AvisoPrivacidadeScreen({ onAceitar }) {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F7FA' },
+  container: { flex: 1, backgroundColor: '#F7F5F0' },
   scroll: { padding: 24, paddingBottom: 40 },
-  titulo: { fontSize: 24, fontWeight: 'bold', color: '#1A1A2E', marginBottom: 12 },
-  paragrafo: { fontSize: 14.5, color: '#33333d', lineHeight: 21, marginBottom: 16 },
+  titulo: { fontSize: 24, fontWeight: '500', color: '#302C28', marginBottom: 12 },
+  paragrafo: { fontSize: 14.5, color: '#302C28', lineHeight: 21, marginBottom: 16 },
   item: {
-    backgroundColor: '#fff', borderRadius: 14, padding: 16, marginBottom: 12,
-    borderWidth: 1, borderColor: '#E0E4EA',
+    backgroundColor: '#FDFCFA', borderRadius: 14, padding: 16, marginBottom: 12,
+    borderWidth: 1, borderColor: '#EAE5DC',
   },
-  itemTitulo: { fontSize: 14.5, fontWeight: '700', color: '#1A1A2E', marginBottom: 6 },
-  itemTexto: { fontSize: 13.5, color: '#6B6860', lineHeight: 19 },
-  link: { fontSize: 13.5, color: '#3D5A80', fontWeight: '600', marginBottom: 24, textDecorationLine: 'underline' },
+  itemTitulo: { fontSize: 14.5, fontWeight: '500', color: '#302C28', marginBottom: 6, lineHeight: 21 },
+  itemTexto: { fontSize: 13.5, color: '#756E66', lineHeight: 19 },
+  link: { fontSize: 13.5, color: '#497363', fontWeight: '600', marginBottom: 24, textDecorationLine: 'underline', lineHeight: 20 },
   btnAceitar: {
-    backgroundColor: '#3D5A80', borderRadius: 14, paddingVertical: 16,
+    backgroundColor: '#497363', borderRadius: 14, paddingVertical: 16,
     alignItems: 'center', marginTop: 8,
   },
-  btnAceitarTexto: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  btnAceitarTexto: { color: '#fff', fontSize: 15, fontWeight: '500', lineHeight: 22 },
 });

@@ -54,34 +54,34 @@ const PLATFORMS = [
   {
     id: 'whatsapp',
     label: 'WhatsApp',
-    icon: '💬',
+    icon: 'logo-whatsapp',
     color: '#25D366',
     url: 'whatsapp://',
-    instrucaoVivavoz: 'Ative o viva-voz 🔊 assim que a chamada conectar.',
+    instrucaoVivavoz: 'Ative o viva-voz assim que a chamada conectar.',
   },
   {
     id: 'meet',
     label: 'Google Meet',
-    icon: '📹',
-    color: '#00897B',
+    icon: 'videocam-outline',
+    color: '#447362',
     url: 'https://meet.google.com',
     instrucaoVivavoz: 'No Meet, toque em ⋮ → Alto-falante para ativar o viva-voz.',
   },
   {
     id: 'zoom',
     label: 'Zoom',
-    icon: '🎥',
-    color: '#2D8CFF',
+    icon: 'desktop-outline',
+    color: '#4D6B88',
     url: 'zoomus://',
-    instrucaoVivavoz: 'No Zoom, toque em "Alto-falante" 🔊 na barra inferior.',
+    instrucaoVivavoz: 'No Zoom, toque em "Alto-falante" na barra inferior.',
   },
   {
     id: 'telefone',
     label: 'Telefone',
-    icon: '📞',
-    color: '#E67E22',
+    icon: 'call-outline',
+    color: '#875B50',
     url: 'tel:',
-    instrucaoVivavoz: 'Durante a chamada, toque em "Viva-voz" 🔊 na tela do telefone.',
+    instrucaoVivavoz: 'Durante a chamada, toque em "Viva-voz" na tela do telefone.',
   },
 ];
 
@@ -214,7 +214,7 @@ export default function NovaSessaoScreen() {
     try {
       await notifee.requestPermission();
       const id = await notifee.displayNotification({
-        title: '🔴 Gravando sessão',
+        title: 'Gravando sessão',
         body: 'Sua sessão está sendo gravada em segundo plano.',
         android: {
           channelId: 'gravacao',
@@ -416,7 +416,7 @@ export default function NovaSessaoScreen() {
         await saveTranscriptTurns(sid, turns);
       }
 
-      Alert.alert('✅ Sessão salva!', '', [
+      Alert.alert('Sessão salva!', '', [
         { text: 'OK', onPress: () => navigation.goBack() }
       ]);
     } catch (err) {
@@ -473,19 +473,19 @@ export default function NovaSessaoScreen() {
         <Text style={s.sub}>Tipo de sessão:</Text>
 
         <TouchableOpacity
-          style={[s.typeBtn, { backgroundColor: '#2c7be5' }]}
+          style={[s.typeBtn, { backgroundColor: '#497363' }]}
           onPress={() => { setTipo('presencial'); setPlataforma(null); setStep(STEPS.RECORDING); }}
         >
-          <Text style={s.typeBtnIcon}>🏠</Text>
+          <Ionicons name="home-outline" size={26} color="#FFFFFF" style={s.typeBtnIcon} />
           <Text style={s.typeBtnText}>Presencial</Text>
           <Text style={s.typeBtnSub}>Gravação pelo microfone do celular</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[s.typeBtn, { backgroundColor: '#27ae60' }]}
+          style={[s.typeBtn, { backgroundColor: '#44745B' }]}
           onPress={() => { setTipo('online'); setStep(STEPS.SELECT_PLATFORM); }}
         >
-          <Text style={s.typeBtnIcon}>🌐</Text>
+          <Ionicons name="globe-outline" size={26} color="#FFFFFF" style={s.typeBtnIcon} />
           <Text style={s.typeBtnText}>Online</Text>
           <Text style={s.typeBtnSub}>Via WhatsApp, Meet, Zoom ou Telefone</Text>
         </TouchableOpacity>
@@ -509,7 +509,7 @@ export default function NovaSessaoScreen() {
             style={[s.typeBtn, { backgroundColor: p.color }]}
             onPress={() => { setPlataforma(p); setStep(STEPS.RECORDING); }}
           >
-            <Text style={s.typeBtnIcon}>{p.icon}</Text>
+            <Ionicons name={p.icon} size={24} color="#FFFFFF" style={s.typeBtnIcon} />
             <Text style={s.typeBtnText}>{p.label}</Text>
           </TouchableOpacity>
         ))}
@@ -538,30 +538,30 @@ export default function NovaSessaoScreen() {
           <View style={s.infoBox}>
             {isOnline ? (
               <>
-                <Text style={s.infoStep}>1️⃣  Toque em <Text style={s.bold}>"Iniciar Gravação"</Text> abaixo.</Text>
-                <Text style={s.infoStep}>2️⃣  O app abrirá o <Text style={s.bold}>{plataforma?.label}</Text> automaticamente.</Text>
-                <Text style={s.infoStep}>3️⃣  Faça a chamada e ative o <Text style={s.bold}>viva-voz 🔊</Text></Text>
-                <Text style={s.infoStep}>4️⃣  {plataforma?.instrucaoVivavoz}</Text>
-                <Text style={s.infoStep}>5️⃣  Ao encerrar, <Text style={s.bold}>volte aqui</Text> e toque em <Text style={s.bold}>"Encerrar Sessão"</Text>.</Text>
+                <Text style={s.infoStep}>Toque em<Text style={s.bold}>"Iniciar Gravação"</Text> abaixo.</Text>
+                <Text style={s.infoStep}>O app abrirá o<Text style={s.bold}>{plataforma?.label}</Text> automaticamente.</Text>
+                <Text style={s.infoStep}>Faça a chamada e ative o<Text style={s.bold}>viva-voz</Text></Text>
+                <Text style={s.infoStep}>4.  {plataforma?.instrucaoVivavoz}</Text>
+                <Text style={s.infoStep}>Ao encerrar,<Text style={s.bold}>volte aqui</Text> e toque em <Text style={s.bold}>"Encerrar Sessão"</Text>.</Text>
               </>
             ) : (
               <>
-                <Text style={s.infoStep}>1️⃣  Toque em <Text style={s.bold}>"Iniciar Gravação"</Text> abaixo.</Text>
-                <Text style={s.infoStep}>2️⃣  Realize a sessão normalmente.</Text>
-                <Text style={s.infoStep}>3️⃣  Ao terminar, toque em <Text style={s.bold}>"Encerrar Sessão"</Text>.</Text>
-                <Text style={s.infoStep}>4️⃣  O áudio será transcrito automaticamente.</Text>
+                <Text style={s.infoStep}>Toque em<Text style={s.bold}>"Iniciar Gravação"</Text> abaixo.</Text>
+                <Text style={s.infoStep}>Realize a sessão normalmente.</Text>
+                <Text style={s.infoStep}>Ao terminar, toque em<Text style={s.bold}>"Encerrar Sessão"</Text>.</Text>
+                <Text style={s.infoStep}>O áudio será transcrito automaticamente.</Text>
               </>
             )}
             <View style={s.infoBoxFooter}>
               <Text style={s.infoBoxFooterText}>
-                💡 Você pode bloquear a tela ou usar outros apps — a gravação continua.
-              </Text>
+Você pode bloquear a tela ou usar outros apps — a gravação continua.
+</Text>
             </View>
           </View>
 
           {!gravando && !gravacaoAutorizada ? (
             <View style={s.bloqueioAutorizacao}>
-              <Ionicons name="shield-checkmark-outline" size={40} color="#C7CDD6" />
+              <Ionicons name="shield-checkmark-outline" size={40} color="#A9A299" />
               <Text style={s.bloqueioAutorizacaoTitulo}>Autorização necessária</Text>
               <Text style={s.bloqueioAutorizacaoTexto}>
                 {autorizacaoStatus === 'pendente'
@@ -597,12 +597,12 @@ export default function NovaSessaoScreen() {
             >
               {preparandoGravacao
                 ? <ActivityIndicator color="#fff" />
-                : <Text style={s.btnIniciarText}>🎙️ Iniciar Gravação</Text>}
+                : <Text style={s.btnIniciarText}>Iniciar Gravação</Text>}
             </TouchableOpacity>
           ) : (
             <View style={s.gravandoBox}>
               <Text style={s.gravandoTimer}>⏱ {formatarTempo(tempo)}</Text>
-              <Text style={s.gravandoInfo}>🔴 Gravando o ambiente — mantenha o celular próximo.</Text>
+              <Text style={s.gravandoInfo}>Gravando o ambiente — mantenha o celular próximo.</Text>
             </View>
           )}
 
@@ -628,7 +628,7 @@ export default function NovaSessaoScreen() {
     return (
       <SafeAreaView style={s.safeArea} edges={['top', 'bottom']}>
         <View style={[s.container, { flex: 1, justifyContent: 'center', alignItems: 'center' }]}>
-          <Text style={{ fontSize: 48, marginBottom: 16 }}>🎙️</Text>
+          <Ionicons name="mic-outline" size={40} color="#497363" style={{ marginBottom: 16 }} />
           <Text style={s.header}>Transcrição em andamento</Text>
           <Text style={[s.sub, { textAlign: 'center' }]}>
             A sessão com <Text style={s.bold}>{paciente?.nome}</Text> foi salva.
@@ -648,13 +648,13 @@ export default function NovaSessaoScreen() {
   if (step === STEPS.REVIEW) {
     return (
       <SafeAreaView style={s.safeArea} edges={['top', 'bottom']}>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView style={s.container} contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
           <Text style={s.header}>Revisar Transcrição</Text>
           <Text style={s.sub}>
             Analisante: <Text style={s.bold}>{paciente?.nome}</Text>
             {duracaoFinal > 0 && (
-              <Text style={{ color: '#888', fontSize: 13 }}>
+              <Text style={{ color: '#8C857B', fontSize: 13 }}>
                 {' '}· Duração: {formatarTempo(duracaoFinal)}
               </Text>
             )}
@@ -662,7 +662,7 @@ export default function NovaSessaoScreen() {
 
           {/* ── Instrução sobre prefixos ── */}
           <View style={s.instrucaoBox}>
-            <Text style={s.instrucaoTitulo}>📋 Revise os falantes</Text>
+            <Text style={s.instrucaoTitulo}>Revise os falantes</Text>
             <Text style={s.instrucaoTexto}>
               O texto foi pré-formatado com{' '}
               <Text style={s.instrucaoDestaque}>A:</Text> em cada linha.{'\n'}
@@ -682,7 +682,7 @@ export default function NovaSessaoScreen() {
 
           {transcrevendo ? (
             <View style={s.loadingBox}>
-              <ActivityIndicator size="large" color="#2c7be5" />
+              <ActivityIndicator size="large" color="#497363" />
               <Text style={s.loadingText}>{progressoTranscricao || 'Transcrevendo áudio...'}</Text>
             </View>
           ) : (
@@ -692,25 +692,25 @@ export default function NovaSessaoScreen() {
               value={transcricao}
               onChangeText={setTranscricao}
               placeholder={'A: [fala do analista]\nP: [fala do analisante]\nA: ...'}
-              placeholderTextColor="#ccc"
+              placeholderTextColor="#DDD6CA"
             />
           )}
 
           {/* ── Preview de turnos detectados ── */}
           <View style={s.turnPreviewBox}>
             <Text style={s.turnPreviewTitulo}>
-              📊 Turnos detectados: {turnsPreview.length}
+              Turnos detectados: {turnsPreview.length}
             </Text>
             {turnsPreview.length > 0 ? (
               <Text style={s.turnPreviewSub}>
-                🧑‍⚕️ Analista: {contagem['analyst'] || 0} turno{(contagem['analyst'] || 0) !== 1 ? 's' : ''}
+                Analista: {contagem['analyst'] || 0} turno{(contagem['analyst'] || 0) !== 1 ? 's' : ''}
                 {'   '}
-                🗣️ Analisante: {contagem['analysand'] || 0} turno{(contagem['analysand'] || 0) !== 1 ? 's' : ''}
+                Analisante: {contagem['analysand'] || 0} turno{(contagem['analysand'] || 0) !== 1 ? 's' : ''}
               </Text>
             ) : transcricao.trim() ? (
               <Text style={s.turnPreviewWarn}>
-                ⚠️ Nenhum prefixo A: ou P: encontrado. Adicione os prefixos para organizar por falante.
-              </Text>
+Nenhum prefixo A: ou P: encontrado. Adicione os prefixos para organizar por falante.
+</Text>
             ) : null}
           </View>
 
@@ -721,7 +721,7 @@ export default function NovaSessaoScreen() {
           >
             {salvando
               ? <ActivityIndicator color="#fff" />
-              : <Text style={s.btnSalvarText}>💾 Salvar Sessão</Text>
+              : <Text style={s.btnSalvarText}>Salvar Sessão</Text>
             }
           </TouchableOpacity>
 
@@ -739,63 +739,63 @@ export default function NovaSessaoScreen() {
 
 // ─── Estilos ────────────────────────────────────────────────────
 const s = StyleSheet.create({
-  safeArea:        { flex: 1, backgroundColor: '#F5F7FA' },
-  container:       { flex: 1, backgroundColor: '#F5F7FA', padding: 20 },
-  header:          { fontSize: 24, fontWeight: 'bold', color: '#1A1A2E', marginBottom: 8, marginTop: 20 },
-  sub:             { fontSize: 15, color: '#555', marginBottom: 12 },
-  bold:            { fontWeight: 'bold', color: '#1A1A2E' },
-  card:            { backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 10, borderWidth: 1, borderColor: '#eee', elevation: 2 },
-  cardText:        { fontSize: 16, fontWeight: '600', color: '#1A1A2E' },
-  cardSub:         { fontSize: 13, color: '#888', marginTop: 4 },
-  empty:           { textAlign: 'center', color: '#aaa', marginTop: 40, fontSize: 15 },
+  safeArea:        { flex: 1, backgroundColor: '#F7F5F0' },
+  container:       { flex: 1, backgroundColor: '#F7F5F0', padding: 20 },
+  header:          { fontSize: 24, fontWeight: '500', color: '#302C28', marginBottom: 8, marginTop: 20 },
+  sub: { fontSize: 15, color: '#756E66', marginBottom: 12, lineHeight: 22 },
+  bold:            { fontWeight: '500', color: '#302C28' },
+  card:            { backgroundColor: '#FDFCFA', borderRadius: 12, padding: 16, marginBottom: 10, borderWidth: 1, borderColor: '#EAE5DC', elevation: 2 },
+  cardText: { fontSize: 16, fontWeight: '600', color: '#302C28', lineHeight: 23 },
+  cardSub: { fontSize: 13, color: '#8C857B', marginTop: 4, lineHeight: 19 },
+  empty: { textAlign: 'center', color: '#A9A299', marginTop: 40, fontSize: 15, lineHeight: 22 },
 
   typeBtn:         { borderRadius: 14, padding: 20, marginBottom: 14, alignItems: 'center', elevation: 3 },
-  typeBtnIcon:     { fontSize: 32, marginBottom: 6 },
-  typeBtnText:     { fontSize: 18, fontWeight: 'bold', color: '#fff' },
-  typeBtnSub:      { fontSize: 13, color: 'rgba(255,255,255,0.85)', marginTop: 4, textAlign: 'center' },
+  typeBtnIcon:     { marginBottom: 6 },
+  typeBtnText:     { fontSize: 18, fontWeight: '500', color: '#fff' },
+  typeBtnSub: { fontSize: 13, color: 'rgba(255,255,255,0.85)', marginTop: 4, textAlign: 'center', lineHeight: 19 },
 
-  infoBox:         { backgroundColor: '#EBF5FB', borderRadius: 12, padding: 16, marginBottom: 20 },
-  infoStep:        { fontSize: 14, color: '#1A1A2E', marginBottom: 8, lineHeight: 22 },
-  infoBoxFooter:   { marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#D4E6F1' },
-  infoBoxFooterText: { fontSize: 12, color: '#5D8CA8', textAlign: 'center', fontStyle: 'italic' },
+  infoBox:         { backgroundColor: '#E3EAF1', borderRadius: 12, padding: 16, marginBottom: 20 },
+  infoStep:        { fontSize: 14, color: '#302C28', marginBottom: 8, lineHeight: 22 },
+  infoBoxFooter:   { marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#E3EAF1' },
+  infoBoxFooterText: { fontSize: 12, color: '#756E66', textAlign: 'center', fontStyle: 'italic', lineHeight: 17 },
 
-  instrucaoBox:      { backgroundColor: '#FFF8E1', borderRadius: 12, padding: 14, marginBottom: 14, borderWidth: 1, borderColor: '#FFE082' },
-  instrucaoTitulo:   { fontSize: 14, fontWeight: '700', color: '#F57F17', marginBottom: 6 },
-  instrucaoTexto:    { fontSize: 13, color: '#5D4037', lineHeight: 20, marginBottom: 8 },
-  instrucaoDestaque: { fontWeight: '700', color: '#E65100' },
-  instrucaoExemplo:  { backgroundColor: '#FFF3E0', borderRadius: 8, padding: 10, borderLeftWidth: 3, borderLeftColor: '#FF9800' },
-  instrucaoExemploTitulo: { fontSize: 11, fontWeight: '700', color: '#E65100', marginBottom: 4, textTransform: 'uppercase' },
-  instrucaoExemploTexto:  { fontSize: 13, color: '#4E342E', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', lineHeight: 20 },
+  instrucaoBox:      { backgroundColor: '#F2E9DC', borderRadius: 12, padding: 14, marginBottom: 14, borderWidth: 1, borderColor: '#E3D5BC' },
+  instrucaoTitulo: { fontSize: 14, fontWeight: '500', color: '#7D6540', marginBottom: 6, lineHeight: 20 },
+  instrucaoTexto:    { fontSize: 13, color: '#6B5A3A', lineHeight: 20, marginBottom: 8 },
+  instrucaoDestaque: { fontWeight: '500', color: '#7D6540' },
+  instrucaoExemplo:  { backgroundColor: '#F2E9DC', borderRadius: 8, padding: 10, borderLeftWidth: 3, borderLeftColor: '#7D6540' },
+  instrucaoExemploTitulo: { fontSize: 11, fontWeight: '500', color: '#7D6540', marginBottom: 4, textTransform: 'uppercase', lineHeight: 16 },
+  instrucaoExemploTexto:  { fontSize: 13, color: '#6B5A3A', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', lineHeight: 20 },
 
-  turnPreviewBox:   { backgroundColor: '#E8F5E9', borderRadius: 10, padding: 12, marginBottom: 14, borderWidth: 1, borderColor: '#C8E6C9' },
-  turnPreviewTitulo:{ fontSize: 14, fontWeight: '700', color: '#2E7D32', marginBottom: 4 },
-  turnPreviewSub:   { fontSize: 13, color: '#2E7D32', lineHeight: 20 },
-  turnPreviewWarn:  { fontSize: 12, color: '#C62828', marginTop: 4, fontStyle: 'italic' },
+  turnPreviewBox:   { backgroundColor: '#E2EFE8', borderRadius: 10, padding: 12, marginBottom: 14, borderWidth: 1, borderColor: '#C3DFCF' },
+  turnPreviewTitulo: { fontSize: 14, fontWeight: '500', color: '#44745B', marginBottom: 4, lineHeight: 20 },
+  turnPreviewSub:   { fontSize: 13, color: '#44745B', lineHeight: 20 },
+  turnPreviewWarn: { fontSize: 12, color: '#975451', marginTop: 4, fontStyle: 'italic', lineHeight: 17 },
 
-  btnIniciar:      { backgroundColor: '#2c7be5', borderRadius: 14, padding: 18, alignItems: 'center', marginBottom: 14, elevation: 3 },
-  btnIniciarText:  { color: '#fff', fontSize: 17, fontWeight: 'bold' },
-  gravandoBox:     { backgroundColor: '#fff0f0', borderRadius: 12, padding: 16, alignItems: 'center', marginBottom: 14, borderWidth: 1, borderColor: '#ffcccc' },
-  gravandoTimer:   { fontSize: 36, fontWeight: 'bold', color: '#e74c3c', marginBottom: 6 },
-  gravandoInfo:    { fontSize: 13, color: '#c0392b', textAlign: 'center' },
+  btnIniciar:      { backgroundColor: '#497363', borderRadius: 14, padding: 18, alignItems: 'center', marginBottom: 14, elevation: 3 },
+  btnIniciarText:  { color: '#fff', fontSize: 17, fontWeight: '500' },
+  gravandoBox:     { backgroundColor: '#F1E4E3', borderRadius: 12, padding: 16, alignItems: 'center', marginBottom: 14, borderWidth: 1, borderColor: '#E3C9C7' },
+  gravandoTimer:   { fontSize: 36, fontWeight: '500', color: '#975451', marginBottom: 6 },
+  gravandoInfo: { fontSize: 13, color: '#975451', textAlign: 'center', lineHeight: 19 },
 
   bloqueioAutorizacao: {
-    backgroundColor: '#fff', borderRadius: 14, padding: 24, alignItems: 'center',
-    marginBottom: 14, borderWidth: 1, borderColor: '#E0E4EA', gap: 8,
+    backgroundColor: '#FDFCFA', borderRadius: 14, padding: 24, alignItems: 'center',
+    marginBottom: 14, borderWidth: 1, borderColor: '#EAE5DC', gap: 8,
   },
-  bloqueioAutorizacaoTitulo: { fontSize: 16, fontWeight: '700', color: '#1A1A2E' },
-  bloqueioAutorizacaoTexto: { fontSize: 13, color: '#6B6860', textAlign: 'center', lineHeight: 19 },
+  bloqueioAutorizacaoTitulo: { fontSize: 16, fontWeight: '500', color: '#302C28', lineHeight: 23 },
+  bloqueioAutorizacaoTexto: { fontSize: 13, color: '#756E66', textAlign: 'center', lineHeight: 19 },
   btnIrParaAutorizacao: {
-    backgroundColor: '#3D5A80', borderRadius: 12, paddingVertical: 12,
+    backgroundColor: '#497363', borderRadius: 12, paddingVertical: 12,
     paddingHorizontal: 20, marginTop: 8,
   },
-  btnIrParaAutorizacaoTexto: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  btnEncerrar:     { backgroundColor: '#e74c3c', borderRadius: 14, padding: 18, alignItems: 'center', marginBottom: 14, elevation: 3 },
-  btnEncerrarText: { color: '#fff', fontSize: 17, fontWeight: 'bold' },
+  btnIrParaAutorizacaoTexto: { color: '#fff', fontSize: 14, fontWeight: '500', lineHeight: 20 },
+  btnEncerrar:     { backgroundColor: '#975451', borderRadius: 14, padding: 18, alignItems: 'center', marginBottom: 14, elevation: 3 },
+  btnEncerrarText: { color: '#fff', fontSize: 17, fontWeight: '500' },
   btnVoltar:       { alignItems: 'center', padding: 14, marginTop: 4 },
-  btnVoltarText:   { color: '#2c7be5', fontSize: 15, fontWeight: '600' },
+  btnVoltarText: { color: '#497363', fontSize: 15, fontWeight: '600', lineHeight: 22 },
   loadingBox:      { alignItems: 'center', paddingVertical: 40 },
-  loadingText:     { marginTop: 16, fontSize: 15, color: '#555' },
-  textArea:        { backgroundColor: '#fff', borderRadius: 12, padding: 16, fontSize: 15, color: '#333', minHeight: 220, textAlignVertical: 'top', borderWidth: 1, borderColor: '#ddd', marginBottom: 16, lineHeight: 22, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
-  btnSalvar:       { backgroundColor: '#27ae60', borderRadius: 14, padding: 18, alignItems: 'center', marginBottom: 14, elevation: 3 },
-  btnSalvarText:   { color: '#fff', fontSize: 17, fontWeight: 'bold' },
+  loadingText: { marginTop: 16, fontSize: 15, color: '#756E66', lineHeight: 22 },
+  textArea:        { backgroundColor: '#FDFCFA', borderRadius: 12, padding: 16, fontSize: 15, color: '#4E4941', minHeight: 220, textAlignVertical: 'top', borderWidth: 1, borderColor: '#DDD6CA', marginBottom: 16, lineHeight: 22, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+  btnSalvar:       { backgroundColor: '#44745B', borderRadius: 14, padding: 18, alignItems: 'center', marginBottom: 14, elevation: 3 },
+  btnSalvarText:   { color: '#fff', fontSize: 17, fontWeight: '500' },
 });

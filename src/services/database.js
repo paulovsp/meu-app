@@ -110,16 +110,20 @@ export async function getResumoAgendaHoje() {
   const { supabase } = require('./supabase');
   const hoje = new Date();
   const diaSemana = hoje.getDay();
+  const hojeISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
   const horaAtual = `${String(hoje.getHours()).padStart(2, '0')}:${String(hoje.getMinutes()).padStart(2, '0')}`;
 
   const { data, error } = await supabase
     .from('availability_slots')
-    .select('end_time')
+    .select('end_time, recorrencia_tipo, data_avulsa, recorrencia_data_referencia, recorrencia_semanas_ativas')
     .eq('day_of_week', diaSemana)
     .not('patient_id', 'is', null);
   if (error) throw error;
-  const total = data.length;
-  const concluidas = data.filter((s) => s.end_time <= horaAtual).length;
+  // Horário quinzenal/personalizado que não está "ligado" hoje (semana de
+  // folga do ciclo) não deve contar — mesmo cuidado de getPlanoFinanceiro.
+  const doDiaAtivos = data.filter((s) => slotAtivoNaData(s, hojeISO));
+  const total = doDiaAtivos.length;
+  const concluidas = doDiaAtivos.filter((s) => s.end_time <= horaAtual).length;
   return { total, concluidas };
 }
 
@@ -232,7 +236,14 @@ export async function getRecordById(id) {
   return data;
 }
 
-export async function addRecord(patientId, type, title, content, fileUri, sessionId, category, author) {
+/** `appointmentId`/`dataRegistro` (opcionais): registro do tipo "sessão"
+ * (Novo Registro) vinculado a um compromisso específico — fecha o mesmo
+ * critério de "tem relato" usado por `listarStatusSessoes`/
+ * `getContagemSessoesSemRelato`, que até aqui só reconhecia relato feito
+ * por gravação de áudio (`sessions`). `dataRegistro` (ISO) é a data que a
+ * própria usuária escolheu pra sessão — sem ela, cai no comportamento de
+ * sempre (data de agora). */
+export async function addRecord(patientId, type, title, content, fileUri, sessionId, category, author, appointmentId = null, dataRegistro = null) {
   const { supabase } = require('./supabase');
   const authorNorm = normalizarAuthor(author);
   const { data, error } = await supabase
@@ -240,7 +251,8 @@ export async function addRecord(patientId, type, title, content, fileUri, sessio
     .insert({
       patient_id: patientId, session_id: sessionId || null, type: type || null,
       title: title || '', content: content || '', file_uri: fileUri || null,
-      date: new Date().toISOString(), category: category || null, author: authorNorm,
+      date: dataRegistro || new Date().toISOString(), category: category || null, author: authorNorm,
+      appointment_id: appointmentId || null,
     })
     .select()
     .single();
@@ -254,13 +266,34 @@ export async function deleteRecord(id) {
   if (error) throw error;
 }
 
-export async function editRecord(id, { type, title, content, category }) {
+export async function editRecord(id, { type, title, content, category, appointmentId, dataRegistro }) {
   const { supabase } = require('./supabase');
+  const payload = { type: type || null, title: title || '', content: content || '', category: category || null };
+  if (appointmentId !== undefined) payload.appointment_id = appointmentId || null;
+  if (dataRegistro !== undefined) payload.date = dataRegistro;
   const { error } = await supabase
     .from('records')
-    .update({ type: type || null, title: title || '', content: content || '', category: category || null })
+    .update(payload)
     .eq('id', id);
   if (error) throw error;
+}
+
+/** Compromisso do paciente numa data específica (qualquer status) — usado
+ * pra vincular um registro escrito (Novo Registro, tipo "Sessão") ao
+ * compromisso da mesma data, quando existir. `limit(1)` em vez de
+ * `maybeSingle()`: paciente com dois horários no mesmo dia (raro, mas
+ * possível) não deve derrubar o salvamento do registro. */
+export async function getAppointmentByPatientAndDate(patientId, dataISO) {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase
+    .from('appointments')
+    .select('id, status')
+    .eq('patient_id', patientId)
+    .eq('date', dataISO)
+    .order('start_time', { ascending: true })
+    .limit(1);
+  if (error) throw error;
+  return data?.[0] || null;
 }
 
 // ⚠️ TEMPORÁRIO — só pra importação de dados de teste, não é função do app final.
@@ -366,13 +399,19 @@ export function parseTranscriptToTurns(rawText) {
 
 export async function getPatients() {
   const rows = await listarPacientes();
-  return rows.map((row) => ({ id: row.id, name: row.nome }));
+  return rows.map((row) => ({
+    id: row.id, name: row.nome,
+    eh_analisante: row.eh_analisante !== false,
+    eh_supervisionando: row.eh_supervisionando === true,
+  }));
 }
 
-export async function addPatient(nome) {
+export async function addPatient(nome, { ehAnalisante = true, ehSupervisionando = false } = {}) {
   if (!nome || !nome.trim()) return null;
 
-  const id = await inserirPaciente({ nome: nome.trim() });
+  const id = await inserirPaciente({
+    nome: nome.trim(), eh_analisante: ehAnalisante, eh_supervisionando: ehSupervisionando,
+  });
   return { id, name: nome.trim() };
 }
 
@@ -412,11 +451,45 @@ async function anexarParticipantesAosSlots(slots) {
   return slots.map((s) => ({ ...s, participantes: porSlot[s.id] || [] }));
 }
 
+/** Diferença em semanas completas entre duas datas ISO (`YYYY-MM-DD`) —
+ * base de `slotAtivoNaData` pra saber em que semana do ciclo de 4 uma data
+ * cai, a partir da data de referência (1ª sessão) de um horário
+ * quinzenal/personalizado. */
+function semanasEntre(dataInicioISO, dataFimISO) {
+  const [a1, m1, d1] = dataInicioISO.split('-').map(Number);
+  const [a2, m2, d2] = dataFimISO.split('-').map(Number);
+  const inicio = Date.UTC(a1, m1 - 1, d1);
+  const fim = Date.UTC(a2, m2 - 1, d2);
+  return Math.floor(Math.round((fim - inicio) / 86400000) / 7);
+}
+
+/** Um horário está "ativo" numa data específica? Além do `day_of_week`
+ * (já filtrado por quem chama), horários quinzenais/personalizados só
+ * valem nas semanas do ciclo de 4 marcadas em `recorrencia_semanas_ativas`,
+ * e horários avulsos só valem na própria `data_avulsa`. `semanal` (e
+ * qualquer horário antigo, sem `recorrencia_tipo` ainda) continua ativo
+ * toda semana, como sempre. */
+export function slotAtivoNaData(slot, dataISO) {
+  const tipo = slot.recorrencia_tipo || 'semanal';
+  if (tipo === 'avulso') return slot.data_avulsa === dataISO;
+  if (tipo === 'semanal') return true;
+  if (!slot.recorrencia_data_referencia || !slot.recorrencia_semanas_ativas?.length) return true;
+  const semanas = semanasEntre(slot.recorrencia_data_referencia, dataISO);
+  if (semanas < 0) return false;
+  const semanaCiclo = (semanas % 4) + 1;
+  return slot.recorrencia_semanas_ativas.includes(semanaCiclo);
+}
+
 export async function getAvailabilitySlots() {
   const { supabase } = require('./supabase');
+  const hojeISO = new Date().toISOString().slice(0, 10);
   const { data, error } = await supabase
     .from('availability_slots')
     .select('*, patients(nome, telefone, preco_sessao, preco_moeda)')
+    // Horário avulso já passado não serve mais de nada na lista/template —
+    // o compromisso em si (já materializado em `appointments`) continua no
+    // histórico normalmente, só o "molde" some daqui pra não acumular lixo.
+    .or(`recorrencia_tipo.neq.avulso,data_avulsa.gte.${hojeISO}`)
     .order('day_of_week', { ascending: true })
     .order('start_time', { ascending: true });
   if (error) throw error;
@@ -435,7 +508,19 @@ async function salvarParticipantesSlot(slotId, patientIds) {
   if (errInsert) throw errInsert;
 }
 
-export async function addAvailabilitySlot(day_of_week, start_time, end_time, modality, patient_id, tipo = 'sessao_individual', titulo = null, participantes = []) {
+/** Campos de recorrência aceitos em `addAvailabilitySlot`/`updateAvailabilitySlot`
+ * — objeto opcional, default 'semanal' (comportamento de sempre, sem
+ * repetição especial). */
+function normalizarRecorrencia({ tipo = 'semanal', data_referencia = null, semanas_ativas = null, data_avulsa = null } = {}) {
+  return {
+    recorrencia_tipo: tipo,
+    recorrencia_data_referencia: tipo === 'quinzenal' || tipo === 'personalizada' ? data_referencia : null,
+    recorrencia_semanas_ativas: tipo === 'quinzenal' ? [1, 3] : (tipo === 'personalizada' ? semanas_ativas : null),
+    data_avulsa: tipo === 'avulso' ? data_avulsa : null,
+  };
+}
+
+export async function addAvailabilitySlot(day_of_week, start_time, end_time, modality, patient_id, tipo = 'sessao_individual', titulo = null, participantes = [], recorrencia = {}) {
   const { supabase } = require('./supabase');
   const userId = await getUserId();
   const { data, error } = await supabase
@@ -443,6 +528,7 @@ export async function addAvailabilitySlot(day_of_week, start_time, end_time, mod
     .insert({
       user_id: userId, day_of_week, start_time, end_time, modality,
       patient_id: patient_id || null, tipo, titulo: titulo || null,
+      ...normalizarRecorrencia(recorrencia),
     })
     .select()
     .single();
@@ -451,13 +537,14 @@ export async function addAvailabilitySlot(day_of_week, start_time, end_time, mod
   return data.id;
 }
 
-export async function updateAvailabilitySlot(id, day_of_week, start_time, end_time, modality, patient_id, tipo = 'sessao_individual', titulo = null, participantes = []) {
+export async function updateAvailabilitySlot(id, day_of_week, start_time, end_time, modality, patient_id, tipo = 'sessao_individual', titulo = null, participantes = [], recorrencia = {}) {
   const { supabase } = require('./supabase');
   const { error } = await supabase
     .from('availability_slots')
     .update({
       day_of_week, start_time, end_time, modality,
       patient_id: patient_id || null, tipo, titulo: titulo || null,
+      ...normalizarRecorrencia(recorrencia),
     })
     .eq('id', id);
   if (error) throw error;
@@ -657,7 +744,7 @@ export async function verificarConflitoSlot({ id, day_of_week, start_time, end_t
  */
 export async function aplicarSlot({
   id, day_of_week, start_time, end_time, modality, patient_id, livresParaRemover = [],
-  tipo = 'sessao_individual', titulo = null, participantes = [],
+  tipo = 'sessao_individual', titulo = null, participantes = [], recorrencia = {},
 }) {
   for (const slot of livresParaRemover) {
     await deleteAvailabilitySlot(slot.id);
@@ -665,9 +752,9 @@ export async function aplicarSlot({
 
   let novoId = id;
   if (id) {
-    await updateAvailabilitySlot(id, day_of_week, start_time, end_time, modality, patient_id, tipo, titulo, participantes);
+    await updateAvailabilitySlot(id, day_of_week, start_time, end_time, modality, patient_id, tipo, titulo, participantes, recorrencia);
   } else {
-    novoId = await addAvailabilitySlot(day_of_week, start_time, end_time, modality, patient_id, tipo, titulo, participantes);
+    novoId = await addAvailabilitySlot(day_of_week, start_time, end_time, modality, patient_id, tipo, titulo, participantes, recorrencia);
   }
 
   return novoId;
@@ -679,7 +766,8 @@ export async function aplicarSlot({
  * analisante de uma vez no formulário de cadastro.
  */
 export async function resolverConflitoEAdicionarSlot({
-  id, day_of_week, start_time, end_time, modality, patient_id
+  id, day_of_week, start_time, end_time, modality, patient_id, recorrencia = {},
+  tipo = 'sessao_individual',
 }) {
   const { ocupado, livres, modalidadeNormalizada } = await verificarConflitoSlot({
     id, day_of_week, start_time, end_time, modality
@@ -692,7 +780,7 @@ export async function resolverConflitoEAdicionarSlot({
   const novoId = await aplicarSlot({
     id, day_of_week, start_time, end_time,
     modality: modalidadeNormalizada, patient_id,
-    livresParaRemover: livres,
+    livresParaRemover: livres, recorrencia, tipo,
   });
 
   return { success: true, id: novoId, removidos: livres.length };
@@ -719,21 +807,48 @@ const APPOINTMENT_SELECT_COM_PACIENTE =
 
 /** Mesma ideia de `anexarParticipantesAosSlots`, pro lado materializado
  * (appointments) — em lote, só pros de tipo "em grupo". */
+/** `participantes` de um compromisso em grupo agora traz também o que cada
+ * integrante precisa pra presença/pagamento individuais (item de correção
+ * pós-v13): preço/moeda/tipo de cobrança da própria ficha dele, se já
+ * esteve presente nesta ocorrência (`presente`, null = ainda não
+ * confirmado) e se o pagamento desta ocorrência já foi recebido
+ * (`pagamentoRecebido`, cruzando com `pagamentos.appointment_id
+ * + patient_id` — ver migration 0048, que passou a permitir um pagamento
+ * por integrante no mesmo compromisso). */
 async function anexarParticipantesAosAppointments(appointments) {
   const { supabase } = require('./supabase');
   const idsGrupo = appointments.filter((a) => a.tipo?.endsWith('_grupo')).map((a) => a.id);
   if (idsGrupo.length === 0) return appointments.map((a) => ({ ...a, participantes: [] }));
 
-  const { data, error } = await supabase
-    .from('appointment_participantes')
-    .select('appointment_id, patient_id, patients(nome)')
-    .in('appointment_id', idsGrupo);
+  const [{ data, error }, { data: pagos, error: errPagos }] = await Promise.all([
+    supabase
+      .from('appointment_participantes')
+      .select('appointment_id, patient_id, presente, patients(nome, preco_sessao, preco_moeda, tipo_cobranca, valor_mensal_fixo)')
+      .in('appointment_id', idsGrupo),
+    supabase
+      .from('pagamentos')
+      .select('appointment_id, patient_id')
+      .in('appointment_id', idsGrupo)
+      .eq('recebido', true),
+  ]);
   if (error) throw error;
+  if (errPagos) throw errPagos;
+
+  const pagosSet = new Set((pagos || []).map((p) => `${p.appointment_id}_${p.patient_id}`));
 
   const porAppointment = {};
   (data || []).forEach((p) => {
     if (!porAppointment[p.appointment_id]) porAppointment[p.appointment_id] = [];
-    porAppointment[p.appointment_id].push({ id: p.patient_id, nome: p.patients?.nome ?? null });
+    porAppointment[p.appointment_id].push({
+      id: p.patient_id,
+      nome: p.patients?.nome ?? null,
+      precoSessao: p.patients?.preco_sessao ?? null,
+      precoMoeda: p.patients?.preco_moeda ?? 'BRL',
+      tipoCobranca: p.patients?.tipo_cobranca ?? 'mensal',
+      valorMensalFixo: p.patients?.valor_mensal_fixo ?? null,
+      presente: p.presente,
+      pagamentoRecebido: pagosSet.has(`${p.appointment_id}_${p.patient_id}`),
+    });
   });
 
   return appointments.map((a) => ({ ...a, participantes: porAppointment[a.id] || [] }));
@@ -765,7 +880,10 @@ export async function listarStatusSessoes() {
   const desdeISO = desde.toISOString().slice(0, 10);
   const { data, error } = await supabase
     .from('appointments')
-    .select('id, date, start_time, status, patient_id, patients(nome), sessions(id, transcript, transcricao_status)')
+    .select(
+      'id, date, start_time, status, patient_id, patients(nome), ' +
+      'sessions(id, transcript, transcricao_status), records(id, content)'
+    )
     .neq('status', 'agendado')
     .gte('date', desdeISO)
     .order('date', { ascending: false })
@@ -773,6 +891,13 @@ export async function listarStatusSessoes() {
   if (error) throw error;
   return (data || []).map((a) => {
     const sessao = Array.isArray(a.sessions) ? a.sessions[0] : a.sessions;
+    const registros = Array.isArray(a.records) ? a.records : (a.records ? [a.records] : []);
+    // "Tem relato" agora aceita as duas formas: gravação de áudio
+    // transcrita (`sessions.transcript`) OU registro escrito manualmente em
+    // Novo Registro (tipo "Sessão"), vinculado via `records.appointment_id`
+    // (migration 0046) — antes só a primeira contava.
+    const temTranscricao = !!(sessao?.transcript || '').trim();
+    const temRegistro = registros.some((r) => !!(r.content || '').trim());
     return {
       appointmentId: a.id,
       date: a.date,
@@ -781,10 +906,21 @@ export async function listarStatusSessoes() {
       patientId: a.patient_id,
       patientNome: a.patients?.nome ?? null,
       sessionId: sessao?.id ?? null,
-      temTranscricao: !!(sessao?.transcript || '').trim(),
+      temTranscricao,
+      temRegistro,
+      temRelato: temTranscricao || temRegistro,
       transcricaoStatus: sessao?.transcricao_status ?? null,
     };
   });
+}
+
+/** Verdadeiro critério de "sem relato" — usado tanto pelo contador do
+ * Perfil (`getContagemSessoesSemRelato`) quanto pelo filtro padrão de
+ * `SessoesStatusScreen.js`, garantindo que os dois sempre concordem: só
+ * conta compromisso já REALIZADO (cancelado/falta não geram relato) sem
+ * transcrição de áudio nem registro escrito vinculado. */
+export function estaSemRelato(item) {
+  return item.status === 'realizado' && !item.temRelato;
 }
 
 /** Compromissos com horário já passado mas ainda 'agendado' (ninguém
@@ -934,6 +1070,7 @@ export async function ensureAppointmentsForDate(dataISO, dayOfWeek) {
     .or('patient_id.not.is.null,tipo.in.(sessao_grupo,supervisao_grupo,outros)');
   if (error) throw error;
   for (const slot of slots) {
+    if (!slotAtivoNaData(slot, dataISO)) continue;
     await inserirAppointmentSeNaoExiste(userId, slot, dataISO);
   }
 }
@@ -998,6 +1135,55 @@ export async function cancelarCompromissosFuturosDoHorario({ patientId, dayOfWee
   return futuros.length;
 }
 
+/** Apaga de vez um compromisso (não só muda status). `pagamentos.appointment_id`
+ * tem ON DELETE CASCADE — por isso quem chama deve antes decidir, via
+ * `getPagamentoPorAppointment`/`deletarPagamentoDeAppointment`/
+ * `desvincularPagamentoDeAppointment`, o que fazer com um pagamento
+ * eventualmente vinculado, pra não perder o registro financeiro sem querer. */
+export async function deleteAppointment(appointmentId) {
+  const { supabase } = require('./supabase');
+  const { error } = await supabase.from('appointments').delete().eq('id', appointmentId);
+  if (error) throw error;
+}
+
+/** Mesmo cuidado de `deleteAppointment`, em lote — usado ao apagar "este e
+ * todos os recorrentes". */
+export async function deleteAppointments(appointmentIds) {
+  if (!appointmentIds || appointmentIds.length === 0) return;
+  const { supabase } = require('./supabase');
+  const { error } = await supabase.from('appointments').delete().in('id', appointmentIds);
+  if (error) throw error;
+}
+
+/** Pagamento "por sessão" vinculado a este compromisso específico, se
+ * existir (cobrança mensal não usa appointment_id, então retorna null). */
+export async function getPagamentoPorAppointment(appointmentId) {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase
+    .from('pagamentos')
+    .select('*')
+    .eq('appointment_id', appointmentId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+/** Apaga o pagamento vinculado ao apagar o compromisso junto (usuária
+ * escolheu "apagar pagamento também"). */
+export async function deletarPagamentoDeAppointment(appointmentId) {
+  const { supabase } = require('./supabase');
+  const { error } = await supabase.from('pagamentos').delete().eq('appointment_id', appointmentId);
+  if (error) throw error;
+}
+
+/** Preserva o registro financeiro ao apagar o compromisso (usuária escolheu
+ * "manter pagamento") — desvincula antes de apagar, pra não cair no cascade. */
+export async function desvincularPagamentoDeAppointment(appointmentId) {
+  const { supabase } = require('./supabase');
+  const { error } = await supabase.from('pagamentos').update({ appointment_id: null }).eq('appointment_id', appointmentId);
+  if (error) throw error;
+}
+
 /** Atualiza start_time/end_time só desse compromisso específico, sem tocar
  * no horário recorrente em availability_slots — "só este horário" ao
  * editar (item 4, v13). */
@@ -1031,14 +1217,20 @@ export async function getAvailabilitySlotByDayAndTime(dayOfWeek, startTime) {
  * então a comparação reconstrói a data local de cada sessão em vez de
  * comparar strings diretamente.
  */
+// Mesmo critério combinado de `estaSemRelato`: uma sessão gravada
+// (transcrita) OU um registro escrito em Novo Registro nessa data já
+// contam como relato — antes só a gravação de áudio era considerada aqui,
+// então um registro escrito não tirava o aviso "⚠ Nenhum relato..." do
+// DetalheCompromissoScreen nem o indicador da Agenda.
 export async function temTranscricaoParaData(patientId, dataISO) {
-  const sessoes = await getSessions(patientId);
-  return sessoes.some((s) => {
-    if (!(s.transcript || '').trim()) return false;
-    const d = new Date(s.date);
-    const dataLocal = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    return dataLocal === dataISO;
-  });
+  const [sessoes, registros] = await Promise.all([getSessions(patientId), getRecords(patientId)]);
+  const dataLocalDe = (dataStr) => {
+    const d = new Date(dataStr);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  const temSessao = sessoes.some((s) => !!(s.transcript || '').trim() && dataLocalDe(s.date) === dataISO);
+  const temRegistro = registros.some((r) => !!(r.content || '').trim() && dataLocalDe(r.date) === dataISO);
+  return temSessao || temRegistro;
 }
 
 export async function getPatientById(patientId) {
@@ -1268,20 +1460,17 @@ export async function getContagemAnalisantesESupervisionandos() {
   return { analisantes: analisantes.count || 0, supervisionandos: supervisionandos.count || 0 };
 }
 
-/** Sessões (de qualquer analisante) sem transcrição/relato preenchido —
- * mesmo critério já usado em temTranscricaoParaData (nulo ou string vazia
- * conta como "sem relato"). Usa count/head — antes baixava o TEXTO
- * COMPLETO da transcrição de toda sessão já gravada só pra contar quantas
- * estavam vazias, o que sozinho podia ser a maior parte do tempo de
- * carregamento do Perfil numa agenda com muito histórico. */
+/** Contador do card "Sessões sem relato" (Perfil). ⚠️ CORRIGIDO: antes
+ * contava linhas de `sessions` com transcript vazio, sem nenhuma relação
+ * com o que a tela `SessoesStatusScreen` (aberta ao tocar o card) de fato
+ * mostra — dois critérios diferentes, então o número quase nunca batia com
+ * a lista (compromissos cancelados/sem sessão vinculada inflavam ou
+ * ficavam de fora ao acaso). Agora deriva de `listarStatusSessoes` +
+ * `estaSemRelato`, a MESMA fonte e o MESMO filtro usados pela tela — os
+ * dois nunca mais podem divergir, por construção. */
 export async function getContagemSessoesSemRelato() {
-  const { supabase } = require('./supabase');
-  const { count, error } = await supabase
-    .from('sessions')
-    .select('*', { count: 'exact', head: true })
-    .or('transcript.is.null,transcript.eq.');
-  if (error) throw error;
-  return count || 0;
+  const lista = await listarStatusSessoes();
+  return lista.filter(estaSemRelato).length;
 }
 
 /** Horários recorrentes cadastrados na agenda: quantos estão ocupados
@@ -1299,7 +1488,7 @@ export async function getSlotsOcupados() {
   const { supabase } = require('./supabase');
   const { data, error } = await supabase
     .from('availability_slots')
-    .select('*, patients!inner(nome, preco_sessao, preco_moeda, dia_pagamento, data_paralizacao)')
+    .select('*, patients!inner(nome, preco_sessao, preco_moeda, dia_pagamento, data_paralizacao, tipo_cobranca)')
     .not('patient_id', 'is', null)
     .order('day_of_week', { ascending: true })
     .order('start_time', { ascending: true });
@@ -1307,7 +1496,7 @@ export async function getSlotsOcupados() {
   // Analisante com análise paralisada não deve contar como ganho previsto em
   // Financeiro/Recebíveis/Fiscal (item 3) — o horário continua existindo,
   // só some do que é "esperado receber" enquanto a paralisação durar.
-  return data.filter((row) => !row.patients?.data_paralizacao).map((row) => {
+  const individuais = data.filter((row) => !row.patients?.data_paralizacao).map((row) => {
     const { patients, ...resto } = row;
     return {
       ...resto,
@@ -1315,15 +1504,74 @@ export async function getSlotsOcupados() {
       patient_preco: patients?.preco_sessao ?? null,
       patient_preco_moeda: patients?.preco_moeda ?? null,
       patient_dia_pagamento: patients?.dia_pagamento ?? null,
+      patient_tipo_cobranca: patients?.tipo_cobranca || 'mensal',
     };
   });
+
+  // Sessão/supervisão em grupo (item de correção pós-v13): cada integrante
+  // entra aqui como se fosse um horário individual DELE MESMO — mesmo dia/
+  // recorrência do horário do grupo, preço/cobrança da própria ficha.
+  // Assim o Financeiro soma a contribuição de cada integrante automatica-
+  // mente (reaproveita 100% da lógica de agregação por paciente que já
+  // existe pra individual), sem precisar de um "tipo de cobrança do grupo"
+  // único — cada um pode ter por sessão, mensal ou mensal fixo, igual
+  // combinado.
+  const { data: gruposRaw, error: errGrupos } = await supabase
+    .from('availability_slots')
+    .select('*, slot_participantes(patient_id, patients(nome, preco_sessao, preco_moeda, dia_pagamento, data_paralizacao, tipo_cobranca))')
+    .in('tipo', ['sessao_grupo', 'supervisao_grupo']);
+  if (errGrupos) throw errGrupos;
+
+  const doGrupo = [];
+  (gruposRaw || []).forEach((slot) => {
+    const { slot_participantes, ...resto } = slot;
+    (slot_participantes || []).forEach((sp) => {
+      const p = sp.patients;
+      if (!p || p.data_paralizacao) return;
+      doGrupo.push({
+        ...resto,
+        patient_id: sp.patient_id,
+        patient_nome: p.nome ?? null,
+        patient_preco: p.preco_sessao ?? null,
+        patient_preco_moeda: p.preco_moeda ?? null,
+        patient_dia_pagamento: p.dia_pagamento ?? null,
+        patient_tipo_cobranca: p.tipo_cobranca || 'mensal',
+      });
+    });
+  });
+
+  return [...individuais, ...doGrupo];
 }
 
-function contarOcorrenciasDiaSemanaNoMes(ano, mesIndex, diaSemana) {
+function dataParaISO(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function adicionarDias(date, n) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + n);
+  return d;
+}
+
+function inicioDaSemana(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - d.getDay());
+  return d;
+}
+
+/** Conta só as ocorrências de fato ATIVAS de um horário num mês — mesmo dia
+ * da semana já não bastava desde que horários passaram a poder ser
+ * quinzenais/personalizados/avulsos (`slotAtivoNaData`): um horário
+ * quinzenal só ocorre em metade das semanas do mês, um avulso só numa data
+ * específica (se ela cair dentro do mês). */
+function contarOcorrenciasAtivasNoMes(slot, ano, mesIndex) {
   const diasNoMes = new Date(ano, mesIndex + 1, 0).getDate();
   let total = 0;
   for (let d = 1; d <= diasNoMes; d++) {
-    if (new Date(ano, mesIndex, d).getDay() === diaSemana) total++;
+    const data = new Date(ano, mesIndex, d);
+    if (data.getDay() !== slot.day_of_week) continue;
+    if (slotAtivoNaData(slot, dataParaISO(data))) total++;
   }
   return total;
 }
@@ -1338,6 +1586,8 @@ export async function getPlanoFinanceiro(dataRef = new Date()) {
   const diaSemanaHoje = dataRef.getDay();
   const ano = dataRef.getFullYear();
   const mesIndex = dataRef.getMonth();
+  const hojeISO = dataParaISO(dataRef);
+  const inicioSemana = inicioDaSemana(dataRef);
 
   // Busca a cotação de cada moeda estrangeira envolvida UMA vez só (não
   // uma vez por horário) — antes rodava um round-trip ao Supabase por slot
@@ -1362,18 +1612,27 @@ export async function getPlanoFinanceiro(dataRef = new Date()) {
   for (const slot of slots) {
     const preco = precoEmBRL(parsePreco(slot.patient_preco), slot.patient_preco_moeda);
 
-    totalSemanal += preco;
-    itensSemanal.push({
-      patient_id: slot.patient_id,
-      nome: slot.patient_nome,
-      day_of_week: slot.day_of_week,
-      start_time: slot.start_time,
-      end_time: slot.end_time,
-      modality: slot.modality,
-      preco,
-    });
+    // Ocorrência desse horário DENTRO DA SEMANA ATUAL — um horário
+    // quinzenal/personalizado só entra na semanal se essa semana específica
+    // estiver marcada como ativa; um avulso só se sua data cair nesta
+    // semana (`slotAtivoNaData` já cobre os dois casos, e o semanal comum
+    // continua sempre ativo).
+    const dataOcorrenciaSemana = dataParaISO(adicionarDias(inicioSemana, slot.day_of_week));
+    if (slotAtivoNaData(slot, dataOcorrenciaSemana)) {
+      totalSemanal += preco;
+      itensSemanal.push({
+        patient_id: slot.patient_id,
+        nome: slot.patient_nome,
+        day_of_week: slot.day_of_week,
+        start_time: slot.start_time,
+        end_time: slot.end_time,
+        modality: slot.modality,
+        preco,
+        tipo_cobranca: slot.patient_tipo_cobranca,
+      });
+    }
 
-    if (slot.day_of_week === diaSemanaHoje) {
+    if (slot.day_of_week === diaSemanaHoje && slotAtivoNaData(slot, hojeISO)) {
       totalDiario += preco;
       itensDiario.push({
         patient_id: slot.patient_id,
@@ -1382,10 +1641,11 @@ export async function getPlanoFinanceiro(dataRef = new Date()) {
         end_time: slot.end_time,
         modality: slot.modality,
         preco,
+        tipo_cobranca: slot.patient_tipo_cobranca,
       });
     }
 
-    const ocorrencias = contarOcorrenciasDiaSemanaNoMes(ano, mesIndex, slot.day_of_week);
+    const ocorrencias = contarOcorrenciasAtivasNoMes(slot, ano, mesIndex);
     const subtotalMes = preco * ocorrencias;
     totalMensal += subtotalMes;
 
@@ -1395,6 +1655,7 @@ export async function getPlanoFinanceiro(dataRef = new Date()) {
         patient_id: pid,
         nome: slot.patient_nome,
         dia_pagamento: slot.patient_dia_pagamento || null,
+        tipo_cobranca: slot.patient_tipo_cobranca,
         sessoesMes: 0,
         subtotal: 0,
       };
@@ -1421,6 +1682,11 @@ export async function getPlanoFinanceiro(dataRef = new Date()) {
     totalSemanal, itensSemanal,
     totalMensal, itensMensal,
     cronogramaRecebimentos,
+    // Distinto de itensSemanal.length === 0: esse pode dar zero numa semana
+    // "de folga" de um horário quinzenal/personalizado mesmo com agenda
+    // cadastrada — `temAlgumHorario` reflete se existe algum horário
+    // ocupado cadastrado, período nenhum.
+    temAlgumHorario: slots.length > 0,
   };
 }
 
@@ -1639,6 +1905,39 @@ export function calcularStatusGeralRecebimentos(recebimentos) {
   return 'verde';
 }
 
+/** Mesma lógica de `calcularStatusGeralRecebimentos`, por item — verde
+ * (já recebido), amarelo (ainda não recebido, mas não vencido) ou vermelho
+ * (não recebido e já vencido) — usada pra colorir o valor de cada
+ * analisante na lista do Financeiro (item mensal), não só o card-resumo. */
+export function calcularStatusItemRecebimento(item) {
+  if (item.recebido) return 'verde';
+  const hojeDia = new Date().getDate();
+  return item.dia_pagamento && item.dia_pagamento < hojeDia ? 'vermelho' : 'amarelo';
+}
+
+/** Quais ocorrências (patient_id + data + horário) de cobrança "por sessão"
+ * já têm pagamento confirmado dentro de um intervalo de datas — usado pra
+ * colorir a previsão de sessões do Financeiro (diário/semanal) sem
+ * depender da Agenda já ter materializado o compromisso daquele dia (o
+ * pagamento só existe se a sessão foi confirmada como recebida em algum
+ * momento, o que já implica o compromisso existir). Retorna um Set de
+ * chaves `patientId_data_horaInicio`. */
+export async function getSessoesPagasNoIntervalo(inicioISO, fimISO) {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase
+    .from('pagamentos')
+    .select('patient_id, appointments!inner(date, start_time)')
+    .not('appointment_id', 'is', null)
+    .gte('appointments.date', inicioISO)
+    .lte('appointments.date', fimISO);
+  if (error) throw error;
+  const chaves = new Set();
+  (data || []).forEach((r) => {
+    chaves.add(`${r.patient_id}_${r.appointments.date}_${r.appointments.start_time}`);
+  });
+  return chaves;
+}
+
 // ===================== WHATSAPP BUSINESS (item 13, v13 — opcional) =======
 //
 // Comprovantes que a Edge Function whatsapp-webhook detectou por OCR e
@@ -1720,6 +2019,19 @@ export async function confirmarPagamentoSessao(appointmentId, patientId, dataISO
       ano, mes: mes - 1, recebido: true,
       data_recebimento: new Date().toISOString(), valor: valor || null,
     });
+  if (error) throw error;
+}
+
+/** Presença de UM integrante numa ocorrência de sessão/supervisão em
+ * grupo — independente do status geral do compromisso, que continua
+ * sendo um só (realizado/cancelado/etc pro evento como um todo). */
+export async function marcarPresencaParticipante(appointmentId, patientId, presente) {
+  const { supabase } = require('./supabase');
+  const { error } = await supabase
+    .from('appointment_participantes')
+    .update({ presente })
+    .eq('appointment_id', appointmentId)
+    .eq('patient_id', patientId);
   if (error) throw error;
 }
 

@@ -25,7 +25,7 @@ function CampoTemplate({ titulo, descricao, variaveis, valor, onChange, onRestau
         value={valor}
         onChangeText={onChange}
         placeholder={textoPadrao}
-        placeholderTextColor="#B0ADA6"
+        placeholderTextColor="#756E66"
         multiline
         textAlignVertical="top"
       />
@@ -93,7 +93,7 @@ export default function MensagensPersonalizadasScreen() {
     return (
       <SafeAreaView style={s.safe}>
         <View style={s.loadingWrap}>
-          <ActivityIndicator size="large" color="#3D5A80" />
+          <ActivityIndicator size="large" color="#497363" />
         </View>
       </SafeAreaView>
     );
@@ -101,7 +101,7 @@ export default function MensagensPersonalizadasScreen() {
 
   return (
     <SafeAreaView style={s.safe} edges={['bottom']}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={s.scrollInner} keyboardShouldPersistTaps="handled">
         <Text style={s.intro}>
           Escreva do seu jeito, ou deixe em branco pra usar o texto padrão do Dr.Sig.
@@ -109,7 +109,7 @@ export default function MensagensPersonalizadasScreen() {
         </Text>
 
         <CampoTemplate
-          titulo="💬 Lembrete de cobrança"
+          titulo="Lembrete de cobrança"
           descricao="Usado no WhatsApp e no e-mail de lembrete, na tela de Recebíveis."
           variaveis={VARIAVEIS_COBRANCA}
           valor={cobranca}
@@ -119,7 +119,7 @@ export default function MensagensPersonalizadasScreen() {
         />
 
         <CampoTemplate
-          titulo="🧾 Recibo — para o analisante"
+          titulo="Recibo — para o analisante"
           descricao="E-mail enviado ao analisante junto com o PDF do recibo."
           variaveis={VARIAVEIS_RECIBO_PACIENTE}
           valor={reciboPaciente}
@@ -129,7 +129,7 @@ export default function MensagensPersonalizadasScreen() {
         />
 
         <CampoTemplate
-          titulo="🧾 Recibo/Nota — para o contador"
+          titulo="Recibo/Nota — para o contador"
           descricao="E-mail enviado ao contador (tanto ao emitir recibo quanto nota)."
           variaveis={VARIAVEIS_RECIBO_CONTADOR}
           valor={reciboContador}
@@ -152,33 +152,33 @@ export default function MensagensPersonalizadasScreen() {
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F5F7FA' },
+  safe: { flex: 1, backgroundColor: '#F7F5F0' },
   loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   scrollInner: { padding: 20, paddingBottom: 40 },
-  intro: { fontSize: 13, color: '#6B6860', lineHeight: 19, marginBottom: 20 },
+  intro: { fontSize: 13, color: '#756E66', lineHeight: 19, marginBottom: 20 },
   card: {
-    backgroundColor: '#FFFFFF', borderRadius: 14, padding: 16, marginBottom: 16,
+    backgroundColor: '#FDFCFA', borderRadius: 14, padding: 16, marginBottom: 16,
   },
-  cardTitulo: { fontSize: 15, fontWeight: '700', color: '#1C1C1E' },
-  cardDescricao: { fontSize: 12.5, color: '#6B6860', marginTop: 4, marginBottom: 8, lineHeight: 17 },
-  variaveis: { fontSize: 11.5, color: '#3D5A80', marginBottom: 10 },
+  cardTitulo: { fontSize: 15, fontWeight: '500', color: '#302C28', lineHeight: 22 },
+  cardDescricao: { fontSize: 12.5, color: '#756E66', marginTop: 4, marginBottom: 8, lineHeight: 17 },
+  variaveis: { fontSize: 11.5, color: '#497363', marginBottom: 10, lineHeight: 17 },
   textarea: {
-    backgroundColor: '#F7F6F3',
+    backgroundColor: '#F7F5F0',
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#E8E4DD',
+    borderColor: '#EAE5DC',
     padding: 12,
     fontSize: 14,
-    color: '#1C1C1E',
+    color: '#302C28',
     minHeight: 100,
   },
-  restaurar: { fontSize: 12.5, color: '#3D5A80', fontWeight: '600', marginTop: 8 },
+  restaurar: { fontSize: 12.5, color: '#497363', fontWeight: '600', marginTop: 8, lineHeight: 18 },
   btnSalvar: {
-    backgroundColor: '#3D5A80',
+    backgroundColor: '#497363',
     borderRadius: 14,
     paddingVertical: 15,
     alignItems: 'center',
     marginTop: 8,
   },
-  btnSalvarTexto: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  btnSalvarTexto: { color: '#FFFFFF', fontSize: 16, fontWeight: '500', lineHeight: 23 },
 });

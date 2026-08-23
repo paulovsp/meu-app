@@ -59,7 +59,7 @@ const CORES_STATUS = {
   em_dia:         { backgroundColor: 'rgba(30, 158, 99, 0.08)' },
   no_dia:         { backgroundColor: 'rgba(224, 160, 48, 0.18)' },
   atrasado:       { backgroundColor: 'rgba(198, 57, 43, 0.10)' },
-  atrasado_grave: { backgroundColor: 'rgba(198, 57, 43, 0.38)', borderWidth: 2, borderColor: '#E0A030' },
+  atrasado_grave: { backgroundColor: 'rgba(198, 57, 43, 0.38)', borderWidth: 1, borderColor: '#7D6540' },
 };
 
 function limparTelefoneParaWhatsapp(telefone) {
@@ -79,7 +79,7 @@ function mensagemLembrete(item, profissional) {
 function Vazio({ texto }) {
   return (
     <View style={s.vazio}>
-      <Ionicons name="wallet-outline" size={36} color="#C7CDD6" />
+      <Ionicons name="wallet-outline" size={36} color="#A9A299" />
       <Text style={s.vazioTexto}>{texto}</Text>
     </View>
   );
@@ -89,7 +89,7 @@ function LinhaSessao({ item }) {
   const rotuloSessoes = item.sessoesPagas === 1 ? '1 sessão paga' : `${item.sessoesPagas} sessões pagas`;
   return (
     <View style={s.linha}>
-      <Ionicons name="receipt-outline" size={22} color={item.recebido ? '#1e9e63' : '#C7CDD6'} style={s.checkBtn} />
+      <Ionicons name="receipt-outline" size={22} color={item.recebido ? '#44745B' : '#A9A299'} style={s.checkBtn} />
       <View style={s.linhaInfo}>
         <Text style={s.linhaNome} numberOfLines={1}>{item.nome}</Text>
         <Text style={s.linhaSub}>
@@ -110,12 +110,12 @@ function LinhaRecebimento({ item, status, onToggle, onWhatsapp, onEmail, atualiz
     <View style={[s.linhaRecebimento, CORES_STATUS[status]]}>
       <TouchableOpacity onPress={() => onToggle(item)} style={s.checkBtn} disabled={atualizando}>
         {atualizando ? (
-          <ActivityIndicator size="small" color="#3D5A80" />
+          <ActivityIndicator size="small" color="#497363" />
         ) : (
           <Ionicons
             name={item.recebido ? 'checkmark-circle' : 'ellipse-outline'}
             size={26}
-            color={item.recebido ? '#1e9e63' : '#6B6860'}
+            color={item.recebido ? '#44745B' : '#756E66'}
           />
         )}
       </TouchableOpacity>
@@ -133,14 +133,14 @@ function LinhaRecebimento({ item, status, onToggle, onWhatsapp, onEmail, atualiz
           onPress={() => onWhatsapp(item)}
           disabled={!podeCobrar}
         >
-          <Ionicons name="logo-whatsapp" size={20} color={podeCobrar ? '#25D366' : '#C7CDD6'} />
+          <Ionicons name="logo-whatsapp" size={20} color={podeCobrar ? '#25D366' : '#A9A299'} />
         </TouchableOpacity>
         <TouchableOpacity
           style={[s.acaoBtn, !podeCobrar && s.acaoBtnDesabilitado]}
           onPress={() => onEmail(item)}
           disabled={!podeCobrar}
         >
-          <Ionicons name="mail-outline" size={20} color={podeCobrar ? '#3D5A80' : '#C7CDD6'} />
+          <Ionicons name="mail-outline" size={20} color={podeCobrar ? '#497363' : '#A9A299'} />
         </TouchableOpacity>
       </View>
     </View>
@@ -163,7 +163,7 @@ export default function CobrancaScreen() {
     navigation.setOptions({
       headerRight: () => (
         <TouchableOpacity onPress={() => setMenuAberto(true)} style={{ paddingHorizontal: 12 }}>
-          <Ionicons name="menu-outline" size={26} color="#1A1A2E" />
+          <Ionicons name="menu-outline" size={26} color="#302C28" />
         </TouchableOpacity>
       ),
     });
@@ -248,17 +248,17 @@ export default function CobrancaScreen() {
   const markedDates = {};
   recebimentosMensal.forEach((r) => {
     const iso = toISODia(ano, mesIndex, r.dia_pagamento);
-    const jaPendente = markedDates[iso]?.dotColor === '#E0A030';
+    const jaPendente = markedDates[iso]?.dotColor === '#7D6540';
     markedDates[iso] = {
       marked: true,
-      dotColor: (jaPendente || !r.recebido) ? '#E0A030' : '#1e9e63',
+      dotColor: (jaPendente || !r.recebido) ? '#7D6540' : '#44745B',
     };
   });
   if (diaSelecionado) {
     markedDates[diaSelecionado] = {
       ...(markedDates[diaSelecionado] || {}),
       selected: true,
-      selectedColor: '#3D5A80',
+      selectedColor: '#497363',
     };
   }
 
@@ -282,7 +282,7 @@ export default function CobrancaScreen() {
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
         {pendentesHoje.length > 0 && (
           <View style={s.alerta}>
-            <Ionicons name="alert-circle" size={20} color="#B45309" />
+            <Ionicons name="alert-circle" size={20} color="#7D6540" />
             <Text style={s.alertaTexto}>
               Hoje (dia {hoje.getDate()}) há {pendentesHoje.length === 1 ? 'recebimento previsto' : `${pendentesHoje.length} recebimentos previstos`} de{' '}
               {pendentesHoje.map((r) => r.nome).join(', ')}.
@@ -300,10 +300,10 @@ export default function CobrancaScreen() {
             )}
             markedDates={markedDates}
             theme={{
-              todayTextColor: '#3D5A80',
-              arrowColor: '#3D5A80',
-              selectedDayBackgroundColor: '#3D5A80',
-              dotColor: '#E0A030',
+              todayTextColor: '#497363',
+              arrowColor: '#497363',
+              selectedDayBackgroundColor: '#497363',
+              dotColor: '#7D6540',
             }}
           />
         </View>
@@ -320,7 +320,7 @@ export default function CobrancaScreen() {
 
           {carregando ? (
             <View style={s.carregandoWrap}>
-              <ActivityIndicator size="large" color="#3D5A80" />
+              <ActivityIndicator size="large" color="#497363" />
             </View>
           ) : listaDoDia.length === 0 ? (
             <Vazio
@@ -373,35 +373,35 @@ export default function CobrancaScreen() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F7FA' },
+  container: { flex: 1, backgroundColor: '#F7F5F0' },
   scroll: { padding: 16, paddingBottom: 32, gap: 16 },
 
   alerta: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 10,
-    backgroundColor: '#FFF8E7',
+    backgroundColor: '#F2E9DC',
     borderRadius: 14,
     padding: 14,
     borderLeftWidth: 3,
-    borderLeftColor: '#E0A030',
+    borderLeftColor: '#7D6540',
   },
-  alertaTexto: { flex: 1, fontSize: 13, color: '#7a6000', lineHeight: 18 },
+  alertaTexto: { flex: 1, fontSize: 13, color: '#6B5A3A', lineHeight: 18 },
 
   calendarioCard: {
-    backgroundColor: '#fff',
+    backgroundColor: '#FDFCFA',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#E0E4EA',
+    borderColor: '#EAE5DC',
     overflow: 'hidden',
   },
 
   secao: {
-    backgroundColor: '#fff',
+    backgroundColor: '#FDFCFA',
     borderRadius: 16,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#E0E4EA',
+    borderColor: '#EAE5DC',
   },
   secaoTituloRow: {
     flexDirection: 'row',
@@ -411,19 +411,19 @@ const s = StyleSheet.create({
   },
   secaoTitulo: {
     fontSize: 12,
-    fontWeight: '700',
-    color: '#888',
+    fontWeight: '500',
+    color: '#8C857B',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  limparFiltro: { fontSize: 12, fontWeight: '700', color: '#3D5A80' },
+  limparFiltro: { fontSize: 12, fontWeight: '500', color: '#497363', lineHeight: 17 },
 
   linha: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 10,
     borderTopWidth: 1,
-    borderTopColor: '#F0F2F5',
+    borderTopColor: '#EAE5DC',
     gap: 10,
   },
   linhaRecebimento: {
@@ -437,17 +437,17 @@ const s = StyleSheet.create({
   },
   checkBtn: { padding: 2 },
   linhaInfo: { flex: 1 },
-  linhaNome: { fontSize: 14, fontWeight: '700', color: '#1A1A2E' },
-  linhaSub: { fontSize: 12, color: '#888', marginTop: 2 },
+  linhaNome: { fontSize: 14, fontWeight: '500', color: '#302C28', lineHeight: 20 },
+  linhaSub: { fontSize: 12, color: '#8C857B', marginTop: 2, lineHeight: 17 },
   linhaAcoes: { flexDirection: 'row', gap: 4 },
   acaoBtn: {
     width: 34, height: 34, borderRadius: 10,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#F5F7FA',
+    backgroundColor: '#F7F5F0',
   },
   acaoBtnDesabilitado: { opacity: 0.4 },
 
   vazio: { alignItems: 'center', paddingVertical: 24, gap: 10 },
-  vazioTexto: { fontSize: 13, color: '#999', textAlign: 'center', lineHeight: 19 },
+  vazioTexto: { fontSize: 13, color: '#8C857B', textAlign: 'center', lineHeight: 19 },
   carregandoWrap: { alignItems: 'center', paddingVertical: 24 },
 });

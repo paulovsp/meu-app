@@ -11,14 +11,21 @@ import {
   deleteAvailabilitySlot,
   listarCompromissosFuturosDoHorario,
   cancelarCompromissosFuturosDoHorario,
+  deleteAppointment,
+  deleteAppointments,
+  getPagamentoPorAppointment,
+  deletarPagamentoDeAppointment,
+  desvincularPagamentoDeAppointment,
 } from '../services/database';
 import { horarioJaPassou, getEstadoCompromisso, ESTADO_LABEL } from '../services/compromissoStatus';
 import { mensagemDeErro } from '../services/erros';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
 import { infoTipoEvento, ehTipoGrupo } from '../services/tiposEvento';
 import { nomeExibicaoCompromisso, perguntarPagamentoSessao, perguntarCheckin } from '../services/checkinCompromisso';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function DetalheCompromissoScreen({ route, navigation }) {
+  const insets = useSafeAreaInsets();
   const { appointmentId } = route.params;
 
   useBloqueioAssinatura(navigation);
@@ -142,6 +149,9 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
     setAgindo(true);
     try {
       await updateAppointmentStatus(compromisso.id, 'realizado');
+      // Pra grupo (tem `participantes`), isso pergunta presença + pagamento
+      // de cada integrante — pra "outros" (sem participantes), não faz nada.
+      await perguntarPagamentoSessao(compromisso);
       await carregar();
     } catch (e) {
       Alert.alert('Erro ao atualizar', mensagemDeErro(e));
@@ -233,8 +243,146 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
     );
   }
 
+  function formatarValorPagamento(pagamento) {
+    if (!pagamento?.valor) return '';
+    return ` no valor de R$ ${Number(pagamento.valor).toFixed(2).replace('.', ',')}`;
+  }
+
+  // "Apagar" é diferente de "Cancelar": remove a linha de vez (não só muda
+  // status), por isso fica disponível mesmo quando o compromisso já foi
+  // realizado/cancelado (onde "Cancelar" some por não fazer mais sentido).
+  // Sempre pergunta o escopo (só este/todos os recorrentes) e, se houver
+  // pagamento por sessão vinculado, também pergunta se apaga ou preserva
+  // esse registro financeiro — pra nunca sumir com uma cobrança já recebida
+  // sem a pessoa escolher isso explicitamente.
+  function perguntarExclusao() {
+    const dataFormatada = compromisso.date.split('-').reverse().join('/');
+    Alert.alert(
+      'Apagar compromisso',
+      'Apagar só este horário, ou este e todos os recorrentes futuros?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: `Só este (${dataFormatada})`, onPress: excluirApenasEste },
+        { text: 'Este e todos os recorrentes', style: 'destructive', onPress: excluirComRecorrentes },
+      ]
+    );
+  }
+
+  async function excluirApenasEste() {
+    setAgindo(true);
+    let pagamento;
+    try {
+      pagamento = await getPagamentoPorAppointment(compromisso.id);
+    } catch (e) {
+      setAgindo(false);
+      Alert.alert('Erro', mensagemDeErro(e));
+      return;
+    }
+    setAgindo(false);
+
+    if (pagamento) {
+      Alert.alert(
+        'Pagamento vinculado',
+        `Esse horário tem um pagamento${formatarValorPagamento(pagamento)} registrado. Apagar o pagamento junto, ou manter o registro financeiro (desvinculado deste horário)?`,
+        [
+          { text: 'Voltar', style: 'cancel' },
+          { text: 'Manter pagamento', onPress: () => efetivarExclusaoUnica({ temPagamento: true, apagarPagamento: false }) },
+          { text: 'Apagar pagamento também', style: 'destructive', onPress: () => efetivarExclusaoUnica({ temPagamento: true, apagarPagamento: true }) },
+        ]
+      );
+      return;
+    }
+    efetivarExclusaoUnica({ temPagamento: false });
+  }
+
+  async function efetivarExclusaoUnica({ temPagamento, apagarPagamento }) {
+    setAgindo(true);
+    try {
+      if (temPagamento) {
+        if (apagarPagamento) await deletarPagamentoDeAppointment(compromisso.id);
+        else await desvincularPagamentoDeAppointment(compromisso.id);
+      }
+      await deleteAppointment(compromisso.id);
+      navigation.goBack();
+    } catch (e) {
+      setAgindo(false);
+      Alert.alert('Erro ao apagar', mensagemDeErro(e));
+    }
+  }
+
+  async function excluirComRecorrentes() {
+    const [ano, mes, dia] = compromisso.date.split('-').map(Number);
+    const dayOfWeek = new Date(ano, mes - 1, dia).getDay();
+    setAgindo(true);
+    let slot, futuros, pagamento;
+    try {
+      [slot, futuros, pagamento] = await Promise.all([
+        getAvailabilitySlotByDayAndTime(dayOfWeek, compromisso.start_time),
+        listarCompromissosFuturosDoHorario({
+          patientId: compromisso.patient_id,
+          dayOfWeek,
+          startTime: compromisso.start_time,
+        }),
+        getPagamentoPorAppointment(compromisso.id),
+      ]);
+    } catch (e) {
+      setAgindo(false);
+      Alert.alert('Erro', mensagemDeErro(e));
+      return;
+    }
+    setAgindo(false);
+
+    function prosseguir(apagarPagamento) {
+      Alert.alert(
+        'Confirmar exclusão',
+        futuros.length > 0
+          ? `Isso remove o horário recorrente da agenda e apaga mais ${futuros.length} compromisso${futuros.length === 1 ? '' : 's'} futuro${futuros.length === 1 ? '' : 's'} desse horário, além deste. Confirma?`
+          : 'Isso remove o horário recorrente da agenda. Não há outros compromissos futuros desse horário. Confirma?',
+        [
+          { text: 'Voltar', style: 'cancel' },
+          {
+            text: 'Confirmar',
+            style: 'destructive',
+            onPress: async () => {
+              setAgindo(true);
+              try {
+                if (pagamento) {
+                  if (apagarPagamento) await deletarPagamentoDeAppointment(compromisso.id);
+                  else await desvincularPagamentoDeAppointment(compromisso.id);
+                }
+                if (futuros.length > 0) await deleteAppointments(futuros.map((a) => a.id));
+                await deleteAppointment(compromisso.id);
+                if (slot?.id) await deleteAvailabilitySlot(slot.id);
+                navigation.goBack();
+              } catch (e) {
+                setAgindo(false);
+                Alert.alert('Erro ao apagar', mensagemDeErro(e));
+              }
+            },
+          },
+        ]
+      );
+    }
+
+    if (pagamento) {
+      Alert.alert(
+        'Pagamento vinculado',
+        `Esse horário tem um pagamento${formatarValorPagamento(pagamento)} registrado. Apagar o pagamento junto, ou manter o registro financeiro (desvinculado deste horário)?`,
+        [
+          { text: 'Voltar', style: 'cancel' },
+          { text: 'Manter pagamento', onPress: () => prosseguir(false) },
+          { text: 'Apagar pagamento também', style: 'destructive', onPress: () => prosseguir(true) },
+        ]
+      );
+      return;
+    }
+    prosseguir(false);
+  }
+
   return (
-    <ScrollView style={styles.container}>
+    // Área segura no pé: sem isso os botões ficam por baixo da barra de
+    // gestos do sistema.
+    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
       <Text style={[styles.tipoLabel, { color: infoTipoEvento(tipo).cor }]}>
         {infoTipoEvento(tipo).labelCurto}
       </Text>
@@ -247,8 +395,8 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
       {eventoIndividual && estado === 'realizado_sem_relato' && (
         <View style={styles.avisoBox}>
           <Text style={styles.avisoTxt}>
-            ⚠ Nenhum relato ou transcrição foi adicionado para esta sessão ainda.
-          </Text>
+Nenhum relato ou transcrição foi adicionado para esta sessão ainda.
+</Text>
         </View>
       )}
 
@@ -263,13 +411,47 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
             <InfoLinha label="Início do tratamento" valor={compromisso.patient_data_inicio || '-'} />
           </>
         )}
-        {ehTipoGrupo(tipo) && (
-          <InfoLinha label="Participantes" valor={(compromisso.participantes || []).map((p) => p.nome).join(', ') || '-'} />
-        )}
       </View>
 
+      {ehTipoGrupo(tipo) && (
+        <View style={styles.card}>
+          <Text style={styles.participantesTitulo}>Participantes</Text>
+          {(compromisso.participantes || []).length === 0 ? (
+            <Text style={styles.valor}>-</Text>
+          ) : (
+            compromisso.participantes.map((p) => (
+              <View key={p.id} style={styles.participanteLinha}>
+                <Text style={styles.participanteNome} numberOfLines={1}>{p.nome}</Text>
+                <Text style={styles.participanteStatus}>
+                  {p.presente === true ? 'Presente' : p.presente === false ? 'Faltou' : '— sem confirmar'}
+                  {p.tipoCobranca === 'por_sessao' && p.presente !== false
+                    ? (p.pagamentoRecebido ? '· Pago' : ' · Pendente')
+                    : ''}
+                </Text>
+              </View>
+            ))
+          )}
+          {compromisso.status !== 'agendado' && (
+            <TouchableOpacity
+              style={styles.btnConferirGrupo}
+              onPress={async () => { await perguntarPagamentoSessao(compromisso); await carregar(); }}
+            >
+              <Text style={styles.btnConferirGrupoTxt}>Conferir presença e pagamento</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
       <TouchableOpacity style={styles.btnEditarHorario} onPress={editarHorario}>
-        <Text style={styles.btnEditarHorarioTxt}>✏️ Editar informações do horário</Text>
+        <Text style={styles.btnEditarHorarioTxt}>Editar informações do horário</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.btnApagar, agindo && { opacity: 0.7 }]}
+        onPress={perguntarExclusao}
+        disabled={agindo}
+      >
+        {agindo ? <ActivityIndicator color="#975451" /> : <Text style={styles.btnApagarTxt}>Apagar compromisso</Text>}
       </TouchableOpacity>
 
       {podeAgir && (
@@ -289,7 +471,7 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
             disabled={agindo}
             onPress={perguntarEscopoCancelamento}
           >
-            {agindo ? <ActivityIndicator color="#c62828" /> : <Text style={styles.btnCancelarTxt}>Cancelar Compromisso</Text>}
+            {agindo ? <ActivityIndicator color="#975451" /> : <Text style={styles.btnCancelarTxt}>Cancelar Compromisso</Text>}
           </TouchableOpacity>
         </>
       )}
@@ -307,29 +489,40 @@ function InfoLinha({ label, valor }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, backgroundColor: '#fff' },
-  tipoLabel: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 2 },
-  nome: { fontSize: 24, fontWeight: 'bold', marginBottom: 12 },
+  container: { flex: 1, padding: 16, backgroundColor: '#FDFCFA' },
+  tipoLabel: { fontSize: 12, fontWeight: '500', textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 2, lineHeight: 17 },
+  nome: { fontSize: 24, fontWeight: '500', marginBottom: 12 },
   estadoPill: {
     alignSelf: 'flex-start', borderRadius: 20, paddingHorizontal: 12,
     paddingVertical: 6, marginBottom: 16,
   },
-  estadoPillTxt: { fontSize: 13, fontWeight: '700' },
+  estadoPillTxt: { fontSize: 13, fontWeight: '500', lineHeight: 19 },
   avisoBox: {
-    backgroundColor: '#FCEBEA', borderRadius: 10, padding: 12, marginBottom: 16,
+    backgroundColor: '#F1E4E3', borderRadius: 10, padding: 12, marginBottom: 16,
   },
-  avisoTxt: { color: '#C0392B', fontSize: 13, lineHeight: 18 },
-  card: { backgroundColor: '#f7f7f7', borderRadius: 10, padding: 14, marginBottom: 20 },
+  avisoTxt: { color: '#975451', fontSize: 13, lineHeight: 18 },
+  card: { backgroundColor: '#F7F5F0', borderRadius: 10, padding: 14, marginBottom: 20 },
+  participantesTitulo: { fontSize: 13, fontWeight: '500', color: '#8C857B', marginBottom: 8, lineHeight: 19 },
+  participanteLinha: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 5, gap: 8 },
+  participanteNome: { flex: 1, fontWeight: '600', color: '#302C28' },
+  participanteStatus: { fontSize: 12.5, color: '#756E66', lineHeight: 18 },
+  btnConferirGrupo: { marginTop: 10, paddingVertical: 10, alignItems: 'center', borderTopWidth: 1, borderTopColor: '#EAE5DC' },
+  btnConferirGrupoTxt: { color: '#497363', fontWeight: '500', fontSize: 13, lineHeight: 19 },
   btnEditarHorario: {
     padding: 14, borderRadius: 10, alignItems: 'center', marginBottom: 10,
-    borderWidth: 1, borderColor: '#3D5A80',
+    borderWidth: 1, borderColor: '#497363',
   },
-  btnEditarHorarioTxt: { color: '#3D5A80', fontWeight: 'bold' },
+  btnEditarHorarioTxt: { color: '#497363', fontWeight: '500' },
+  btnApagar: {
+    backgroundColor: '#F1E4E3', padding: 14, borderRadius: 10, alignItems: 'center',
+    marginBottom: 10, borderWidth: 1, borderColor: '#975451',
+  },
+  btnApagarTxt: { color: '#975451', fontWeight: '500' },
   linha: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
-  label: { color: '#777' },
+  label: { color: '#8C857B' },
   valor: { fontWeight: '600' },
-  btnIniciar: { backgroundColor: '#2e7d32', padding: 16, borderRadius: 10, alignItems: 'center', marginBottom: 10 },
-  btnIniciarTxt: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
-  btnCancelar: { padding: 14, borderRadius: 10, alignItems: 'center', borderWidth: 1, borderColor: '#c62828' },
-  btnCancelarTxt: { color: '#c62828', fontWeight: 'bold' },
+  btnIniciar: { backgroundColor: '#44745B', padding: 16, borderRadius: 10, alignItems: 'center', marginBottom: 10 },
+  btnIniciarTxt: { color: '#fff', fontWeight: '500', fontSize: 16, lineHeight: 23 },
+  btnCancelar: { padding: 14, borderRadius: 10, alignItems: 'center', borderWidth: 1, borderColor: '#975451' },
+  btnCancelarTxt: { color: '#975451', fontWeight: '500' },
 });

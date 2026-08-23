@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ScrollView, Alert, ActivityIndicator,
@@ -30,6 +31,16 @@ const DIAS_SEMANA = [
 
 function labelDia(valor) {
   return DIAS_SEMANA.find(d => d.valor === valor)?.label ?? '';
+}
+
+const SEMANAS_CICLO = [1, 2, 3, 4];
+
+function dataValida(dataBR) {
+  const iso = dataBRParaISO(dataBR);
+  if (!iso) return false;
+  const [ano, mes, dia] = iso.split('-').map(Number);
+  const data = new Date(ano, mes - 1, dia);
+  return data.getFullYear() === ano && data.getMonth() === mes - 1 && data.getDate() === dia;
 }
 
 export default function FormularioAnalisanteScreen() {
@@ -98,6 +109,9 @@ export default function FormularioAnalisanteScreen() {
               start_time: s.start_time,
               end_time: s.end_time,
               modality: s.modality === 'online' ? 'online' : 'presencial',
+              recorrencia_tipo: s.recorrencia_tipo === 'avulso' ? 'semanal' : (s.recorrencia_tipo || 'semanal'),
+              recorrencia_data_referencia: dataISOParaBR(s.recorrencia_data_referencia),
+              recorrencia_semanas_ativas: s.recorrencia_semanas_ativas?.length ? s.recorrencia_semanas_ativas : SEMANAS_CICLO,
             })));
             return;
           }
@@ -106,7 +120,10 @@ export default function FormularioAnalisanteScreen() {
         }
       }
       // Nenhum slot cadastrado ainda: começa com um horário vazio
-      setHorarios([{ id: Date.now(), day_of_week: 1, start_time: '', end_time: '', modality: 'presencial' }]);
+      setHorarios([{
+        id: Date.now(), day_of_week: 1, start_time: '', end_time: '', modality: 'presencial',
+        recorrencia_tipo: 'semanal', recorrencia_data_referencia: '', recorrencia_semanas_ativas: SEMANAS_CICLO,
+      }]);
     }
     carregarHorarios();
   }, []);
@@ -132,21 +149,23 @@ export default function FormularioAnalisanteScreen() {
     }
   }
 
-  // Não deixa desmarcar os dois — sem nenhum vínculo marcado o cadastro
-  // desaparece das duas listas (AnalisantesScreen.js) sem nenhum aviso.
-  function alternarEhAnalisante(valor) {
-    if (!valor && !ehSupervisionando) return;
-    setEhAnalisante(valor);
-  }
-
-  function alternarEhSupervisionando(valor) {
-    if (!valor && !ehAnalisante) return;
-    setEhSupervisionando(valor);
+  // ⚠️ CORRIGIDO: analisante e supervisionando eram marcáveis juntos no
+  // mesmo cadastro, mas o cadastro só tem UM preço de sessão/tipo de
+  // cobrança — pra alguém que é as duas coisas, isso misturava o valor da
+  // análise com o da supervisão no cômputo financeiro (Financeiro/
+  // Recebíveis/Fiscal usam o mesmo `preco_sessao` pros dois tipos de
+  // horário desse paciente). Agora é uma escolha só; quem precisa das duas
+  // pontas cria dois cadastros separados (cada um com seu próprio preço,
+  // horário e cobrança).
+  function selecionarTipoCadastro(tipo) {
+    setEhAnalisante(tipo === 'analisante');
+    setEhSupervisionando(tipo === 'supervisionando');
   }
 
   function adicionarHorario() {
     setHorarios(prev => [...prev, {
       id: Date.now(), day_of_week: 1, start_time: '', end_time: '', modality: 'presencial',
+      recorrencia_tipo: 'semanal', recorrencia_data_referencia: '', recorrencia_semanas_ativas: SEMANAS_CICLO,
     }]);
   }
 
@@ -165,6 +184,26 @@ export default function FormularioAnalisanteScreen() {
       formatado = `${numeros.slice(0, 2)}:${numeros.slice(2)}`;
     }
     atualizarHorario(id, campo, formatado);
+  }
+
+  function formatarDataHorario(texto, id, campo) {
+    const numeros = texto.replace(/\D/g, '').slice(0, 8);
+    let formatado = numeros;
+    if (numeros.length > 2 && numeros.length <= 4) {
+      formatado = `${numeros.slice(0, 2)}/${numeros.slice(2)}`;
+    } else if (numeros.length > 4) {
+      formatado = `${numeros.slice(0, 2)}/${numeros.slice(2, 4)}/${numeros.slice(4)}`;
+    }
+    atualizarHorario(id, campo, formatado);
+  }
+
+  function alternarSemanaAtivaHorario(id, semana) {
+    setHorarios(prev => prev.map(h => {
+      if (h.id !== id) return h;
+      const atual = h.recorrencia_semanas_ativas || SEMANAS_CICLO;
+      const semanas = atual.includes(semana) ? atual.filter(s => s !== semana) : [...atual, semana].sort();
+      return { ...h, recorrencia_semanas_ativas: semanas };
+    }));
   }
 
   function formatarData(texto, setter) {
@@ -224,6 +263,16 @@ export default function FormularioAnalisanteScreen() {
         Alert.alert('Horário inválido', 'Preencha o horário final no formato HH:MM (ex: 15:00).');
         return false;
       }
+      if (!h.start_time || h.start_time.length !== 5) continue;
+      const tipo = h.recorrencia_tipo || 'semanal';
+      if ((tipo === 'quinzenal' || tipo === 'personalizada') && !dataValida(h.recorrencia_data_referencia)) {
+        Alert.alert('Data inválida', 'Informe a data da 1ª sessão (DD/MM/AAAA) pro horário com recorrência quinzenal/personalizada.');
+        return false;
+      }
+      if (tipo === 'personalizada' && (h.recorrencia_semanas_ativas || []).length === 0) {
+        Alert.alert('Semanas obrigatórias', 'Marque ao menos uma semana do ciclo pra recorrência personalizada.');
+        return false;
+      }
     }
     return true;
   }
@@ -244,12 +293,27 @@ export default function FormularioAnalisanteScreen() {
       // compatível, pula este horário e avisa. Se houver apenas horários
       // LIVRES compatíveis sobrepostos, eles são substituídos automaticamente
       // (modalidades incompatíveis, como presencial x online, não conflitam).
+      const tipoRecorrencia = h.recorrencia_tipo || 'semanal';
+      const recorrencia = tipoRecorrencia === 'semanal'
+        ? { tipo: 'semanal' }
+        : tipoRecorrencia === 'quinzenal'
+          ? { tipo: 'quinzenal', data_referencia: dataBRParaISO(h.recorrencia_data_referencia) }
+          : { tipo: 'personalizada', data_referencia: dataBRParaISO(h.recorrencia_data_referencia), semanas_ativas: h.recorrencia_semanas_ativas || SEMANAS_CICLO };
+
+      // ⚠️ CORRIGIDO: horário sempre ia como "sessao_individual" no banco,
+      // mesmo pra supervisionando — o tipo aqui precisa seguir o vínculo
+      // deste cadastro (ver seletor "Vínculo" acima), senão o horário
+      // aparece errado na Agenda e o picker de participantes de um
+      // horário de grupo (DisponibilidadeScreen.js) não reconhece essa
+      // pessoa como supervisionanda.
       const resultado = await resolverConflitoEAdicionarSlot({
         day_of_week: h.day_of_week,
         start_time: inicio,
         end_time: fim,
         modality: h.modality === 'online' ? 'online' : 'presencial',
         patient_id: patientId,
+        recorrencia,
+        tipo: ehSupervisionando ? 'supervisao_individual' : 'sessao_individual',
       });
 
       if (!resultado.success) {
@@ -379,7 +443,7 @@ export default function FormularioAnalisanteScreen() {
         ]}
         onPress={() => setTipoCobranca(key)}
       >
-        <Text style={styles.modalidadeOptionIcon}>{icon}</Text>
+        <Ionicons name={icon} size={19} color={ativo ? '#FFFFFF' : '#497363'} style={styles.modalidadeOptionIcon} />
         <Text style={[
           styles.modalidadeOptionText,
           ativo && styles.modalidadeOptionTextAtivo
@@ -395,7 +459,7 @@ export default function FormularioAnalisanteScreen() {
           <Text style={styles.horarioCardTitle}>Horário {index + 1}</Text>
           {horarios.length > 1 && (
             <TouchableOpacity onPress={() => removerHorario(item.id)}>
-              <Text style={styles.removerHorarioText}>🗑️ Remover</Text>
+              <Text style={styles.removerHorarioText}>Remover</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -424,7 +488,7 @@ export default function FormularioAnalisanteScreen() {
             <TextInput
               style={styles.input}
               placeholder="14:00"
-              placeholderTextColor="#bbb"
+              placeholderTextColor="#A9A299"
               value={item.start_time}
               onChangeText={(t) => formatarHora(t, item.id, 'start_time')}
               keyboardType="numeric"
@@ -436,7 +500,7 @@ export default function FormularioAnalisanteScreen() {
             <TextInput
               style={styles.input}
               placeholder="15:00"
-              placeholderTextColor="#bbb"
+              placeholderTextColor="#A9A299"
               value={item.end_time}
               onChangeText={(t) => formatarHora(t, item.id, 'end_time')}
               keyboardType="numeric"
@@ -447,7 +511,7 @@ export default function FormularioAnalisanteScreen() {
 
         <Text style={styles.subLabel}>Modalidade deste horário</Text>
         <View style={styles.diasContainer}>
-          {[{ valor: 'online', label: '💻 Online' }, { valor: 'presencial', label: '🏥 Presencial' }].map(op => {
+          {[{ valor: 'online', label: 'Online' }, { valor: 'presencial', label: 'Presencial' }].map(op => {
             const ativo = (item.modality || 'presencial') === op.valor;
             return (
               <TouchableOpacity
@@ -462,12 +526,67 @@ export default function FormularioAnalisanteScreen() {
             );
           })}
         </View>
+
+        <Text style={styles.subLabel}>Recorrência</Text>
+        <View style={styles.diasContainer}>
+          {[{ valor: 'semanal', label: 'Semanal' }, { valor: 'quinzenal', label: 'Quinzenal' }, { valor: 'personalizada', label: 'Personalizada' }].map(op => {
+            const ativo = (item.recorrencia_tipo || 'semanal') === op.valor;
+            return (
+              <TouchableOpacity
+                key={op.valor}
+                style={[styles.diaChip, ativo && styles.diaChipAtivo]}
+                onPress={() => atualizarHorario(item.id, 'recorrencia_tipo', op.valor)}
+              >
+                <Text style={[styles.diaChipText, ativo && styles.diaChipTextAtivo]}>
+                  {op.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {(item.recorrencia_tipo === 'quinzenal' || item.recorrencia_tipo === 'personalizada') && (
+          <>
+            <Text style={styles.subLabel}>Data da 1ª sessão</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="DD/MM/AAAA"
+              placeholderTextColor="#A9A299"
+              value={item.recorrencia_data_referencia}
+              onChangeText={(t) => formatarDataHorario(t, item.id, 'recorrencia_data_referencia')}
+              keyboardType="numeric"
+              maxLength={10}
+            />
+          </>
+        )}
+
+        {item.recorrencia_tipo === 'personalizada' && (
+          <>
+            <Text style={styles.subLabel}>Semanas ativas do ciclo</Text>
+            <View style={styles.diasContainer}>
+              {SEMANAS_CICLO.map(semana => {
+                const ativa = (item.recorrencia_semanas_ativas || SEMANAS_CICLO).includes(semana);
+                return (
+                  <TouchableOpacity
+                    key={semana}
+                    style={[styles.diaChip, ativa && styles.diaChipAtivo]}
+                    onPress={() => alternarSemanaAtivaHorario(item.id, semana)}
+                  >
+                    <Text style={[styles.diaChipText, ativa && styles.diaChipTextAtivo]}>
+                      Semana {semana}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </>
+        )}
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Text style={styles.backBtnText}>← Voltar</Text>
@@ -480,7 +599,7 @@ export default function FormularioAnalisanteScreen() {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
       <ScrollView
         contentContainerStyle={[
@@ -495,7 +614,7 @@ export default function FormularioAnalisanteScreen() {
           <TextInput
             style={styles.input}
             placeholder="Nome completo do analisante"
-            placeholderTextColor="#bbb"
+            placeholderTextColor="#A9A299"
             value={nome}
             onChangeText={setNome}
             autoCapitalize="words"
@@ -506,23 +625,25 @@ export default function FormularioAnalisanteScreen() {
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Vínculo</Text>
           <Text style={styles.hint}>
-            Pode marcar os dois se a pessoa for analisante e também estiver em supervisão.
+            Uma escolha só — preço, horário e cobrança deste cadastro valem só pra este papel.
+            Se a mesma pessoa for analisante E estiver em supervisão com você, crie um segundo
+            cadastro pra supervisão (evita misturar os dois valores no Financeiro).
           </Text>
           <View style={styles.modalidadeContainer}>
             <TouchableOpacity
               style={[styles.modalidadeOption, ehAnalisante && styles.modalidadeOptionAtivo]}
-              onPress={() => alternarEhAnalisante(!ehAnalisante)}
+              onPress={() => selecionarTipoCadastro('analisante')}
             >
-              <Text style={styles.modalidadeOptionIcon}>🗣️</Text>
+              <Ionicons name="chatbubble-outline" size={20} color={ehAnalisante ? '#FFFFFF' : '#497363'} style={styles.modalidadeOptionIcon} />
               <Text style={[styles.modalidadeOptionText, ehAnalisante && styles.modalidadeOptionTextAtivo]}>
                 Analisante
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.modalidadeOption, ehSupervisionando && styles.modalidadeOptionAtivo]}
-              onPress={() => alternarEhSupervisionando(!ehSupervisionando)}
+              onPress={() => selecionarTipoCadastro('supervisionando')}
             >
-              <Text style={styles.modalidadeOptionIcon}>🎓</Text>
+              <Ionicons name="school-outline" size={20} color={ehSupervisionando ? '#FFFFFF' : '#497363'} style={styles.modalidadeOptionIcon} />
               <Text style={[styles.modalidadeOptionText, ehSupervisionando && styles.modalidadeOptionTextAtivo]}>
                 Supervisionando
               </Text>
@@ -535,7 +656,7 @@ export default function FormularioAnalisanteScreen() {
           <TextInput
             style={styles.input}
             placeholder="DD/MM/AAAA"
-            placeholderTextColor="#bbb"
+            placeholderTextColor="#A9A299"
             value={nascimento}
             onChangeText={(t) => formatarData(t, setNascimento)}
             keyboardType="numeric"
@@ -549,7 +670,7 @@ export default function FormularioAnalisanteScreen() {
           <TextInput
             style={styles.input}
             placeholder="DD/MM/AAAA"
-            placeholderTextColor="#bbb"
+            placeholderTextColor="#A9A299"
             value={dataInicio}
             onChangeText={(t) => formatarData(t, setDataInicio)}
             keyboardType="numeric"
@@ -580,7 +701,7 @@ export default function FormularioAnalisanteScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="DD/MM/AAAA"
-                placeholderTextColor="#bbb"
+                placeholderTextColor="#A9A299"
                 value={dataParalizacao}
                 onChangeText={(t) => formatarData(t, setDataParalizacao)}
                 keyboardType="numeric"
@@ -596,7 +717,7 @@ export default function FormularioAnalisanteScreen() {
           <TextInput
             style={styles.input}
             placeholder="(11) 9 9999-9999 ou +1 ..."
-            placeholderTextColor="#bbb"
+            placeholderTextColor="#A9A299"
             value={telefone}
             onChangeText={(t) => setTelefone(formatarTelefone(t))}
             keyboardType="phone-pad"
@@ -610,7 +731,7 @@ export default function FormularioAnalisanteScreen() {
           <TextInput
             style={styles.input}
             placeholder="analisante@email.com"
-            placeholderTextColor="#bbb"
+            placeholderTextColor="#A9A299"
             value={email}
             onChangeText={setEmail}
             keyboardType="email-address"
@@ -628,7 +749,7 @@ export default function FormularioAnalisanteScreen() {
           <TextInput
             style={styles.input}
             placeholder="000.000.000-00"
-            placeholderTextColor="#bbb"
+            placeholderTextColor="#A9A299"
             value={cpf}
             onChangeText={formatarCpf}
             keyboardType="numeric"
@@ -642,7 +763,7 @@ export default function FormularioAnalisanteScreen() {
           <TextInput
             style={[styles.input, styles.inputMultiline]}
             placeholder="Endereço completo (se presencial)"
-            placeholderTextColor="#bbb"
+            placeholderTextColor="#A9A299"
             value={endereco}
             onChangeText={setEndereco}
             multiline={true}
@@ -686,7 +807,7 @@ export default function FormularioAnalisanteScreen() {
           <TextInput
             style={styles.input}
             placeholder={formatarValorMoeda(0, precoMoeda)}
-            placeholderTextColor="#bbb"
+            placeholderTextColor="#A9A299"
             value={precoValor != null ? formatarValorMoeda(precoValor, precoMoeda) : ''}
             onChangeText={alterarPreco}
             keyboardType="numeric"
@@ -697,7 +818,7 @@ export default function FormularioAnalisanteScreen() {
             <View style={styles.conversaoBox}>
               {buscandoCotacao ? (
                 <View style={styles.conversaoLinha}>
-                  <ActivityIndicator size="small" color="#3D5A80" />
+                  <ActivityIndicator size="small" color="#497363" />
                   <Text style={styles.conversaoTexto}>Buscando cotação oficial (PTAX/BCB)...</Text>
                 </View>
               ) : cotacao?.valor_brl ? (
@@ -719,7 +840,7 @@ export default function FormularioAnalisanteScreen() {
                 </Text>
               )}
               <TouchableOpacity onPress={() => buscarCotacao(precoMoeda)} disabled={buscandoCotacao}>
-                <Text style={styles.atualizarCotacaoLink}>🔄 Atualizar cotação</Text>
+                <Text style={styles.atualizarCotacaoLink}>Atualizar cotação</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -728,9 +849,9 @@ export default function FormularioAnalisanteScreen() {
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Tipo de cobrança</Text>
           <View style={styles.modalidadeContainer}>
-            {renderTipoCobrancaOption('mensal', '📅', 'Mensal variável')}
-            {renderTipoCobrancaOption('mensal_fixo', '💰', 'Mensal fixo')}
-            {renderTipoCobrancaOption('por_sessao', '🧾', 'Por sessão')}
+            {renderTipoCobrancaOption('mensal', 'calendar-outline', 'Mensal variável')}
+            {renderTipoCobrancaOption('mensal_fixo', 'cash-outline', 'Mensal fixo')}
+            {renderTipoCobrancaOption('por_sessao', 'receipt-outline', 'Por sessão')}
           </View>
         </View>
 
@@ -743,7 +864,7 @@ export default function FormularioAnalisanteScreen() {
             <TextInput
               style={styles.input}
               placeholder="Ex: 800,00"
-              placeholderTextColor="#bbb"
+              placeholderTextColor="#A9A299"
               value={valorMensalFixo}
               onChangeText={setValorMensalFixo}
               keyboardType="numeric"
@@ -762,7 +883,7 @@ export default function FormularioAnalisanteScreen() {
             <TextInput
               style={styles.input}
               placeholder="Ex: 10"
-              placeholderTextColor="#bbb"
+              placeholderTextColor="#A9A299"
               value={diaPagamento}
               onChangeText={formatarDiaPagamento}
               keyboardType="numeric"
@@ -777,7 +898,7 @@ export default function FormularioAnalisanteScreen() {
           <TextInput
             style={styles.input}
             placeholder="(11) 9 9999-9999 ou +1 ..."
-            placeholderTextColor="#bbb"
+            placeholderTextColor="#A9A299"
             value={contatoEmergencia}
             onChangeText={(t) => setContatoEmergencia(formatarTelefone(t))}
             keyboardType="phone-pad"
@@ -791,7 +912,7 @@ export default function FormularioAnalisanteScreen() {
           <TextInput
             style={styles.input}
             placeholder="Indicação, Instagram, Google..."
-            placeholderTextColor="#bbb"
+            placeholderTextColor="#A9A299"
             value={comoChegou}
             onChangeText={setComoChegou}
             returnKeyType="next"
@@ -803,7 +924,7 @@ export default function FormularioAnalisanteScreen() {
           <TextInput
             style={[styles.input, styles.inputMultiline]}
             placeholder="Anotações importantes sobre o analisante"
-            placeholderTextColor="#bbb"
+            placeholderTextColor="#A9A299"
             value={infoRelevantes}
             onChangeText={setInfoRelevantes}
             multiline={true}
@@ -815,7 +936,7 @@ export default function FormularioAnalisanteScreen() {
 
         <TouchableOpacity style={styles.saveBtn} onPress={salvar}>
           <Text style={styles.saveBtnText}>
-            {editando ? '💾 Salvar alterações' : '✅ Cadastrar analisante'}
+            {editando ? 'Salvar alterações' : 'Cadastrar analisante'}
           </Text>
         </TouchableOpacity>
 
@@ -830,47 +951,47 @@ export default function FormularioAnalisanteScreen() {
 }
 
 const styles = StyleSheet.create({
-  container:    { flex: 1, backgroundColor: '#F5F7FA' },
+  container:    { flex: 1, backgroundColor: '#F7F5F0' },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: '#fff', paddingHorizontal: 16, paddingVertical: 14,
-    borderBottomWidth: 1, borderBottomColor: '#eee',
+    backgroundColor: '#FDFCFA', paddingHorizontal: 16, paddingVertical: 14,
+    borderBottomWidth: 1, borderBottomColor: '#EAE5DC',
   },
   backBtn:      { width: 80 },
-  backBtnText:  { color: '#3D5A80', fontSize: 15, fontWeight: '600' },
-  headerTitle:  { fontSize: 17, fontWeight: 'bold', color: '#1A1A2E' },
+  backBtnText: { color: '#497363', fontSize: 15, fontWeight: '600', lineHeight: 22 },
+  headerTitle:  { fontSize: 17, fontWeight: '500', color: '#302C28' },
   form:         { padding: 24, gap: 20 },
   fieldGroup:   { gap: 6 },
   label: {
-    fontSize: 13, fontWeight: '600', color: '#555',
+    fontSize: 13, fontWeight: '600', color: '#756E66',
     textTransform: 'uppercase', letterSpacing: 0.5,
   },
   subLabel: {
-    fontSize: 11, fontWeight: '600', color: '#777',
+    fontSize: 11, fontWeight: '600', color: '#8C857B',
     textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 4, marginTop: 6,
   },
-  hint:         { fontSize: 12, color: '#888', marginTop: 4, fontStyle: 'italic' },
+  hint: { fontSize: 12, color: '#8C857B', marginTop: 4, fontStyle: 'italic', lineHeight: 17 },
   input: {
-    backgroundColor: '#fff', borderRadius: 12, paddingHorizontal: 16,
-    paddingVertical: 14, fontSize: 16, color: '#1A1A2E',
-    borderWidth: 1, borderColor: '#E0E4EA',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    backgroundColor: '#FDFCFA', borderRadius: 12, paddingHorizontal: 16,
+    paddingVertical: 14, fontSize: 16, color: '#302C28',
+    borderWidth: 1, borderColor: '#EAE5DC',
+    shadowColor: '#4E4941', shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04, shadowRadius: 2, elevation: 1,
   },
   inputMultiline: {
     minHeight: 80,
     paddingTop: 14,
   },
-  inputSomenteLeitura: { backgroundColor: '#F3F4F6', shadowOpacity: 0, elevation: 0 },
-  inputSomenteLeituraTexto: { fontSize: 16, color: '#555' },
+  inputSomenteLeitura: { backgroundColor: '#F1EDE5', shadowOpacity: 0.0, elevation: 0 },
+  inputSomenteLeituraTexto: { fontSize: 16, color: '#756E66', lineHeight: 23 },
 
   // Horários
   horarioCard: {
-    backgroundColor: '#fff',
+    backgroundColor: '#FDFCFA',
     borderRadius: 14,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#E0E4EA',
+    borderColor: '#EAE5DC',
     marginBottom: 10,
     gap: 4,
   },
@@ -881,10 +1002,10 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   horarioCardTitle: {
-    fontSize: 13, fontWeight: '700', color: '#3D5A80',
+    fontSize: 13, fontWeight: '500', color: '#497363',
   },
   removerHorarioText: {
-    fontSize: 12, color: '#d9534f', fontWeight: '600',
+    fontSize: 12, color: '#975451', fontWeight: '600',
   },
   diasContainer: {
     flexDirection: 'row',
@@ -896,16 +1017,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: '#F5F7FA',
+    backgroundColor: '#F7F5F0',
     borderWidth: 1,
-    borderColor: '#E0E4EA',
+    borderColor: '#EAE5DC',
   },
   diaChipAtivo: {
-    backgroundColor: '#3D5A80',
-    borderColor: '#3D5A80',
+    backgroundColor: '#497363',
+    borderColor: '#497363',
   },
   diaChipText: {
-    fontSize: 12, fontWeight: '600', color: '#555',
+    fontSize: 12, fontWeight: '600', color: '#756E66',
   },
   diaChipTextAtivo: {
     color: '#fff',
@@ -920,7 +1041,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   addHorarioBtnText: {
-    color: '#3D5A80', fontSize: 14, fontWeight: '700',
+    color: '#497363', fontSize: 14, fontWeight: '500',
   },
 
   // Modalidade
@@ -930,25 +1051,24 @@ const styles = StyleSheet.create({
   },
   modalidadeOption: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#FDFCFA',
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 6,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E0E4EA',
+    borderColor: '#EAE5DC',
   },
   modalidadeOptionAtivo: {
-    backgroundColor: '#3D5A80',
-    borderColor: '#3D5A80',
+    backgroundColor: '#497363',
+    borderColor: '#497363',
   },
   modalidadeOptionIcon: {
-    fontSize: 20,
     marginBottom: 4,
   },
   modalidadeOptionText: {
     fontSize: 12,
-    color: '#555',
+    color: '#756E66',
     fontWeight: '600',
   },
   modalidadeOptionTextAtivo: {
@@ -966,47 +1086,47 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 16,
-    backgroundColor: '#F5F7FA',
+    backgroundColor: '#F7F5F0',
     borderWidth: 1,
-    borderColor: '#E0E4EA',
+    borderColor: '#EAE5DC',
   },
   moedaChipAtiva: {
-    backgroundColor: '#3D5A80',
-    borderColor: '#3D5A80',
+    backgroundColor: '#497363',
+    borderColor: '#497363',
   },
   moedaChipText: {
-    fontSize: 12, fontWeight: '600', color: '#555',
+    fontSize: 12, fontWeight: '600', color: '#756E66',
   },
   moedaChipTextAtiva: {
     color: '#fff',
   },
   conversaoBox: {
-    backgroundColor: '#F0F4F8',
+    backgroundColor: '#E4EFE9',
     borderRadius: 8,
     padding: 10,
     marginTop: 8,
     borderLeftWidth: 3,
-    borderLeftColor: '#3D5A80',
+    borderLeftColor: '#497363',
     gap: 6,
   },
   conversaoLinha: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
   },
   conversaoTexto: {
-    fontSize: 12.5, color: '#3D5A80', lineHeight: 17,
+    fontSize: 12.5, color: '#497363', lineHeight: 17,
   },
   conversaoAviso: {
-    fontSize: 11.5, color: '#B45309', lineHeight: 16, fontStyle: 'italic',
+    fontSize: 11.5, color: '#7D6540', lineHeight: 16, fontStyle: 'italic',
   },
   atualizarCotacaoLink: {
-    fontSize: 12, fontWeight: '700', color: '#3D5A80',
+    fontSize: 12, fontWeight: '500', color: '#497363',
   },
 
   saveBtn: {
-    backgroundColor: '#3D5A80', borderRadius: 14,
+    backgroundColor: '#497363', borderRadius: 14,
     paddingVertical: 16, alignItems: 'center', marginTop: 12,
   },
-  saveBtnText:  { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '500', lineHeight: 23 },
   cancelBtn:    { alignItems: 'center', paddingVertical: 12 },
-  cancelBtnText:{ color: '#999', fontSize: 15 },
+  cancelBtnText: { color: '#8C857B', fontSize: 15, lineHeight: 22 },
 });

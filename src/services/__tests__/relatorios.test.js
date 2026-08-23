@@ -126,4 +126,23 @@ describe('resumo geral do caso — combina sessões e registros sem truncar cont
     const mensagemUsuario = mensagens.find((m) => m.role === 'user');
     expect(mensagemUsuario.content).toContain(transcricaoLonga);
   });
+
+  it('usa data_inicio/data_fim (colunas reais de patient_paralizacoes) — não data_paralizacao/data_retorno', async () => {
+    getSessions.mockResolvedValue([]);
+    getRecords.mockResolvedValue([{ date: '2026-01-01', type: 'estudo', content: 'x' }]);
+    getHistoricoParalizacoes.mockResolvedValue([
+      { data_inicio: '2025-03-01', data_fim: '2025-06-15' },
+      { data_inicio: '2026-02-01', data_fim: null },
+    ]);
+    mockInsertRelatorios();
+    supabase.functions.invoke.mockResolvedValue({ data: { resposta: 'ok', custo: 0 }, error: null });
+
+    await gerarRelatorio(paciente, 'resumo_geral', {});
+
+    const mensagens = supabase.functions.invoke.mock.calls[0][1].body.mensagens;
+    const mensagemUsuario = mensagens.find((m) => m.role === 'user');
+    expect(mensagemUsuario.content).toContain('Paralização em 01/03/2025, retorno em 15/06/2025');
+    expect(mensagemUsuario.content).toContain('Paralização em 01/02/2026 (ainda em aberto)');
+    expect(mensagemUsuario.content).not.toContain('Paralização em —');
+  });
 });

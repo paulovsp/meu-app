@@ -18,12 +18,12 @@ import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
 import { dataBRParaISO, dataISOParaBR } from '../services/validacao';
 
 const COLORS = {
-  bg: '#F7F6F3',
+  bg: '#F7F5F0',
   surface: '#FFFFFF',
-  border: '#E8E4DD',
-  textDark: '#1C1C1E',
-  textMid: '#6B6860',
-  btnBlue: '#3D5A80',
+  border: '#EAE5DC',
+  textDark: '#302C28',
+  textMid: '#756E66',
+  btnBlue: '#497363',
 };
 
 const FORMATOS = [
@@ -206,7 +206,7 @@ export default function FormularioCursoScreen() {
     try {
       await notifee.requestPermission();
       const id = await notifee.displayNotification({
-        title: '🔴 Gravando aula',
+        title: 'Gravando aula',
         body: 'A gravação da aula está em segundo plano.',
         android: {
           channelId: 'gravacao_curso',
@@ -297,25 +297,25 @@ export default function FormularioCursoScreen() {
 
   return (
     <SafeAreaView style={s.safe} edges={['bottom']}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={s.scrollInner} keyboardShouldPersistTaps="handled">
         <Text style={s.label}>Título *</Text>
-        <TextInput style={s.input} value={titulo} onChangeText={setTitulo} placeholder="Ex: Formação em Terapia Familiar" placeholderTextColor="#B0ADA6" />
+        <TextInput style={s.input} value={titulo} onChangeText={setTitulo} placeholder="Ex: Formação em Terapia Familiar" placeholderTextColor="#756E66" />
 
         <Text style={s.label}>Professor</Text>
-        <TextInput style={s.input} value={professor} onChangeText={setProfessor} placeholder="Nome do professor" placeholderTextColor="#B0ADA6" />
+        <TextInput style={s.input} value={professor} onChangeText={setProfessor} placeholder="Nome do professor" placeholderTextColor="#756E66" />
 
         <Text style={s.label}>Instituição</Text>
-        <TextInput style={s.input} value={instituicao} onChangeText={setInstituicao} placeholder="Nome da instituição" placeholderTextColor="#B0ADA6" />
+        <TextInput style={s.input} value={instituicao} onChangeText={setInstituicao} placeholder="Nome da instituição" placeholderTextColor="#756E66" />
 
         <View style={s.row2}>
           <View style={{ flex: 1 }}>
             <Text style={s.label}>Carga horária (h)</Text>
-            <TextInput style={s.input} value={cargaHoraria} onChangeText={setCargaHoraria} placeholder="0" placeholderTextColor="#B0ADA6" keyboardType="decimal-pad" />
+            <TextInput style={s.input} value={cargaHoraria} onChangeText={setCargaHoraria} placeholder="0" placeholderTextColor="#756E66" keyboardType="decimal-pad" />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={s.label}>Custo (R$)</Text>
-            <TextInput style={s.input} value={custo} onChangeText={setCusto} placeholder="0,00" placeholderTextColor="#B0ADA6" keyboardType="decimal-pad" />
+            <TextInput style={s.input} value={custo} onChangeText={setCusto} placeholder="0,00" placeholderTextColor="#756E66" keyboardType="decimal-pad" />
           </View>
         </View>
 
@@ -335,7 +335,7 @@ export default function FormularioCursoScreen() {
         {formato === 'presencial' && (
           <>
             <Text style={s.label}>Local</Text>
-            <TextInput style={s.input} value={local} onChangeText={setLocal} placeholder="Endereço ou nome do local" placeholderTextColor="#B0ADA6" />
+            <TextInput style={s.input} value={local} onChangeText={setLocal} placeholder="Endereço ou nome do local" placeholderTextColor="#756E66" />
           </>
         )}
 
@@ -345,7 +345,7 @@ export default function FormularioCursoScreen() {
           value={data}
           onChangeText={(t) => formatarDataDigitada(t, setData)}
           placeholder="DD/MM/AAAA"
-          placeholderTextColor="#B0ADA6"
+          placeholderTextColor="#756E66"
           keyboardType="numeric"
           maxLength={10}
         />
@@ -356,7 +356,7 @@ export default function FormularioCursoScreen() {
           value={anotacoes}
           onChangeText={setAnotacoes}
           placeholder="Observações sobre o curso..."
-          placeholderTextColor="#B0ADA6"
+          placeholderTextColor="#756E66"
           multiline
         />
 
@@ -408,7 +408,7 @@ export default function FormularioCursoScreen() {
                 value={transcricaoManual}
                 onChangeText={setTranscricaoManual}
                 placeholder="A transcrição aparece aqui automaticamente após gravar, ou você pode digitar/colar suas anotações."
-                placeholderTextColor="#B0ADA6"
+                placeholderTextColor="#756E66"
                 multiline
               />
               <TouchableOpacity style={s.salvarTranscricaoBtn} onPress={salvarTranscricaoManualHandler}>
@@ -417,7 +417,7 @@ export default function FormularioCursoScreen() {
             </View>
 
             <TouchableOpacity style={s.removerBtn} onPress={confirmarRemocao} disabled={removendo}>
-              {removendo ? <ActivityIndicator color="#B3261E" /> : <Text style={s.removerBtnText}>Remover curso</Text>}
+              {removendo ? <ActivityIndicator color="#975451" /> : <Text style={s.removerBtnText}>Remover curso</Text>}
             </TouchableOpacity>
           </>
         )}
@@ -430,7 +430,7 @@ export default function FormularioCursoScreen() {
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.bg },
   scrollInner: { padding: 20, paddingBottom: 60 },
-  label: { fontSize: 13, fontWeight: '600', color: COLORS.textDark, marginBottom: 6, marginTop: 14 },
+  label: { fontSize: 13, fontWeight: '600', color: COLORS.textDark, marginBottom: 6, marginTop: 14, lineHeight: 19 },
   input: {
     backgroundColor: COLORS.surface, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
     fontSize: 15, color: COLORS.textDark, borderWidth: 1, borderColor: COLORS.border,
@@ -443,11 +443,11 @@ const s = StyleSheet.create({
     backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border,
   },
   chipAtivo: { backgroundColor: COLORS.btnBlue, borderColor: COLORS.btnBlue },
-  chipTexto: { fontSize: 12.5, fontWeight: '600', color: COLORS.textMid },
+  chipTexto: { fontSize: 12.5, fontWeight: '600', color: COLORS.textMid, lineHeight: 18 },
   chipTextoAtivo: { color: '#FFFFFF' },
   salvarBtn: { backgroundColor: COLORS.btnBlue, borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginTop: 24 },
-  salvarBtnText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
-  sectionTitle: { fontSize: 15, fontWeight: '700', color: COLORS.textDark, marginTop: 28, marginBottom: 10 },
+  salvarBtnText: { fontSize: 16, fontWeight: '500', color: '#FFFFFF', lineHeight: 23 },
+  sectionTitle: { fontSize: 15, fontWeight: '500', color: COLORS.textDark, marginTop: 28, marginBottom: 10, lineHeight: 22 },
   gravacaoCard: {
     backgroundColor: COLORS.surface, borderRadius: 14, padding: 16,
     borderWidth: 1, borderColor: COLORS.border,
@@ -456,19 +456,19 @@ const s = StyleSheet.create({
     flexDirection: 'row', gap: 8, backgroundColor: COLORS.btnBlue, borderRadius: 12,
     paddingVertical: 14, alignItems: 'center', justifyContent: 'center',
   },
-  gravarBtnText: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
+  gravarBtnText: { fontSize: 15, fontWeight: '500', color: '#FFFFFF', lineHeight: 22 },
   gravandoBox: { alignItems: 'center', paddingVertical: 10, gap: 12 },
-  gravandoTimer: { fontSize: 30, fontWeight: '700', color: '#B3261E' },
-  encerrarBtn: { backgroundColor: '#B3261E', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 20 },
-  encerrarBtnText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
+  gravandoTimer: { fontSize: 30, fontWeight: '500', color: '#975451' },
+  encerrarBtn: { backgroundColor: '#975451', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 20 },
+  encerrarBtnText: { fontSize: 14, fontWeight: '500', color: '#FFFFFF', lineHeight: 20 },
   statusBox: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
-  statusTexto: { fontSize: 13, color: COLORS.textMid, flex: 1 },
-  statusErro: { fontSize: 13, color: '#B3261E', marginBottom: 8 },
+  statusTexto: { fontSize: 13, color: COLORS.textMid, flex: 1, lineHeight: 19 },
+  statusErro: { fontSize: 13, color: '#975451', marginBottom: 8, lineHeight: 19 },
   salvarTranscricaoBtn: {
     marginTop: 12, backgroundColor: COLORS.bg, borderRadius: 10, paddingVertical: 12,
     alignItems: 'center', borderWidth: 1, borderColor: COLORS.border,
   },
-  salvarTranscricaoBtnText: { fontSize: 13, fontWeight: '700', color: COLORS.btnBlue },
+  salvarTranscricaoBtnText: { fontSize: 13, fontWeight: '500', color: COLORS.btnBlue, lineHeight: 19 },
   removerBtn: { alignItems: 'center', paddingVertical: 16, marginTop: 20 },
-  removerBtnText: { fontSize: 14, fontWeight: '700', color: '#B3261E' },
+  removerBtnText: { fontSize: 14, fontWeight: '500', color: '#975451', lineHeight: 20 },
 });

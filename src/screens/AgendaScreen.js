@@ -25,6 +25,7 @@ import {
   ensureAppointmentsForDate,
   getOrCreateAppointmentForSlot,
   temTranscricaoParaData,
+  slotAtivoNaData,
 } from '../services/database';
 import { formatarValorMoeda } from '../services/currency';
 import { horarioJaPassou, getEstadoCompromisso, ESTADO_LABEL } from '../services/compromissoStatus';
@@ -38,8 +39,8 @@ const SCREEN_WIDTH = Dimensions.get('window').width;
 const COL_WIDTH_BASE = (SCREEN_WIDTH - 16) / 7;
 const SLOT_HEIGHT_BASE = 34;
 
-const COR_PRESENCIAL = '#A5D6A7'; // verde claro
-const COR_ONLINE = '#1B5E20'; // verde escuro
+const COR_PRESENCIAL = '#C3DFCF'; // verde claro
+const COR_ONLINE = '#44745B'; // verde escuro
 
 function toISO(date) {
   const ano = date.getFullYear();
@@ -78,9 +79,9 @@ function nomeExibicaoEvento({ tipo, patientNome, participantes, titulo }) {
 }
 
 function labelModalidadeTexto(modality) {
-  if (modality === 'online') return '💻 Online';
-  if (modality === 'presencial') return '🏠 Presencial';
-  return '🏠💻 Ambos';
+  if (modality === 'online') return 'Online';
+  if (modality === 'presencial') return 'Presencial';
+  return 'Ambos';
 }
 
 /**
@@ -134,7 +135,7 @@ export default function AgendaScreen({ navigation }) {
     navigation.setOptions({
       headerRight: () => (
         <TouchableOpacity onPress={() => setMenuAberto(true)} style={{ paddingHorizontal: 12 }}>
-          <Ionicons name="menu-outline" size={26} color="#1A1A2E" />
+          <Ionicons name="menu-outline" size={26} color="#302C28" />
         </TouchableOpacity>
       ),
     });
@@ -227,9 +228,13 @@ export default function AgendaScreen({ navigation }) {
   const fontHorarioAtual = Math.max(7, Math.min(11, Math.round(8.5 * escalaSemanal)));
   const fontPacienteAtual = Math.max(6, Math.min(9.5, Math.round(7.5 * escalaSemanal)));
 
-  function slotsDoDiaDaSemana(diaSemana) {
+  // `dataISO` é obrigatório pra decidir corretamente horários avulsos
+  // (só valem na própria data) e quinzenais/personalizados (só valem nas
+  // semanas do ciclo de 4 marcadas em `recorrencia_semanas_ativas`) — sem
+  // isso, um horário quinzenal apareceria toda semana igual a um semanal.
+  function slotsDoDiaDaSemana(diaSemana, dataISO) {
     return availability
-      .filter((slot) => slot.day_of_week === diaSemana)
+      .filter((slot) => slot.day_of_week === diaSemana && slotAtivoNaData(slot, dataISO))
       .sort(compararHorarios);
   }
 
@@ -416,13 +421,13 @@ export default function AgendaScreen({ navigation }) {
           <View
             style={[
               styles.diaCardStatus,
-              { backgroundColor: ocupado ? '#FDECEA' : '#E8F5E9' },
+              { backgroundColor: ocupado ? '#F1E4E3' : '#E2EFE8' },
             ]}
           >
             <Text
               style={[
                 styles.diaCardStatusTxt,
-                { color: ocupado ? '#C62828' : '#2E7D32' },
+                { color: ocupado ? '#975451' : '#44745B' },
               ]}
             >
               {ocupado ? 'Ocupado' : 'Livre'}
@@ -440,7 +445,7 @@ export default function AgendaScreen({ navigation }) {
             </Text>
             <View style={styles.diaCardInfoRow}>
               {telefone ? (
-                <Text style={styles.diaCardInfoItem}>📞 {telefone}</Text>
+                <Text style={styles.diaCardInfoItem}>{telefone}</Text>
               ) : null}
               {modality ? (
                 <Text style={styles.diaCardInfoItem}>
@@ -448,7 +453,7 @@ export default function AgendaScreen({ navigation }) {
                 </Text>
               ) : null}
               {preco ? (
-                <Text style={styles.diaCardInfoItem}>💰 {preco}</Text>
+                <Text style={styles.diaCardInfoItem}>{preco}</Text>
               ) : null}
             </View>
             {estadoInfo && (
@@ -499,7 +504,7 @@ export default function AgendaScreen({ navigation }) {
   function renderColunaDia(data) {
     const dataISO = toISO(data);
     const diaSemana = data.getDay();
-    const slots = slotsDoDiaDaSemana(diaSemana);
+    const slots = slotsDoDiaDaSemana(diaSemana, dataISO);
 
     return (
       <View key={`day-${dataISO}`} style={[styles.colunaDia, { width: COL_WIDTH_BASE }]}>
@@ -539,7 +544,7 @@ export default function AgendaScreen({ navigation }) {
 
   function diaTemAlgumHorario(data) {
     const dataISO = toISO(data);
-    const temSlot = slotsDoDiaDaSemana(data.getDay()).length > 0;
+    const temSlot = slotsDoDiaDaSemana(data.getDay(), dataISO).length > 0;
     const temCompromissoAvulso = appointments.some((a) => a.date === dataISO);
     return temSlot || temCompromissoAvulso;
   }
@@ -556,7 +561,7 @@ export default function AgendaScreen({ navigation }) {
     if (dias.length === 0) {
       return (
         <View style={styles.semanaVaziaBox}>
-          <Ionicons name="calendar-outline" size={32} color="#A5A19A" />
+          <Ionicons name="calendar-outline" size={32} color="#8C857B" />
           <Text style={styles.semanaVaziaTxt}>Nenhum horário nessa semana.</Text>
         </View>
       );
@@ -568,7 +573,7 @@ export default function AgendaScreen({ navigation }) {
   function renderDiario() {
     const dataISO = toISO(dataRef);
     const diaSemana = dataRef.getDay();
-    const slots = slotsDoDiaDaSemana(diaSemana);
+    const slots = slotsDoDiaDaSemana(diaSemana, dataISO);
     const semNadaHoje =
       slots.length === 0 && appointments.filter((a) => a.date === dataISO).length === 0;
 
@@ -665,7 +670,7 @@ export default function AgendaScreen({ navigation }) {
               <Ionicons
                 name={ocultarDiasVazios ? 'eye-off' : 'eye-off-outline'}
                 size={16}
-                color={ocultarDiasVazios ? '#3D5A80' : '#8A8578'}
+                color={ocultarDiasVazios ? '#497363' : '#8C857B'}
               />
             </TouchableOpacity>
           </View>
@@ -687,7 +692,7 @@ export default function AgendaScreen({ navigation }) {
       <Animated.View style={[{ flex: 1 }, animatedStyle]} {...panHandlers}>
         {carregando ? (
           <View style={styles.carregandoWrap}>
-            <ActivityIndicator size="large" color="#1976D2" />
+            <ActivityIndicator size="large" color="#497363" />
           </View>
         ) : (
           <>
@@ -723,7 +728,7 @@ export default function AgendaScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
+  container: { flex: 1, backgroundColor: '#FDFCFA' },
   header: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -731,20 +736,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 8,
   },
-  viewBtn: { paddingVertical: 8, paddingHorizontal: 20, borderRadius: 8, backgroundColor: '#EEEEEE' },
-  viewBtnAtivo: { backgroundColor: '#1976D2' },
-  viewBtnTxt: { color: '#333333', fontSize: 13 },
-  viewBtnTxtAtivo: { color: '#FFFFFF', fontSize: 13, fontWeight: 'bold' },
+  viewBtn: { paddingVertical: 8, paddingHorizontal: 20, borderRadius: 8, backgroundColor: '#EAE5DC' },
+  viewBtnAtivo: { backgroundColor: '#497363' },
+  viewBtnTxt: { color: '#4E4941', fontSize: 13, lineHeight: 19 },
+  viewBtnTxtAtivo: { color: '#FFFFFF', fontSize: 13, fontWeight: '500', lineHeight: 19 },
   btnNovoHorario: {
     marginHorizontal: 12,
     marginTop: 12,
     marginBottom: 10,
     padding: 12,
-    backgroundColor: '#1976D2',
+    backgroundColor: '#497363',
     borderRadius: 10,
     alignItems: 'center',
   },
-  btnNovoHorarioTxt: { color: '#FFFFFF', fontWeight: 'bold' },
+  btnNovoHorarioTxt: { color: '#FFFFFF', fontWeight: '500' },
   navSemana: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -760,30 +765,30 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   navSetaBtn: { padding: 8 },
-  navSeta: { fontSize: 30, color: '#1976D2', paddingHorizontal: 12 },
-  navTexto: { fontWeight: '600', color: '#333333', textTransform: 'capitalize' },
+  navSeta: { fontSize: 30, color: '#497363', paddingHorizontal: 12 },
+  navTexto: { fontWeight: '600', color: '#4E4941', textTransform: 'capitalize' },
   navSemanaDireita: { flexDirection: 'row', alignItems: 'center' },
   ocultarVaziosBtn: { padding: 8, marginLeft: 2 },
   semanaContainer: { flex: 1, flexDirection: 'row', paddingHorizontal: 8, paddingBottom: 8 },
   semanaVaziaBox: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, paddingBottom: 40 },
-  semanaVaziaTxt: { fontSize: 14, color: '#A5A19A' },
+  semanaVaziaTxt: { fontSize: 14, color: '#8C857B', lineHeight: 20 },
   colunaDia: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FDFCFA',
     borderRadius: 8,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#E4E8ED',
+    borderColor: '#EAE5DC',
     marginHorizontal: 1,
   },
   diaHeader: {
     alignItems: 'center',
     paddingVertical: 6,
-    backgroundColor: '#EAF2FB',
+    backgroundColor: '#E3EAF1',
     borderBottomWidth: 1,
-    borderBottomColor: '#D7E4F3',
+    borderBottomColor: '#C4D3E0',
   },
-  diaHeaderSemana: { fontSize: 10, fontWeight: 'bold', color: '#1A1A2E' },
-  diaHeaderData: { fontSize: 9, color: '#555555' },
+  diaHeaderSemana: { fontSize: 10, fontWeight: '500', color: '#302C28' },
+  diaHeaderData: { fontSize: 9, color: '#756E66' },
   listaSlots: { padding: 3 },
   slotBtn: {
     height: SLOT_HEIGHT_BASE,
@@ -795,7 +800,7 @@ const styles = StyleSheet.create({
     position: 'relative',
     overflow: 'hidden',
   },
-  slotHorarioTxt: { fontSize: 9, fontWeight: 'bold', color: '#FFFFFF' },
+  slotHorarioTxt: { fontSize: 9, fontWeight: '500', color: '#FFFFFF' },
   slotPacienteTxt: { fontSize: 8, color: '#FFFFFF', maxWidth: '95%' },
   badge: {
     position: 'absolute',
@@ -805,7 +810,7 @@ const styles = StyleSheet.create({
     paddingVertical: 1,
     alignItems: 'center',
   },
-  badgeTxt: { fontSize: 7, fontWeight: 'bold', color: '#FFFFFF' },
+  badgeTxt: { fontSize: 7, fontWeight: '500', color: '#FFFFFF' },
   badgeSplitContainer: {
     position: 'absolute',
     bottom: 0,
@@ -815,21 +820,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   badgeSplitMeio: { flex: 1 },
-  semHorarios: { fontSize: 10, color: '#AAAAAA', textAlign: 'center', marginTop: 10 },
+  semHorarios: { fontSize: 10, color: '#A9A299', textAlign: 'center', marginTop: 10 },
   carregandoWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
   // ── Diário (item 8: visual clean, mais espaço para informação) ──
   diarioContainer: { flex: 1 },
   diarioLista: { padding: 16, paddingTop: 4, gap: 12 },
-  semHorariosDia: { textAlign: 'center', color: '#777777', marginTop: 35 },
+  semHorariosDia: { textAlign: 'center', color: '#8C857B', marginTop: 35 },
 
   diaCard: {
-    backgroundColor: '#FAFBFC',
+    backgroundColor: '#FDFCFA',
     borderRadius: 16,
     padding: 16,
     borderLeftWidth: 5,
     marginBottom: 12,
-    shadowColor: '#000',
+    shadowColor: '#4E4941',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 3,
@@ -841,18 +846,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
   },
-  diaCardHorario: { fontSize: 18, fontWeight: '700', color: '#1A1A2E' },
+  diaCardHorario: { fontSize: 18, fontWeight: '500', color: '#302C28' },
   diaCardStatus: {
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 4,
   },
-  diaCardStatusTxt: { fontSize: 12, fontWeight: '700' },
+  diaCardStatusTxt: { fontSize: 12, fontWeight: '500', lineHeight: 17 },
   diaCardCorpo: { gap: 6 },
-  diaCardTipo: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.3 },
-  diaCardNome: { fontSize: 16, fontWeight: '700', color: '#1A1A2E' },
+  diaCardTipo: { fontSize: 11, fontWeight: '500', textTransform: 'uppercase', letterSpacing: 0.3, lineHeight: 16 },
+  diaCardNome: { fontSize: 16, fontWeight: '500', color: '#302C28', lineHeight: 23 },
   diaCardInfoRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
-  diaCardInfoItem: { fontSize: 13, color: '#666666' },
-  diaCardEstado: { fontSize: 12, fontWeight: '700', marginTop: 2 },
-  diaCardLivreTxt: { fontSize: 13, color: '#888888', fontStyle: 'italic' },
+  diaCardInfoItem: { fontSize: 13, color: '#756E66', lineHeight: 19 },
+  diaCardEstado: { fontSize: 12, fontWeight: '500', marginTop: 2, lineHeight: 17 },
+  diaCardLivreTxt: { fontSize: 13, color: '#8C857B', fontStyle: 'italic', lineHeight: 19 },
 });

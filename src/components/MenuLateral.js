@@ -82,7 +82,7 @@ export default function MenuLateral({ visible, onClose, navigation, clinicaButto
                 <Text style={s.secaoLabel}>{contextual.titulo || 'Nesta tela'}</Text>
                 {contextual.itens.map((item, i) => (
                   <TouchableOpacity key={i} style={s.item} onPress={() => executarContextual(item.onPress)}>
-                    <Ionicons name={item.icon || 'ellipse-outline'} size={20} color="#3D5A80" />
+                    <Ionicons name={item.icon || 'ellipse-outline'} size={20} color="#497363" />
                     <Text style={s.itemTexto}>{item.label}</Text>
                   </TouchableOpacity>
                 ))}
@@ -93,7 +93,7 @@ export default function MenuLateral({ visible, onClose, navigation, clinicaButto
             <Text style={s.secaoLabel}>Clínica</Text>
             {clinicaButtons.map((btn) => (
               <TouchableOpacity key={btn.id} style={s.item} onPress={() => irPara(btn.screen)}>
-                <Ionicons name={btn.icon} size={20} color="#3D5A80" />
+                <Ionicons name={btn.icon} size={20} color="#497363" />
                 <Text style={s.itemTexto}>{btn.label}</Text>
               </TouchableOpacity>
             ))}
@@ -103,7 +103,7 @@ export default function MenuLateral({ visible, onClose, navigation, clinicaButto
             <Text style={s.secaoLabel}>Administrativo</Text>
             {adminButtons.map((btn) => (
               <TouchableOpacity key={btn.id} style={s.item} onPress={() => irPara(btn.screen)}>
-                <Ionicons name={btn.icon} size={20} color="#3D5A80" />
+                <Ionicons name={btn.icon} size={20} color="#497363" />
                 <Text style={s.itemTexto}>{btn.label}</Text>
               </TouchableOpacity>
             ))}
@@ -111,24 +111,24 @@ export default function MenuLateral({ visible, onClose, navigation, clinicaButto
             <View style={s.divisoria} />
 
             <TouchableOpacity style={s.item} onPress={() => irPara('UserProfile')}>
-              <Ionicons name="person-circle-outline" size={20} color="#3D5A80" />
+              <Ionicons name="person-circle-outline" size={20} color="#497363" />
               <Text style={s.itemTexto}>Meu Perfil</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={s.itemSair} onPress={sair}>
-              <Ionicons name="log-out-outline" size={20} color="#C0392B" />
+              <Ionicons name="log-out-outline" size={20} color="#975451" />
               <Text style={s.itemSairTexto}>Sair da conta</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={s.itemSair} onPress={excluirContaHandler} disabled={excluindo}>
               {excluindo ? (
                 <>
-                  <ActivityIndicator size="small" color="#C0392B" />
+                  <ActivityIndicator size="small" color="#975451" />
                   <Text style={s.itemSairTexto}>Excluindo conta...</Text>
                 </>
               ) : (
                 <>
-                  <Ionicons name="trash-outline" size={20} color="#C0392B" />
+                  <Ionicons name="trash-outline" size={20} color="#975451" />
                   <Text style={s.itemSairTexto}>Excluir minha conta</Text>
                 </>
               )}
@@ -145,28 +145,28 @@ const s = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' },
   painel: {
     position: 'absolute', top: 0, bottom: 0, left: 0, width: PANEL_W,
-    backgroundColor: '#fff',
-    elevation: 12, shadowColor: '#000', shadowOffset: { width: 2, height: 0 },
-    shadowOpacity: 0.2, shadowRadius: 10,
+    backgroundColor: '#FDFCFA',
+    elevation: 8, shadowColor: '#4E4941', shadowOffset: { width: 2, height: 0 },
+    shadowOpacity: 0.08, shadowRadius: 10,
   },
   painelConteudo: { paddingTop: 60, paddingHorizontal: 20, paddingBottom: 40 },
   titulo: {
-    fontSize: 26, fontWeight: '700', fontStyle: 'italic', color: '#3D5A80',
+    fontSize: 26, fontWeight: '500', fontStyle: 'italic', color: '#497363',
     marginBottom: 24,
   },
   secaoLabel: {
-    fontSize: 12, fontWeight: '700', color: '#888', textTransform: 'uppercase',
+    fontSize: 12, fontWeight: '500', color: '#8C857B', textTransform: 'uppercase',
     letterSpacing: 0.5, marginBottom: 8,
   },
   item: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     paddingVertical: 12,
   },
-  itemTexto: { fontSize: 15, fontWeight: '600', color: '#1A1A2E' },
-  divisoria: { height: 1, backgroundColor: '#E0E4EA', marginVertical: 16 },
+  itemTexto: { fontSize: 15, fontWeight: '600', color: '#302C28', lineHeight: 22 },
+  divisoria: { height: 1, backgroundColor: '#EAE5DC', marginVertical: 16 },
   itemSair: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     paddingVertical: 12, marginTop: 8,
   },
-  itemSairTexto: { fontSize: 15, fontWeight: '700', color: '#C0392B' },
+  itemSairTexto: { fontSize: 15, fontWeight: '500', color: '#975451', lineHeight: 22 },
 });

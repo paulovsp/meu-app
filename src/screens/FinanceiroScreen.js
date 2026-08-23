@@ -386,12 +386,15 @@ const s = StyleSheet.create({
 
   scroll: { paddingHorizontal: 16, paddingBottom: 32, gap: 16 },
 
-  cardTotalRow: { flexDirection: 'row', gap: 12 },
+  cardTotalRow: { flexDirection: 'column', gap: 12 },
   cardTotal: {
     backgroundColor: '#497363',
     borderRadius: 16,
-    padding: 20,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
   cardTotalVermelho: { backgroundColor: '#975451' },
   cardTotalAmarelo: { backgroundColor: '#7D6540' },
@@ -400,11 +403,12 @@ const s = StyleSheet.create({
     fontSize: 13,
     color: 'rgba(255,255,255,0.75)',
     fontWeight: '600',
-    marginBottom: 6,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+    flexShrink: 1,
+    marginRight: 12,
   },
-  cardTotalValor: { fontSize: 30, color: '#fff', fontWeight: '600' },
+  cardTotalValor: { fontSize: 26, color: '#fff', fontWeight: '600' },
   cardTotalLabelEscuro: { color: 'rgba(58,42,0,0.75)' },
   cardTotalValorEscuro: { color: '#6B5A3A' },
 

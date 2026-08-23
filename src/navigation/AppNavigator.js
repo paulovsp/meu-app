@@ -54,6 +54,7 @@ import DetalheCompromissoScreen from '../screens/DetalheCompromissoScreen';
 // Início — afazeres e relatórios
 import AfazeresScreen from '../screens/AfazeresScreen';
 import RelatoriosScreen from '../screens/RelatoriosScreen';
+import DetalheRelatorioScreen from '../screens/DetalheRelatorioScreen';
 import SessoesStatusScreen from '../screens/SessoesStatusScreen';
 
 const Stack = createNativeStackNavigator();
@@ -183,6 +184,12 @@ function AppStackNavigator() {
         name="Relatorios"
         component={RelatoriosScreen}
         options={{ title: 'Relatórios' }}
+      />
+
+      <Stack.Screen
+        name="DetalheRelatorio"
+        component={DetalheRelatorioScreen}
+        options={{ title: 'Relatório' }}
       />
 
       {/* Administrativo */}

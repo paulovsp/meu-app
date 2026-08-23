@@ -5,7 +5,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList,
-  ScrollView, ActivityIndicator, Alert, Modal,
+  ScrollView, ActivityIndicator, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -46,7 +46,6 @@ export default function RelatoriosScreen() {
 
   const [quantidadeUltimas, setQuantidadeUltimas] = useState(3);
   const [gerandoTipo, setGerandoTipo] = useState(null);
-  const [relatorioAberto, setRelatorioAberto] = useState(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -104,7 +103,7 @@ export default function RelatoriosScreen() {
     try {
       const relatorio = await gerarRelatorio(paciente, tipo, parametros);
       setHistoricoRelatorios((atual) => [relatorio, ...atual]);
-      setRelatorioAberto(relatorio);
+      navigation.navigate('DetalheRelatorio', { relatorio });
     } catch (err) {
       if (err.assinaturaInativa || err.creditosInsuficientes) {
         Alert.alert('Não foi possível gerar', err.message);
@@ -208,7 +207,7 @@ export default function RelatoriosScreen() {
             <>
               <Text style={s.sectionTitle}>Relatórios já gerados</Text>
               {historicoRelatorios.map((r) => (
-                <TouchableOpacity key={r.id} style={s.itemLinha} onPress={() => setRelatorioAberto(r)}>
+                <TouchableOpacity key={r.id} style={s.itemLinha} onPress={() => navigation.navigate('DetalheRelatorio', { relatorio: r })}>
                   <View style={{ flex: 1 }}>
                     <Text style={s.itemTitulo}>
                       {TIPOS_RELATORIO.find((t) => t.valor === r.tipo)?.label || r.tipo}
@@ -222,26 +221,6 @@ export default function RelatoriosScreen() {
           )}
         </ScrollView>
       )}
-
-      <Modal
-        visible={!!relatorioAberto}
-        animationType="slide"
-        onRequestClose={() => setRelatorioAberto(null)}
-      >
-        <SafeAreaView style={s.safe}>
-          <View style={s.modalHeader}>
-            <Text style={s.modalHeaderTitulo}>
-              {TIPOS_RELATORIO.find((t) => t.valor === relatorioAberto?.tipo)?.label || 'Relatório'}
-            </Text>
-            <TouchableOpacity onPress={() => setRelatorioAberto(null)}>
-              <Ionicons name="close" size={26} color={COLORS.textDark} />
-            </TouchableOpacity>
-          </View>
-          <ScrollView contentContainerStyle={{ padding: 20 }}>
-            <Text style={s.relatorioConteudo}>{relatorioAberto?.conteudo}</Text>
-          </ScrollView>
-        </SafeAreaView>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -295,10 +274,4 @@ const s = StyleSheet.create({
   },
   itemTitulo: { fontSize: 14, fontWeight: '600', color: COLORS.textDark, lineHeight: 20 },
   itemMeta: { fontSize: 12, color: COLORS.textMid, marginTop: 2, lineHeight: 17 },
-  modalHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    padding: 16, borderBottomWidth: 1, borderBottomColor: COLORS.border,
-  },
-  modalHeaderTitulo: { fontSize: 17, fontWeight: '500', color: COLORS.textDark, flex: 1 },
-  relatorioConteudo: { fontSize: 14.5, color: COLORS.textDark, lineHeight: 22 },
 });

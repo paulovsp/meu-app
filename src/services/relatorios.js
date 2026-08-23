@@ -358,17 +358,17 @@ export async function gerarRelatorio(paciente, tipo, parametros = {}) {
     });
     if (error) {
       let mensagemErro = error.message;
+      let corpo;
       try {
-        const corpo = await error.context?.json();
+        corpo = await error.context?.json();
         if (corpo?.error) mensagemErro = corpo.error;
-        if (corpo?.assinaturaInativa || corpo?.creditosInsuficientes) {
-          const erro2 = new Error(mensagemErro);
-          erro2.assinaturaInativa = corpo.assinaturaInativa;
-          erro2.creditosInsuficientes = corpo.creditosInsuficientes;
-          throw erro2;
-        }
       } catch (_) {}
-      throw new Error(mensagemErro);
+      const erroFinal = new Error(mensagemErro);
+      if (corpo?.assinaturaInativa || corpo?.creditosInsuficientes) {
+        erroFinal.assinaturaInativa = corpo.assinaturaInativa;
+        erroFinal.creditosInsuficientes = corpo.creditosInsuficientes;
+      }
+      throw erroFinal;
     }
     conteudo = data?.resposta || '';
     custo = data?.custo || 0;

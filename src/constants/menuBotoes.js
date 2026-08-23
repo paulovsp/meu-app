@@ -9,7 +9,7 @@
 export const CLINICA_BUTTONS = [
   { id: 'session',  icon: 'mic-outline',      label: 'Nova Sessão',   screen: 'NewSession', corBadge: '#8F5456', bloqueiaSemAssinatura: true },
   { id: 'record',   icon: 'clipboard-outline', label: 'Novo Registro', screen: 'AddRecord',  corBadge: '#447362', bloqueiaSemAssinatura: true },
-  { id: 'patients', icon: 'people-outline',    label: 'Analisantes e Supervisionandos', screen: 'Patients', corBadge: '#825F4D' },
+  { id: 'patients', icon: 'people-outline',    label: 'Clientes', screen: 'Patients', corBadge: '#825F4D' },
   { id: 'relatorios', icon: 'document-text-outline', label: 'Relatórios', screen: 'Relatorios', corBadge: '#776746' },
 ];
 

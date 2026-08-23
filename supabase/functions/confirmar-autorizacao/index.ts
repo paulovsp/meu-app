@@ -76,7 +76,7 @@ async function extrairTextoDoDocumento(imagemBase64: string, mimeType: string): 
   form.set('scale', 'true');
   form.set('base64Image', `${prefixo};base64,${imagemBase64}`);
 
-  const resp = await fetch('https://apipro1.ocr.space/parse/image', { method: 'POST', body: form });
+  const resp = await fetch('https://api.ocr.space/parse/image', { method: 'POST', body: form });
   if (!resp.ok) {
     throw new Error(`Falha no serviço de OCR (${resp.status}).`);
   }

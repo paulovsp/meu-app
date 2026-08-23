@@ -1,5 +1,5 @@
-import React, { useState, useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useState, useCallback, useRef } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -23,7 +23,7 @@ function hojeISO() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-// Primeiro nome (ou o título/"Grupo") — o botão é estreito demais pro nome
+// Primeiro nome (ou o título/"Grupo") — o widget é estreito demais pro nome
 // inteiro.
 function nomeCurto({ tipo, patientNome, titulo, participantes }) {
   if (tipo === 'outros') return (titulo || 'Outros').split(' ')[0];
@@ -32,16 +32,30 @@ function nomeCurto({ tipo, patientNome, titulo, participantes }) {
 }
 
 /**
- * Mesma dinâmica de botões coloridos por horário da AgendaScreen (verde =
- * livre, cor do tipo de evento = ocupado), só que compactados numa faixa
- * horizontal rolável — o widget é estreito demais (metade da largura da
- * tela) pra caber tudo sem rolar, mas nenhum horário do dia fica de fora.
+ * Prévia do dia (verde = livre, cor do tipo de evento = ocupado), numa
+ * pilha vertical compacta. O widget INTEIRO é um botão só — os blocos de
+ * horário aqui dentro são só visuais, nunca tocáveis individualmente: cada
+ * bloco tem a mesma posição/formato de um botão real da Agenda, e deixar
+ * cada um navegar por conta própria fazia o toque "coincidir" com a grade
+ * de verdade da tela Agenda, abrindo direto o compromisso daquele horário
+ * em vez de só levar pra Agenda — o widget é prévia, não uma réplica
+ * interativa da Agenda. Tocar em qualquer lugar do card leva só pra Agenda.
  */
 export default function MiniAgendaBox({ navigation, altura }) {
   const [itens, setItens] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  // Sem isso, um toque duplo (comum quando a pessoa não vê nenhum sinal de
+  // que o primeiro toque "pegou" — exatamente o caso do carregando acima,
+  // antes de existir) podia disparar navigation.navigate('Agenda') mais de
+  // uma vez em sequência rápida, empilhando navegação por cima da própria
+  // transição ainda em andamento. Trava no primeiro toque; destrava quando
+  // a Início ganha foco de novo (voltando da Agenda).
+  const navegandoRef = useRef(false);
 
   useFocusEffect(
     useCallback(() => {
+      navegandoRef.current = false;
+      setCarregando(true);
       const hoje = new Date();
       const diaSemana = hoje.getDay();
       const dataISO = hojeISO();
@@ -71,7 +85,6 @@ export default function MiniAgendaBox({ navigation, altura }) {
             lista.push({
               key: `slot-${slot.id}`,
               startTime: slot.start_time,
-              ocupado,
               cor: ocupado ? corTipoEvento(tipo) : COR_LIVRE,
               nome: nomeCurto({
                 tipo,
@@ -79,10 +92,6 @@ export default function MiniAgendaBox({ navigation, altura }) {
                 titulo: compromisso?.titulo || slot.titulo,
                 participantes: compromisso?.participantes || slot.participantes,
               }),
-              appointmentId: compromisso?.id || null,
-              slotId: slot.id,
-              dayOfWeek: diaSemana,
-              endTime: slot.end_time,
             });
           }
 
@@ -94,77 +103,65 @@ export default function MiniAgendaBox({ navigation, altura }) {
             lista.push({
               key: `compromisso-${c.id}`,
               startTime: c.start_time,
-              ocupado: true,
               cor: corTipoEvento(c.tipo),
               nome: nomeCurto({ tipo: c.tipo, patientNome: c.patient_nome, titulo: c.titulo, participantes: c.participantes }),
-              appointmentId: c.id,
-              slotId: null,
-              dayOfWeek: diaSemana,
-              endTime: c.end_time,
             });
           }
 
           lista.sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
           setItens(lista);
         })
-        .catch(() => setItens([]));
+        .catch(() => setItens([]))
+        .finally(() => setCarregando(false));
     }, [])
   );
 
-  function abrirItem(item) {
-    if (item.appointmentId) {
-      navigation.navigate('DetalheCompromisso', { appointmentId: item.appointmentId });
-      return;
-    }
-    navigation.navigate('EditarHorario', {
-      slotId: item.slotId,
-      dayOfWeek: item.dayOfWeek,
-      startTime: item.startTime,
-      endTime: item.endTime,
-    });
+  function abrirAgenda() {
+    if (navegandoRef.current) return;
+    navegandoRef.current = true;
+    navigation.navigate('Agenda');
   }
 
   return (
-    // Moldura tripla: fina, grossa (3 dp ≈ 0,5 mm) e fina de novo.
-    <View style={s.molduraExterna}>
+    // Moldura tripla: fina, grossa (3 dp ≈ 0,5 mm) e fina de novo. O card
+    // inteiro é um único TouchableOpacity — ver comentário acima.
+    <TouchableOpacity style={s.molduraExterna} activeOpacity={0.85} onPress={abrirAgenda}>
       <View style={s.molduraCentral}>
         <View style={s.molduraInterna}>
           <View style={[s.caixa, altura ? { height: altura } : null]}>
-            <TouchableOpacity style={s.header} activeOpacity={0.7} onPress={() => navigation.navigate('Agenda')}>
+            <View style={s.header}>
               <Ionicons name="calendar-outline" size={16} color={salvia.tinta} />
               <Text style={s.titulo} numberOfLines={1}>Agenda de hoje</Text>
-            </TouchableOpacity>
+              {carregando && (
+                <ActivityIndicator size="small" color={salvia.tinta} style={s.spinner} />
+              )}
+            </View>
 
-            {itens.length === 0 ? (
+            {carregando && itens.length === 0 ? null : itens.length === 0 ? (
               <Text style={s.vazio}>Nenhum horário hoje</Text>
             ) : (
               // Barras finas, uma abaixo da outra, dividindo a altura
               // disponível — todas cabem sem rolar, com qualquer quantidade
               // de horários do dia. A cor original do tipo (tiposEvento.js)
               // vive na borda; o preenchimento fica em papel, senão o widget
-              // inteiro vira um bloco de cor.
+              // inteiro vira um bloco de cor. Puramente visual — sem onPress.
               <View style={s.pilha}>
                 {itens.map((item) => (
-                  <TouchableOpacity
-                    key={item.key}
-                    style={[s.slotExterno, { borderColor: item.cor + '44' }]}
-                    activeOpacity={0.75}
-                    onPress={() => abrirItem(item)}
-                  >
+                  <View key={item.key} style={[s.slotExterno, { borderColor: item.cor + '44' }]}>
                     <View style={[s.slotCentral, { borderColor: item.cor }]}>
                       <View style={[s.slotInterno, { borderColor: item.cor + '44' }]}>
                         <Text style={s.slotHora} numberOfLines={1}>{item.startTime?.slice(0, 5)}</Text>
                         <Text style={s.slotNome} numberOfLines={1}>{item.nome}</Text>
                       </View>
                     </View>
-                  </TouchableOpacity>
+                  </View>
                 ))}
               </View>
             )}
           </View>
         </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -208,6 +205,7 @@ const s = StyleSheet.create({
   },
   header: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 10 },
   titulo: { fontSize: 13.5, fontWeight: '500', color: COLORS.textDark, lineHeight: 18 },
+  spinner: { marginLeft: 'auto' },
   vazio: { fontSize: 13, color: COLORS.textMid, fontStyle: 'italic', lineHeight: 19 },
 
   pilha: { flex: 1, gap: 5 },

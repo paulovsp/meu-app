@@ -1,5 +1,5 @@
-import React, { useState, useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useState, useCallback, useRef } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { getAppointmentsByDate, ensureAppointmentsForDate } from '../services/database';
@@ -38,9 +38,19 @@ function hojeISO() {
 
 export default function MiniAgendaBox({ navigation, altura }) {
   const [compromissos, setCompromissos] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  // Sem isso, um toque duplo (comum quando a pessoa não vê nenhum sinal de
+  // que o primeiro toque "pegou" — exatamente o caso do carregando acima,
+  // antes de existir) podia disparar navigation.navigate('Agenda') mais de
+  // uma vez em sequência rápida, empilhando navegação por cima da própria
+  // transição ainda em andamento. Trava no primeiro toque; destrava quando
+  // a Início ganha foco de novo (voltando da Agenda).
+  const navegandoRef = useRef(false);
 
   useFocusEffect(
     useCallback(() => {
+      navegandoRef.current = false;
+      setCarregando(true);
       const hoje = new Date();
       // Item 3 (leva pós-v13): appointments só "nasce" quando o dia é
       // aberto na Agenda de verdade (mesmo gatilho que AgendaScreen.js usa
@@ -49,9 +59,16 @@ export default function MiniAgendaBox({ navigation, altura }) {
       ensureAppointmentsForDate(hojeISO(), hoje.getDay())
         .then(() => getAppointmentsByDate(hojeISO()))
         .then((lista) => setCompromissos((lista || []).filter((c) => c.status !== 'cancelado')))
-        .catch(() => setCompromissos([]));
+        .catch(() => setCompromissos([]))
+        .finally(() => setCarregando(false));
     }, [])
   );
+
+  function abrirAgenda() {
+    if (navegandoRef.current) return;
+    navegandoRef.current = true;
+    navigation.navigate('Agenda');
+  }
 
   const visiveis = compromissos.slice(0, MAX_LINHAS);
   const restantes = compromissos.length - visiveis.length;
@@ -60,16 +77,19 @@ export default function MiniAgendaBox({ navigation, altura }) {
     <TouchableOpacity
       style={s.molduraGrossa}
       activeOpacity={0.75}
-      onPress={() => navigation.navigate('Agenda')}
+      onPress={abrirAgenda}
     >
       <View style={s.molduraFina}>
         <View style={[s.caixa, altura ? { height: altura } : null]}>
           <View style={s.header}>
             <Ionicons name="calendar-outline" size={18} color={COLORS.borderAzul} />
             <Text style={s.titulo}>Agenda de hoje</Text>
+            {carregando && (
+              <ActivityIndicator size="small" color={COLORS.borderAzul} style={s.spinner} />
+            )}
           </View>
 
-          {visiveis.length === 0 ? (
+          {carregando && compromissos.length === 0 ? null : visiveis.length === 0 ? (
             <Text style={s.vazio}>Nenhum horário hoje</Text>
           ) : (
             visiveis.map((c) => (
@@ -115,6 +135,7 @@ const s = StyleSheet.create({
   },
   header: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 10 },
   titulo: { fontSize: 14, fontWeight: '700', color: COLORS.textDark },
+  spinner: { marginLeft: 'auto' },
   linhaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
   statusDot: { width: 8, height: 8, borderRadius: 4 },
   linha: { flex: 1, fontSize: 13.5, color: COLORS.textDark },

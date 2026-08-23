@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState, useLayoutEffect } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -13,8 +13,6 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import MenuLateral from '../components/MenuLateral';
-import { CLINICA_BUTTONS, ADMIN_BUTTONS } from '../constants/menuBotoes';
 
 import {
   getAvailabilitySlots,
@@ -124,21 +122,10 @@ export default function AgendaScreen({ navigation }) {
   const [appointments, setAppointments] = useState([]);
   const [temTranscricaoMap, setTemTranscricaoMap] = useState({});
   const [carregando, setCarregando] = useState(true);
-  const [menuAberto, setMenuAberto] = useState(false);
   // Esconde da visão semanal os dias sem nenhum horário configurado nem
   // compromisso avulso — pensado pra quem não atende todo dia (ex: sem
   // sábado/domingo) e não quer ver colunas vazias ocupando espaço.
   const [ocultarDiasVazios, setOcultarDiasVazios] = useState(false);
-
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <TouchableOpacity onPress={() => setMenuAberto(true)} style={{ paddingHorizontal: 12 }}>
-          <Ionicons name="menu-outline" size={26} color="#1A1A2E" />
-        </TouchableOpacity>
-      ),
-    });
-  }, [navigation]);
 
   const inicioSemana = useMemo(() => getInicioSemana(dataRef), [dataRef]);
 
@@ -721,21 +708,6 @@ export default function AgendaScreen({ navigation }) {
         )}
       </Animated.View>
 
-      <MenuLateral
-        visible={menuAberto}
-        onClose={() => setMenuAberto(false)}
-        navigation={navigation}
-        clinicaButtons={CLINICA_BUTTONS}
-        adminButtons={ADMIN_BUTTONS}
-        contextual={{
-          titulo: 'Agenda',
-          itens: [
-            { icon: 'mic-outline', label: 'Nova Sessão', onPress: () => navigation.navigate('NewSession') },
-            { icon: modoView === 'semanal' ? 'today-outline' : 'calendar-outline', label: modoView === 'semanal' ? 'Ver dia' : 'Ver semana', onPress: () => setModoView(modoView === 'semanal' ? 'diario' : 'semanal') },
-            { icon: 'time-outline', label: 'Disponibilidade', onPress: () => navigation.navigate('EditarHorario', {}) },
-          ],
-        }}
-      />
     </SafeAreaView>
   );
 }

@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import CabecalhoTela from '../components/CabecalhoTela';
 import {
   getAppointmentById,
   updateAppointmentStatus,
@@ -66,8 +67,11 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
 
   if (!compromisso) {
     return (
-      <View style={styles.container}>
-        <Text>Carregando...</Text>
+      <View style={{ flex: 1 }}>
+        <CabecalhoTela titulo="Compromisso" onVoltar={() => navigation.goBack()} />
+        <View style={styles.container}>
+          <Text>Carregando...</Text>
+        </View>
       </View>
     );
   }
@@ -380,13 +384,15 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
   }
 
   return (
-    // Área segura no pé: sem isso os botões ficam por baixo da barra de
-    // gestos do sistema.
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
-      <Text style={[styles.tipoLabel, { color: infoTipoEvento(tipo).cor }]}>
-        {infoTipoEvento(tipo).labelCurto}
-      </Text>
-      <Text style={styles.nome}>{nomeExibicaoCompromisso(compromisso)}</Text>
+    <View style={{ flex: 1 }}>
+      <CabecalhoTela titulo="Compromisso" onVoltar={() => navigation.goBack()} />
+      {/* Área segura no pé: sem isso os botões ficam por baixo da barra de
+          gestos do sistema. */}
+      <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
+        <Text style={[styles.tipoLabel, { color: infoTipoEvento(tipo).cor }]}>
+          {infoTipoEvento(tipo).labelCurto}
+        </Text>
+        <Text style={styles.nome}>{nomeExibicaoCompromisso(compromisso)}</Text>
 
       <View style={[styles.estadoPill, { backgroundColor: `${estadoInfo.cor}22` }]}>
         <Text style={[styles.estadoPillTxt, { color: estadoInfo.cor }]}>{estadoInfo.texto}</Text>
@@ -475,7 +481,8 @@ Nenhum relato ou transcrição foi adicionado para esta sessão ainda.
           </TouchableOpacity>
         </>
       )}
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 

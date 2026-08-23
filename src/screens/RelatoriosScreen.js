@@ -8,8 +8,9 @@ import {
   ScrollView, ActivityIndicator, Alert, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import CabecalhoTela from '../components/CabecalhoTela';
 import { listarPacientes } from '../services/database';
 import {
   TIPOS_RELATORIO, OPCOES_ULTIMAS_SESSOES, gerarRelatorio, listarRelatorios, estimarCustoRelatorio,
@@ -34,6 +35,7 @@ function formatarDataHora(iso) {
 }
 
 export default function RelatoriosScreen() {
+  const navigation = useNavigation();
   const [pacientes, setPacientes] = useState([]);
   const [filtro, setFiltro] = useState('');
   const [carregandoLista, setCarregandoLista] = useState(true);
@@ -121,6 +123,7 @@ export default function RelatoriosScreen() {
   if (!paciente) {
     return (
       <SafeAreaView style={s.safe} edges={['bottom']}>
+        <CabecalhoTela titulo="Relatórios" onVoltar={() => navigation.goBack()} />
         <View style={s.buscaWrap}>
           <Ionicons name="search-outline" size={18} color={COLORS.textMid} />
           <TextInput
@@ -156,6 +159,7 @@ export default function RelatoriosScreen() {
 
   return (
     <SafeAreaView style={s.safe} edges={['bottom']}>
+      <CabecalhoTela titulo="Relatórios" onVoltar={() => setPaciente(null)} />
       <View style={s.pacienteHeader}>
         <TouchableOpacity onPress={() => setPaciente(null)} style={s.trocarBtn}>
           <Ionicons name="arrow-back" size={18} color={COLORS.btnBlue} />

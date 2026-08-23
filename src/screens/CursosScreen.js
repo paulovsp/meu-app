@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, FlatList, ActivityIndicator, 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import CabecalhoTela from '../components/CabecalhoTela';
 import { listarCursos } from '../services/cursos';
 import { mensagemDeErro } from '../services/erros';
 
@@ -47,6 +48,7 @@ export default function CursosScreen() {
 
   return (
     <SafeAreaView style={s.safe} edges={['bottom']}>
+      <CabecalhoTela titulo="Meus cursos" onVoltar={() => navigation.goBack()} />
       {carregando ? (
         <View style={s.loadingWrap}>
           <ActivityIndicator size="large" color={COLORS.btnBlue} />

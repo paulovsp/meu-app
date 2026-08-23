@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useLayoutEffect } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Linking, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -15,6 +15,7 @@ import { montarMensagemCobranca } from '../services/mensagens';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import MenuLateral from '../components/MenuLateral';
+import CabecalhoTela from '../components/CabecalhoTela';
 import { CLINICA_BUTTONS, ADMIN_BUTTONS } from '../constants/menuBotoes';
 
 const MESES_LABEL = [
@@ -159,16 +160,6 @@ export default function CobrancaScreen() {
   const [carregando, setCarregando] = useState(true);
   const [menuAberto, setMenuAberto] = useState(false);
 
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <TouchableOpacity onPress={() => setMenuAberto(true)} style={{ paddingHorizontal: 12 }}>
-          <Ionicons name="menu-outline" size={26} color="#302C28" />
-        </TouchableOpacity>
-      ),
-    });
-  }, [navigation]);
-
   const ano = refDate.getFullYear();
   const mesIndex = refDate.getMonth();
 
@@ -279,6 +270,15 @@ export default function CobrancaScreen() {
 
   return (
     <SafeAreaView style={s.container} edges={['bottom']}>
+      <CabecalhoTela
+        titulo="Recebíveis"
+        onVoltar={() => navigation.goBack()}
+        acoes={(
+          <TouchableOpacity onPress={() => setMenuAberto(true)} style={{ padding: 6 }}>
+            <Ionicons name="menu-outline" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+        )}
+      />
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
         {pendentesHoje.length > 0 && (
           <View style={s.alerta}>

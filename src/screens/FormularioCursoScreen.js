@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import CabecalhoTela from '../components/CabecalhoTela';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
 import notifee, { AndroidImportance, AndroidForegroundServiceType } from '@notifee/react-native';
@@ -297,6 +298,7 @@ export default function FormularioCursoScreen() {
 
   return (
     <SafeAreaView style={s.safe} edges={['bottom']}>
+      <CabecalhoTela titulo="Curso" onVoltar={() => navigation.goBack()} />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={s.scrollInner} keyboardShouldPersistTaps="handled">
         <Text style={s.label}>Título *</Text>

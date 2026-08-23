@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import CabecalhoTela from '../components/CabecalhoTela';
 import * as ImagePicker from 'expo-image-picker';
 import {
   getPlanoFinanceiro, getRecebimentosDoMes, getPrecoMedioSessao,
@@ -599,6 +600,7 @@ export default function PerfilScreen({ navigation }) {
 
   return (
     <SafeAreaView style={st.safe} edges={['bottom']}>
+      <CabecalhoTela titulo="Meu Perfil" onVoltar={() => navigation.goBack()} />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={st.scrollInner} keyboardShouldPersistTaps="handled">
         {/* ── Cabeçalho ── */}

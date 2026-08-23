@@ -10,6 +10,7 @@ import { listarPacientes, deletarPaciente, getModalidadesPorPaciente } from '../
 import { mensagemDeErro } from '../services/erros';
 import { calcularAnosEMeses, formatarAnosEMeses } from '../services/validacao';
 import MenuLateral from '../components/MenuLateral';
+import CabecalhoTela from '../components/CabecalhoTela';
 import { CLINICA_BUTTONS, ADMIN_BUTTONS } from '../constants/menuBotoes';
 
 export default function AnalisantesScreen() {
@@ -142,18 +143,21 @@ export default function AnalisantesScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <View style={styles.header}>
-        <Text style={styles.title}>{aba === 'analisantes' ? 'Analisantes' : 'Supervisionandos'}</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-          <TouchableOpacity style={styles.addBtn} onPress={() => irParaFormulario()}>
-            <Text style={styles.addBtnText}>+ Novo</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setMenuAberto(true)}>
-            <Ionicons name="menu-outline" size={26} color="#302C28" />
-          </TouchableOpacity>
-        </View>
-      </View>
+    <SafeAreaView style={styles.container} edges={['bottom']}>
+      <CabecalhoTela
+        titulo={aba === 'analisantes' ? 'Analisantes' : 'Supervisionandos'}
+        onVoltar={() => navigation.goBack()}
+        acoes={(
+          <>
+            <TouchableOpacity style={styles.headerAcaoBtn} onPress={() => irParaFormulario()}>
+              <Ionicons name="person-add-outline" size={22} color="#FFFFFF" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.headerAcaoBtn} onPress={() => setMenuAberto(true)}>
+              <Ionicons name="menu-outline" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+          </>
+        )}
+      />
 
       <View style={styles.abas}>
         <TouchableOpacity
@@ -214,14 +218,7 @@ export default function AnalisantesScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F7F5F0' },
-  header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    padding: 24, paddingBottom: 16, backgroundColor: '#FDFCFA',
-    borderBottomWidth: 1, borderBottomColor: '#EAE5DC',
-  },
-  title:        { fontSize: 26, fontWeight: '500', color: '#302C28' },
-  addBtn:       { backgroundColor: '#497363', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8 },
-  addBtnText: { color: '#fff', fontWeight: '500', fontSize: 14, lineHeight: 20 },
+  headerAcaoBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   abas: {
     flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingTop: 12,
     backgroundColor: '#FDFCFA', borderBottomWidth: 1, borderBottomColor: '#EAE5DC', paddingBottom: 12,

@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import CabecalhoTela from '../components/CabecalhoTela';
 import { listarPacientes } from '../services/database';
 import {
   montarContextoSelecionados, estimarCustoResposta, chamarBuscaChat, criarSessaoRedacao,
@@ -75,16 +76,6 @@ export default function BuscaScreen() {
     estadoPersistente.sessaoRedacao = criarSessaoRedacao();
   }
 
-  useEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <TouchableOpacity onPress={limpar} style={{ padding: 6 }}>
-          <Ionicons name="trash-outline" size={20} color="#497363" />
-        </TouchableOpacity>
-      ),
-    });
-  }, [navigation]);
-
   function alternarPessoa(id) {
     setSelecionadosIds((atual) => (
       atual.includes(id) ? atual.filter((x) => x !== id) : [...atual, id]
@@ -148,6 +139,15 @@ export default function BuscaScreen() {
 
   return (
     <SafeAreaView style={s.container} edges={['bottom']}>
+      <CabecalhoTela
+        titulo="Busca Dr.Sig"
+        onVoltar={() => navigation.goBack()}
+        acoes={(
+          <TouchableOpacity onPress={limpar} style={{ padding: 6 }}>
+            <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        )}
+      />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}

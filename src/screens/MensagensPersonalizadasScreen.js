@@ -4,6 +4,8 @@ import {
   KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import CabecalhoTela from '../components/CabecalhoTela';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { mensagemDeErro } from '../services/erros';
@@ -39,6 +41,7 @@ function CampoTemplate({ titulo, descricao, variaveis, valor, onChange, onRestau
 }
 
 export default function MensagensPersonalizadasScreen() {
+  const navigation = useNavigation();
   const { session } = useAuth();
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
@@ -91,7 +94,8 @@ export default function MensagensPersonalizadasScreen() {
 
   if (carregando) {
     return (
-      <SafeAreaView style={s.safe}>
+      <SafeAreaView style={s.safe} edges={['bottom']}>
+        <CabecalhoTela titulo="Mensagens personalizadas" onVoltar={() => navigation.goBack()} />
         <View style={s.loadingWrap}>
           <ActivityIndicator size="large" color="#497363" />
         </View>
@@ -101,6 +105,7 @@ export default function MensagensPersonalizadasScreen() {
 
   return (
     <SafeAreaView style={s.safe} edges={['bottom']}>
+      <CabecalhoTela titulo="Mensagens personalizadas" onVoltar={() => navigation.goBack()} />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={s.scrollInner} keyboardShouldPersistTaps="handled">
         <Text style={s.intro}>

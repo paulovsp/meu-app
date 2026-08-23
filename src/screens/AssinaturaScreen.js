@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import CabecalhoTela from '../components/CabecalhoTela';
 import SignatureScreen from 'react-native-signature-canvas';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { supabase } from '../services/supabase';
@@ -109,6 +110,7 @@ export default function AssinaturaScreen() {
   if (etapa === 'revisao') {
     return (
       <SafeAreaView style={s.container} edges={['bottom']}>
+        <CabecalhoTela titulo="Assinatura" onVoltar={() => navigation.goBack()} />
         <Text style={s.dica}>
           Se a assinatura saiu de lado (comum quando se desenha com o celular
           deitado), toque em "Girar" até ficar na horizontal certa.
@@ -145,6 +147,7 @@ export default function AssinaturaScreen() {
 
   return (
     <SafeAreaView style={s.container} edges={['bottom']}>
+      <CabecalhoTela titulo="Assinatura" onVoltar={() => navigation.goBack()} />
       <Text style={s.dica}>
         Desenhe sua assinatura com o dedo no espaço abaixo. Ela vai aparecer
         acima do seu nome nos recibos — não substitui o nome, CPF nem CRP

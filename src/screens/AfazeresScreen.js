@@ -4,8 +4,9 @@ import {
   ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import CabecalhoTela from '../components/CabecalhoTela';
 import { listarAfazeres, adicionarAfazer, alternarAfazer, removerAfazer } from '../services/afazeres';
 import { mensagemDeErro } from '../services/erros';
 
@@ -19,6 +20,7 @@ const COLORS = {
 };
 
 export default function AfazeresScreen() {
+  const navigation = useNavigation();
   const [itens, setItens] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [texto, setTexto] = useState('');
@@ -82,6 +84,7 @@ export default function AfazeresScreen() {
 
   return (
     <SafeAreaView style={s.safe} edges={['bottom']}>
+      <CabecalhoTela titulo="Afazeres" onVoltar={() => navigation.goBack()} />
       {/* Android já redimensiona a tela sozinho quando o teclado abre
           (softwareKeyboardLayoutMode "resize", padrão do Expo) — usar
           behavior "height" aqui em cima disso comprimia a tela duas vezes.

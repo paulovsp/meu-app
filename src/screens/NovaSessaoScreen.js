@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import CabecalhoTela from '../components/CabecalhoTela';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
 import notifee, { AndroidImportance, AndroidForegroundServiceType } from '@notifee/react-native';
@@ -444,8 +445,9 @@ export default function NovaSessaoScreen() {
   // ── STEP 0: Selecionar paciente ───────────────────────────
   if (step === STEPS.SELECT_PATIENT) {
     return (
-      <SafeAreaView style={s.container} edges={['top', 'bottom']}>
-        <Text style={s.header}>Nova Sessão</Text>
+      <SafeAreaView style={s.safeArea} edges={['bottom']}>
+        <CabecalhoTela titulo="Nova Sessão" onVoltar={() => navigation.goBack()} />
+        <View style={s.container}>
         <Text style={s.sub}>Selecione o analisante:</Text>
         <FlatList
           data={pacientes}
@@ -460,6 +462,7 @@ export default function NovaSessaoScreen() {
           )}
           ListEmptyComponent={<Text style={s.empty}>Nenhum analisante cadastrado.</Text>}
         />
+        </View>
       </SafeAreaView>
     );
   }
@@ -467,8 +470,9 @@ export default function NovaSessaoScreen() {
   // ── STEP 1: Presencial ou Online ──────────────────────────
   if (step === STEPS.SELECT_TYPE) {
     return (
-      <SafeAreaView style={s.container} edges={['top', 'bottom']}>
-        <Text style={s.header}>Nova Sessão</Text>
+      <SafeAreaView style={s.safeArea} edges={['bottom']}>
+        <CabecalhoTela titulo="Nova Sessão" onVoltar={() => setStep(STEPS.SELECT_PATIENT)} />
+        <View style={s.container}>
         <Text style={s.sub}>Analisante: <Text style={s.bold}>{paciente?.nome}</Text></Text>
         <Text style={s.sub}>Tipo de sessão:</Text>
 
@@ -493,6 +497,7 @@ export default function NovaSessaoScreen() {
         <TouchableOpacity style={s.btnVoltar} onPress={() => setStep(STEPS.SELECT_PATIENT)}>
           <Text style={s.btnVoltarText}>← Voltar</Text>
         </TouchableOpacity>
+        </View>
       </SafeAreaView>
     );
   }
@@ -500,8 +505,9 @@ export default function NovaSessaoScreen() {
   // ── STEP 2: Selecionar plataforma ─────────────────────────
   if (step === STEPS.SELECT_PLATFORM) {
     return (
-      <SafeAreaView style={s.container} edges={['top', 'bottom']}>
-        <Text style={s.header}>Nova Sessão</Text>
+      <SafeAreaView style={s.safeArea} edges={['bottom']}>
+        <CabecalhoTela titulo="Nova Sessão" onVoltar={() => setStep(STEPS.SELECT_TYPE)} />
+        <View style={s.container}>
         <Text style={s.sub}>Plataforma da chamada:</Text>
         {PLATFORMS.map(p => (
           <TouchableOpacity
@@ -516,6 +522,7 @@ export default function NovaSessaoScreen() {
         <TouchableOpacity style={s.btnVoltar} onPress={() => setStep(STEPS.SELECT_TYPE)}>
           <Text style={s.btnVoltarText}>← Voltar</Text>
         </TouchableOpacity>
+        </View>
       </SafeAreaView>
     );
   }
@@ -523,9 +530,9 @@ export default function NovaSessaoScreen() {
   // ── STEP 3: Gravação ──────────────────────────────────────
   if (step === STEPS.RECORDING) {
     return (
-      <SafeAreaView style={s.safeArea} edges={['top', 'bottom']}>
+      <SafeAreaView style={s.safeArea} edges={['bottom']}>
+        <CabecalhoTela titulo="Nova Sessão" onVoltar={() => setStep(isOnline ? STEPS.SELECT_PLATFORM : STEPS.SELECT_TYPE)} />
         <ScrollView style={s.container} contentContainerStyle={{ paddingBottom: 40 }}>
-          <Text style={s.header}>Nova Sessão</Text>
           <Text style={s.sub}>
             Analisante: <Text style={s.bold}>{paciente?.nome}</Text>
           </Text>
@@ -626,7 +633,8 @@ Você pode bloquear a tela ou usar outros apps — a gravação continua.
   // ── STEP 4: Revisão / transcrição ─────────────────────────
   if (step === STEPS.REVIEW && transcricaoAssincrona) {
     return (
-      <SafeAreaView style={s.safeArea} edges={['top', 'bottom']}>
+      <SafeAreaView style={s.safeArea} edges={['bottom']}>
+        <CabecalhoTela titulo="Nova Sessão" onVoltar={() => navigation.goBack()} />
         <View style={[s.container, { flex: 1, justifyContent: 'center', alignItems: 'center' }]}>
           <Ionicons name="mic-outline" size={40} color="#497363" style={{ marginBottom: 16 }} />
           <Text style={s.header}>Transcrição em andamento</Text>
@@ -647,10 +655,10 @@ Você pode bloquear a tela ou usar outros apps — a gravação continua.
 
   if (step === STEPS.REVIEW) {
     return (
-      <SafeAreaView style={s.safeArea} edges={['top', 'bottom']}>
+      <SafeAreaView style={s.safeArea} edges={['bottom']}>
+        <CabecalhoTela titulo="Revisar Transcrição" onVoltar={() => setStep(STEPS.RECORDING)} />
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView style={s.container} contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
-          <Text style={s.header}>Revisar Transcrição</Text>
           <Text style={s.sub}>
             Analisante: <Text style={s.bold}>{paciente?.nome}</Text>
             {duracaoFinal > 0 && (

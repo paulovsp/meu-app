@@ -13,6 +13,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { mensagemDeErro } from '../services/erros';
 import { assinaturaEstaAtiva, MENSAGEM_ASSINATURA_INATIVA } from '../services/assinatura';
 import MenuLateral from '../components/MenuLateral';
+import CabecalhoTela from '../components/CabecalhoTela';
 import { CLINICA_BUTTONS, ADMIN_BUTTONS } from '../constants/menuBotoes';
 
 function Vazio({ texto }) {
@@ -58,15 +59,6 @@ export default function FiscalScreen() {
   const mesIndex = refDate.getMonth();
   const mesLabel = capitalizar(MESES_LABEL[mesIndex]);
 
-  React.useLayoutEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <TouchableOpacity onPress={() => setMenuAberto(true)} style={{ paddingHorizontal: 12 }}>
-          <Ionicons name="menu-outline" size={26} color="#302C28" />
-        </TouchableOpacity>
-      ),
-    });
-  }, [navigation]);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -154,6 +146,15 @@ export default function FiscalScreen() {
 
   return (
     <SafeAreaView style={s.container} edges={['bottom']}>
+      <CabecalhoTela
+        titulo="Fiscal"
+        onVoltar={() => navigation.goBack()}
+        acoes={(
+          <TouchableOpacity onPress={() => setMenuAberto(true)} style={{ padding: 6 }}>
+            <Ionicons name="menu-outline" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+        )}
+      />
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
         <View style={s.navMes}>
           <TouchableOpacity onPress={() => mudarMes(-1)}>

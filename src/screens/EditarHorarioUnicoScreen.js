@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import CabecalhoTela from '../components/CabecalhoTela';
 import { atualizarHorarioAppointment } from '../services/database';
 import { mensagemDeErro } from '../services/erros';
 
@@ -54,9 +55,9 @@ export default function EditarHorarioUnicoScreen() {
 
   return (
     <SafeAreaView style={s.safe} edges={['bottom']}>
+      <CabecalhoTela titulo="Editar só este horário" onVoltar={() => navigation.goBack()} />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
-        <Text style={s.titulo}>Editar só este horário</Text>
         <Text style={s.subtitulo}>
           Só o compromisso de {dataFormatada || 'hoje'} muda — o horário recorrente da agenda
           continua igual pras próximas semanas.
@@ -100,7 +101,6 @@ export default function EditarHorarioUnicoScreen() {
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#FDFCFA' },
   content: { padding: 20 },
-  titulo: { fontSize: 20, fontWeight: '500', color: '#302C28', marginBottom: 6 },
   subtitulo: { fontSize: 13, color: '#756E66', marginBottom: 20, lineHeight: 18 },
   label: { fontSize: 13, fontWeight: '600', color: '#302C28', marginBottom: 6, marginTop: 12, lineHeight: 19 },
   input: {

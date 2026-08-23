@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import CabecalhoTela from '../components/CabecalhoTela';
 import * as ImagePicker from 'expo-image-picker';
 import { isSupported as ocrSuportado, extractTextFromImage } from 'expo-text-extractor';
 import { RichText, Toolbar, useEditorBridge, TenTapStartKit } from '@10play/tentap-editor';
@@ -338,14 +339,8 @@ export default function NovoRegistroScreen() {
   // ─── STEP: Selecionar paciente ──────────────────────────────────────────
   if (step === 'SELECT_PATIENT') {
     return (
-      <SafeAreaView style={s.container} edges={['top', 'left', 'right', 'bottom']}>
-        <View style={s.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Text style={s.backText}>← Voltar</Text>
-          </TouchableOpacity>
-          <Text style={s.headerTitle}>Novo Registro</Text>
-          <View style={{ width: 70 }} />
-        </View>
+      <SafeAreaView style={s.container} edges={['left', 'right', 'bottom']}>
+        <CabecalhoTela titulo="Novo Registro" onVoltar={() => navigation.goBack()} />
 
         <Text style={s.stepLabel}>Selecione o analisante:</Text>
 
@@ -374,14 +369,8 @@ export default function NovoRegistroScreen() {
 
   // ─── STEP: Formulário ───────────────────────────────────────────────────
   return (
-    <SafeAreaView style={s.container} edges={['top', 'left', 'right', 'bottom']}>
-      <View style={s.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={s.backText}>← Voltar</Text>
-        </TouchableOpacity>
-        <Text style={s.headerTitle}>{editando ? 'Editar Registro' : 'Novo Registro'}</Text>
-        <View style={{ width: 70 }} />
-      </View>
+    <SafeAreaView style={s.container} edges={['left', 'right', 'bottom']}>
+      <CabecalhoTela titulo={editando ? 'Editar Registro' : 'Novo Registro'} onVoltar={() => navigation.goBack()} />
 
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.form}>
         <View style={s.infoRow}>
@@ -512,18 +501,6 @@ export default function NovoRegistroScreen() {
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F7F5F0' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#FDFCFA',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#EAE5DC',
-  },
-  backText: { color: '#497363', fontSize: 15, fontWeight: '600', lineHeight: 22 },
-  headerTitle: { fontSize: 17, fontWeight: '500', color: '#302C28' },
   stepLabel: { fontSize: 16, color: '#756E66', padding: 20, paddingBottom: 8, lineHeight: 23 },
   form:        { padding: 20, gap: 18 },
   fieldGroup:  { gap: 8 },

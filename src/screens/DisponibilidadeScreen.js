@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import CabecalhoTela from '../components/CabecalhoTela';
 
 import {
   getAvailabilitySlots,
@@ -538,6 +539,7 @@ export default function DisponibilidadeScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <CabecalhoTela titulo="Editar Horário" onVoltar={() => navigation.goBack()} />
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}

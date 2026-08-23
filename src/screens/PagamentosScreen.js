@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useLayoutEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView,
   Modal, Alert, ActivityIndicator, Switch, KeyboardAvoidingView, Platform,
@@ -12,6 +12,7 @@ import {
 } from '../services/despesas';
 import { mensagemDeErro } from '../services/erros';
 import MenuLateral from '../components/MenuLateral';
+import CabecalhoTela from '../components/CabecalhoTela';
 import { CLINICA_BUTTONS, ADMIN_BUTTONS } from '../constants/menuBotoes';
 
 const COLORS = {
@@ -48,16 +49,6 @@ export default function PagamentosScreen() {
   const [modalVisivel, setModalVisivel] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [menuAberto, setMenuAberto] = useState(false);
-
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <TouchableOpacity onPress={() => setMenuAberto(true)} style={{ paddingHorizontal: 12 }}>
-          <Ionicons name="menu-outline" size={26} color="#302C28" />
-        </TouchableOpacity>
-      ),
-    });
-  }, [navigation]);
 
   const [categoria, setCategoria] = useState('outros');
   const [descricao, setDescricao] = useState('');
@@ -147,6 +138,15 @@ export default function PagamentosScreen() {
 
   return (
     <SafeAreaView style={s.safe} edges={['bottom']}>
+      <CabecalhoTela
+        titulo="Pagamentos"
+        onVoltar={() => navigation.goBack()}
+        acoes={(
+          <TouchableOpacity onPress={() => setMenuAberto(true)} style={{ padding: 6 }}>
+            <Ionicons name="menu-outline" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+        )}
+      />
       <View style={s.mesRow}>
         <TouchableOpacity onPress={() => mudarMes(-1)} style={s.mesBtn}>
           <Ionicons name="chevron-back" size={20} color={COLORS.btnBlue} />

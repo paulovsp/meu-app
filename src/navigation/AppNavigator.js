@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
-import { papel, tinta, salvia } from '../theme';
+import { View, ActivityIndicator } from 'react-native';
+import { papel, salvia } from '../theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -59,39 +58,15 @@ import SessoesStatusScreen from '../screens/SessoesStatusScreen';
 
 const Stack = createNativeStackNavigator();
 
-/**
- * Cabeçalho das telas secundárias: fundo no verde da marca, com o rodapé
- * recortado em onda — o mesmo motivo da tela Início, agora como gramática
- * do app inteiro em vez de enfeite de uma tela só.
- */
-function CabecalhoVerde() {
-  return (
-    <View style={cab.fundo}>
-      <Svg
-        width="100%"
-        height={18}
-        viewBox="0 0 390 18"
-        preserveAspectRatio="none"
-        style={cab.onda}
-      >
-        <Path d="M0,4 C66,14 132,0 198,7 C258,13 326,2 390,9 L390,18 L0,18 Z" fill={salvia.base} />
-        <Path d="M0,9 C66,18 132,5 198,11 C258,17 326,7 390,13 L390,18 L0,18 Z" fill={papel.base} />
-      </Svg>
-    </View>
-  );
-}
-
-const cab = StyleSheet.create({
-  fundo: { flex: 1, backgroundColor: salvia.tinta },
-  onda: { position: 'absolute', left: 0, right: 0, bottom: 0 },
-});
-
+// Header nativo desligado pra tudo — sob o edge-to-edge do Android no
+// Expo SDK 54, o header do @react-navigation/native-stack não reserva o
+// espaço real que ocupa (desenha por cima do conteúdo em vez de empurrar
+// pra baixo), cortando o topo de várias telas. Cada tela agora desenha o
+// próprio cabeçalho com <CabecalhoTela/> (src/components/CabecalhoTela.js),
+// que calcula sua altura sozinho — determinístico, sem depender de como o
+// Android decide posicionar o header nativo.
 const screenOptions = {
-  headerBackground: () => <CabecalhoVerde />,
-  headerStyle: { backgroundColor: salvia.tinta },
-  headerTintColor: '#FFFFFF',
-  headerTitleStyle: { fontWeight: '600', fontSize: 19, letterSpacing: -0.3, color: '#FFFFFF' },
-  headerShadowVisible: false,
+  headerShown: false,
   contentStyle: { backgroundColor: papel.base },
   animation: 'slide_from_right',
 };
@@ -125,11 +100,7 @@ function AppStackNavigator() {
   return (
     <Stack.Navigator initialRouteName="Home" screenOptions={screenOptions}>
       {/* Home */}
-      <Stack.Screen
-        name="Home"
-        component={InicioScreen}
-        options={{ headerShown: false }}
-      />
+      <Stack.Screen name="Home" component={InicioScreen} />
 
       {/* Pacientes */}
       <Stack.Screen
@@ -144,17 +115,9 @@ function AppStackNavigator() {
         options={{ title: 'Busca Dr.Sig' }}
       />
 
-      <Stack.Screen
-        name="PatientForm"
-        component={FormularioAnalisanteScreen}
-        options={{ headerShown: false }}
-      />
+      <Stack.Screen name="PatientForm" component={FormularioAnalisanteScreen} />
 
-      <Stack.Screen
-        name="PatientDetail"
-        component={DetalheAnalisanteScreen}
-        options={{ headerShown: false }}
-      />
+      <Stack.Screen name="PatientDetail" component={DetalheAnalisanteScreen} />
 
       {/* Sessões */}
       <Stack.Screen
@@ -163,11 +126,7 @@ function AppStackNavigator() {
         options={{ title: 'Nova Sessão' }}
       />
 
-      <Stack.Screen
-        name="SessionDetail"
-        component={DetalheSessaoScreen}
-        options={{ headerShown: false }}
-      />
+      <Stack.Screen name="SessionDetail" component={DetalheSessaoScreen} />
 
       {/* Registros */}
       <Stack.Screen
@@ -281,11 +240,7 @@ function AppStackNavigator() {
         options={{ title: 'Compromisso' }}
       />
 
-      <Stack.Screen
-        name="SessoesStatus"
-        component={SessoesStatusScreen}
-        options={{ headerShown: false }}
-      />
+      <Stack.Screen name="SessoesStatus" component={SessoesStatusScreen} />
     </Stack.Navigator>
   );
 }

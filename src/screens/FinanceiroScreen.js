@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useLayoutEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Animated, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -11,6 +11,7 @@ import {
 import { mensagemDeErro } from '../services/erros';
 import { useSwipeHorizontal } from '../hooks/useSwipeHorizontal';
 import MenuLateral from '../components/MenuLateral';
+import CabecalhoTela from '../components/CabecalhoTela';
 import { CLINICA_BUTTONS, ADMIN_BUTTONS } from '../constants/menuBotoes';
 
 const DIAS_LABEL = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -140,16 +141,6 @@ export default function FinanceiroScreen() {
   const [sessoesPagas, setSessoesPagas] = useState(new Set());
   const [menuAberto, setMenuAberto] = useState(false);
 
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <TouchableOpacity onPress={() => setMenuAberto(true)} style={{ paddingHorizontal: 12 }}>
-          <Ionicons name="menu-outline" size={26} color="#302C28" />
-        </TouchableOpacity>
-      ),
-    });
-  }, [navigation]);
-
   useFocusEffect(
     useCallback(() => {
       (async () => {
@@ -195,9 +186,16 @@ export default function FinanceiroScreen() {
     },
   });
 
+  const acoesHeader = (
+    <TouchableOpacity onPress={() => setMenuAberto(true)} style={{ padding: 6 }}>
+      <Ionicons name="menu-outline" size={24} color="#FFFFFF" />
+    </TouchableOpacity>
+  );
+
   if (!plano) {
     return (
       <SafeAreaView style={s.container} edges={['bottom']}>
+        <CabecalhoTela titulo="Financeiro" onVoltar={() => navigation.goBack()} acoes={acoesHeader} />
         <View style={s.carregandoWrap}>
           <ActivityIndicator size="large" color="#497363" />
         </View>
@@ -209,6 +207,7 @@ export default function FinanceiroScreen() {
 
   return (
     <SafeAreaView style={s.container} edges={['bottom']}>
+      <CabecalhoTela titulo="Financeiro" onVoltar={() => navigation.goBack()} acoes={acoesHeader} />
       <View style={s.toggleWrap}>
         {PERIODOS.map((p) => (
           <TouchableOpacity

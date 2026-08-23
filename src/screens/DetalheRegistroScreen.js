@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -16,7 +16,8 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { WebView } from 'react-native-webview';
 import { deleteRecord } from '../services/database';
 import { mensagemDeErro } from '../services/erros';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import CabecalhoTela from '../components/CabecalhoTela';
 
 // ⚠️ NOVO: Labels de autor
 const AUTHOR_LABELS = {
@@ -35,24 +36,6 @@ export default function DetalheRegistroScreen() {
   const [webViewHeight, setWebViewHeight] = useState(300);
 
   const authorInfo = AUTHOR_LABELS[record.author] || AUTHOR_LABELS.analyst;
-
-  useEffect(() => {
-    navigation.setOptions({
-      title: record.title || 'Registro',
-      headerRight: () => (
-        <View style={{ flexDirection: 'row', gap: 12, marginRight: 16 }}>
-          <TouchableOpacity
-            onPress={() => navigation.navigate('AddRecord', { record, patientId: record.patient_id })}
-          >
-            <Ionicons name="pencil-outline" size={22} color="#4D6B88" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleDelete}>
-            <Ionicons name="trash-outline" size={22} color="#975451" />
-          </TouchableOpacity>
-        </View>
-      ),
-    });
-  }, []);
 
   const handleDelete = () => {
     Alert.alert('Excluir Registro', 'Tem certeza que deseja excluir este registro?', [
@@ -128,6 +111,24 @@ export default function DetalheRegistroScreen() {
   }
 
   return (
+    <SafeAreaView style={styles.container} edges={['bottom']}>
+      <CabecalhoTela
+        titulo={record.title || 'Registro'}
+        onVoltar={() => navigation.goBack()}
+        acoes={(
+          <>
+            <TouchableOpacity
+              style={styles.headerAcaoBtn}
+              onPress={() => navigation.navigate('AddRecord', { record, patientId: record.patient_id })}
+            >
+              <Ionicons name="pencil-outline" size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.headerAcaoBtn} onPress={handleDelete}>
+              <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+          </>
+        )}
+      />
     <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}>
       {/* Cabeçalho */}
       <View style={styles.header}>
@@ -261,6 +262,7 @@ Este registro contém falas alternadas entre analista (A:) e analisante (P:).
         </View>
       ) : null}
     </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -268,6 +270,7 @@ const styles = StyleSheet.create({
   container:    { flex: 1, backgroundColor: '#F7F5F0' },
   content:      { padding: 20, paddingBottom: 40 },
   centered:     { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  headerAcaoBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   header:       { marginBottom: 12 },
   title:        { fontSize: 22, fontWeight: '500', color: '#302C28', marginBottom: 8 },
   metaRow:      { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },

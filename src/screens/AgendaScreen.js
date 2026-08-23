@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState, useLayoutEffect } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import MenuLateral from '../components/MenuLateral';
+import CabecalhoTela from '../components/CabecalhoTela';
 import { CLINICA_BUTTONS, ADMIN_BUTTONS } from '../constants/menuBotoes';
 
 import {
@@ -130,16 +131,6 @@ export default function AgendaScreen({ navigation }) {
   // compromisso avulso — pensado pra quem não atende todo dia (ex: sem
   // sábado/domingo) e não quer ver colunas vazias ocupando espaço.
   const [ocultarDiasVazios, setOcultarDiasVazios] = useState(false);
-
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <TouchableOpacity onPress={() => setMenuAberto(true)} style={{ paddingHorizontal: 12 }}>
-          <Ionicons name="menu-outline" size={26} color="#302C28" />
-        </TouchableOpacity>
-      ),
-    });
-  }, [navigation]);
 
   const inicioSemana = useMemo(() => getInicioSemana(dataRef), [dataRef]);
 
@@ -623,6 +614,15 @@ export default function AgendaScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
+      <CabecalhoTela
+        titulo="Agenda"
+        onVoltar={() => navigation.goBack()}
+        acoes={(
+          <TouchableOpacity onPress={() => setMenuAberto(true)} style={{ padding: 6 }}>
+            <Ionicons name="menu-outline" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+        )}
+      />
       <View style={styles.header}>
         <TouchableOpacity
           style={[styles.viewBtn, modoView === 'diario' && styles.viewBtnAtivo]}

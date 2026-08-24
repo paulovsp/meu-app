@@ -49,10 +49,14 @@ Deno.serve(async (req) => {
       return json({ error: 'Mensagens ausentes.' }, 400);
     }
     // Chamador escolhe o teto de saída (chat = resposta curta, relatório
-    // elaborado = precisa de bem mais espaço pra não cortar no meio) — sempre
-    // dentro de um limite de segurança, pra ninguém disparar um custo de
-    // saída fora do previsto por engano.
-    const MAX_TOKENS_TETO = 16000;
+    // elaborado = precisa de bem mais espaço pra não cortar no meio). O
+    // limite de segurança aqui só existe pra impedir um valor absurdo por
+    // engano/bug do lado do app — não é mais pensado como "teto normal":
+    // investigação direta no uso_ia mostrou que tetos baixos (3000, depois
+    // 8000/16000) eram consumidos por inteiro até em respostas que
+    // voltavam vazias (o modelo "pensa" antes de escrever, e se o teto
+    // acaba antes, a resposta visível sai em branco).
+    const MAX_TOKENS_TETO = 32000;
     const maxTokensReq = Math.min(Number(maxTokens) || 3000, MAX_TOKENS_TETO);
 
     const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);

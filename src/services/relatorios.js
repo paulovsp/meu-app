@@ -314,11 +314,15 @@ async function montarMensagens(paciente, tipo, parametros) {
 // O custo real (com desconto de cache, se houver) sai menor ou igual, nunca maior.
 const PRECO_INPUT_POR_1M = 0.14;
 const PRECO_OUTPUT_POR_1M = 0.28;
-// Bem maior que o teto genérico da Busca Dr.Sig (chat, resposta curta) —
-// os prompts de resumo pedem uma leitura ampla, profunda e detalhista em
-// várias seções; 3000 tokens cortava a resposta no meio. Ainda bem abaixo
-// do teto de segurança da Edge Function (16000).
-const MAX_TOKENS_RESPOSTA = 8000;
+// Achado por investigação direta no banco (uso_ia): tetos baixos (3000,
+// depois 8000) vinham sendo consumidos por inteiro em praticamente toda
+// chamada — inclusive nas que voltavam com o relatório em branco (o
+// modelo gasta parte do teto "pensando" antes de escrever a resposta
+// visível; se o teto acaba antes, o texto final sai vazio). Sobe bem
+// acima do que qualquer um dos dois relatórios de IA realmente precisa —
+// na prática deixa de ser o fator limitante. A estimativa de custo (pior
+// caso) mostrada antes de gerar reflete esse valor automaticamente.
+const MAX_TOKENS_RESPOSTA = 32000;
 
 function estimarTokens(texto) {
   return Math.ceil((texto || '').length / 3.5);

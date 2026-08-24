@@ -53,9 +53,16 @@ export default function DetalheCobrancaSessaoScreen() {
     setAtualizandoId(sessao.appointmentId);
     try {
       if (sessao.pago) {
-        await deletarPagamentoDeAppointment(sessao.appointmentId);
+        // Num grupo, o compromisso tem um pagamento POR integrante — apagar
+        // só pelo appointment_id derrubaria o de todo mundo. Por isso o
+        // patient_id entra sempre.
+        await deletarPagamentoDeAppointment(sessao.appointmentId, patientId);
       } else {
-        const valor = await converterParaBRL(parsePreco(paciente?.preco_sessao), paciente?.preco_moeda);
+        // Sessão de grupo cobra o valor combinado pro grupo; individual, o
+        // preço da ficha (convertido, se estiver em moeda estrangeira).
+        const valor = sessao.valorSugerido != null
+          ? Number(sessao.valorSugerido)
+          : await converterParaBRL(parsePreco(paciente?.preco_sessao), paciente?.preco_moeda);
         await confirmarPagamentoSessao(sessao.appointmentId, patientId, sessao.date, valor);
       }
       await carregar();
@@ -111,10 +118,18 @@ export default function DetalheCobrancaSessaoScreen() {
                 />
               )}
               <View style={s.linhaInfo}>
-                <Text style={s.linhaData}>{dataISOParaBR(item.date)}</Text>
+                <Text style={s.linhaData}>
+                  {dataISOParaBR(item.date)}
+                  {item.emGrupo ? '  ·  em grupo' : ''}
+                </Text>
                 <Text style={s.linhaSub}>
                   {(item.startTime || '').slice(0, 5)} · {item.status === 'nao_realizado' ? 'Falta' : 'Realizada'}
-                  {item.pago ? ` · ${formatarMoeda(item.valorPago)}` : ' · Pendente'}
+                  {item.emGrupo && item.presente === false ? ' (faltou)' : ''}
+                  {item.pago
+                    ? ` · ${formatarMoeda(item.valorPago)}`
+                    : item.valorSugerido != null
+                      ? ` · Pendente ${formatarMoeda(item.valorSugerido)}`
+                      : ' · Pendente'}
                 </Text>
               </View>
             </TouchableOpacity>

@@ -18,6 +18,8 @@ import {
   getPagamentoPorAppointment,
   deletarPagamentoDeAppointment,
   desvincularPagamentoDeAppointment,
+  parsePreco,
+  formatarMoeda,
 } from '../services/database';
 import { horarioJaPassou, getEstadoCompromisso, ESTADO_LABEL } from '../services/compromissoStatus';
 import { mensagemDeErro } from '../services/erros';
@@ -430,17 +432,32 @@ Nenhum relato ou transcrição foi adicionado para esta sessão ainda.
           {(compromisso.participantes || []).length === 0 ? (
             <Text style={styles.valor}>-</Text>
           ) : (
-            compromisso.participantes.map((p) => (
-              <View key={p.id} style={styles.participanteLinha}>
-                <Text style={styles.participanteNome} numberOfLines={1}>{p.nome}</Text>
-                <Text style={styles.participanteStatus}>
-                  {p.presente === true ? 'Presente' : p.presente === false ? 'Faltou' : '— sem confirmar'}
-                  {p.tipoCobranca === 'por_sessao' && p.presente !== false
-                    ? (p.pagamentoRecebido ? '· Pago' : ' · Pendente')
-                    : ''}
+            <>
+              {compromisso.participantes.map((p) => (
+                <View key={p.id} style={styles.participanteLinha}>
+                  <Text style={styles.participanteNome} numberOfLines={1}>{p.nome}</Text>
+                  <Text style={styles.participanteStatus}>
+                    {p.presente === true ? 'Presente' : p.presente === false ? 'Faltou' : '— sem confirmar'}
+                    {/* Valor combinado pro grupo (migration 0051) — antes o
+                        detalhe não dizia quanto cada integrante paga. */}
+                    {p.precoSessao ? ` · ${formatarMoeda(parsePreco(p.precoSessao))}` : ''}
+                    {p.tipoCobranca === 'por_sessao' && p.presente !== false
+                      ? (p.pagamentoRecebido ? ' · Pago' : ' · Pendente')
+                      : ''}
+                  </Text>
+                </View>
+              ))}
+              {/* Soma de todos os pagantes deste encontro — quem faltou
+                  continua sendo cobrado (mesma regra da sessão individual),
+                  só cancelamento não cobra. */}
+              <View style={styles.participanteTotalLinha}>
+                <Text style={styles.participanteTotalTxt}>
+                  Total do encontro: {formatarMoeda(
+                    compromisso.participantes.reduce((soma, p) => soma + parsePreco(p.precoSessao), 0)
+                  )}
                 </Text>
               </View>
-            ))
+            </>
           )}
           {compromisso.status !== 'agendado' && (
             <TouchableOpacity
@@ -518,6 +535,10 @@ const styles = StyleSheet.create({
   participanteLinha: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 5, gap: 8 },
   participanteNome: { flex: 1, fontWeight: '600', color: '#302C28' },
   participanteStatus: { fontSize: 12.5, color: '#756E66', lineHeight: 18 },
+  participanteTotalLinha: {
+    marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#EAE5DC',
+  },
+  participanteTotalTxt: { fontSize: 13, fontWeight: '500', color: '#497363', lineHeight: 19 },
   btnConferirGrupo: { marginTop: 10, paddingVertical: 10, alignItems: 'center', borderTopWidth: 1, borderTopColor: '#EAE5DC' },
   btnConferirGrupoTxt: { color: '#497363', fontWeight: '500', fontSize: 13, lineHeight: 19 },
   btnEditarHorario: {

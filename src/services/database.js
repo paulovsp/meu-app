@@ -438,14 +438,25 @@ async function anexarParticipantesAosSlots(slots) {
 
   const { data, error } = await supabase
     .from('slot_participantes')
-    .select('slot_id, patient_id, patients(nome)')
+    .select('slot_id, patient_id, valor_sessao, tipo_cobranca, patients(nome, preco_sessao, preco_moeda, tipo_cobranca)')
     .in('slot_id', idsGrupo);
   if (error) throw error;
 
   const porSlot = {};
   (data || []).forEach((p) => {
     if (!porSlot[p.slot_id]) porSlot[p.slot_id] = [];
-    porSlot[p.slot_id].push({ id: p.patient_id, nome: p.patients?.nome ?? null });
+    porSlot[p.slot_id].push({
+      id: p.patient_id,
+      nome: p.patients?.nome ?? null,
+      // Valor/cobrança combinados PRA ESTE GRUPO (migration 0051). Nulos
+      // = herda a ficha da pessoa — o formulário mostra essa herança como
+      // placeholder, e quem calcula usa `valorEfetivoParticipante`.
+      valorSessao: p.valor_sessao,
+      tipoCobranca: p.tipo_cobranca,
+      precoFicha: p.patients?.preco_sessao ?? null,
+      precoMoedaFicha: p.patients?.preco_moeda ?? 'BRL',
+      tipoCobrancaFicha: p.patients?.tipo_cobranca || 'mensal',
+    });
   });
 
   return slots.map((s) => ({ ...s, participantes: porSlot[s.id] || [] }));
@@ -564,15 +575,30 @@ export async function getAvailabilitySlots() {
   return anexarParticipantesAosSlots(data.map(achatarSlotComPaciente));
 }
 
-async function salvarParticipantesSlot(slotId, patientIds) {
+/** Aceita tanto a forma antiga (lista de ids) quanto a nova (lista de
+ * `{ patientId, valorSessao, tipoCobranca }`, migration 0051) — assim
+ * qualquer chamador que ainda mande só ids continua funcionando, com os
+ * dois campos novos nulos (= "usa o que está na ficha da pessoa"). */
+function normalizarParticipante(item) {
+  if (item && typeof item === 'object') {
+    return {
+      patient_id: item.patientId ?? item.id,
+      valor_sessao: item.valorSessao != null && item.valorSessao !== '' ? Number(item.valorSessao) : null,
+      tipo_cobranca: item.tipoCobranca || null,
+    };
+  }
+  return { patient_id: item, valor_sessao: null, tipo_cobranca: null };
+}
+
+async function salvarParticipantesSlot(slotId, participantes) {
   const { supabase } = require('./supabase');
   const userId = await getUserId();
   const { error: errDelete } = await supabase.from('slot_participantes').delete().eq('slot_id', slotId);
   if (errDelete) throw errDelete;
-  if (patientIds.length === 0) return;
+  if (!participantes || participantes.length === 0) return;
   const { error: errInsert } = await supabase
     .from('slot_participantes')
-    .insert(patientIds.map((patient_id) => ({ slot_id: slotId, patient_id, user_id: userId })));
+    .insert(participantes.map((p) => ({ ...normalizarParticipante(p), slot_id: slotId, user_id: userId })));
   if (errInsert) throw errInsert;
 }
 
@@ -891,7 +917,7 @@ async function anexarParticipantesAosAppointments(appointments) {
   const [{ data, error }, { data: pagos, error: errPagos }] = await Promise.all([
     supabase
       .from('appointment_participantes')
-      .select('appointment_id, patient_id, presente, patients(nome, preco_sessao, preco_moeda, tipo_cobranca, valor_mensal_fixo)')
+      .select('appointment_id, patient_id, presente, valor_sessao, tipo_cobranca, patients(nome, preco_sessao, preco_moeda, tipo_cobranca, valor_mensal_fixo)')
       .in('appointment_id', idsGrupo),
     supabase
       .from('pagamentos')
@@ -907,12 +933,19 @@ async function anexarParticipantesAosAppointments(appointments) {
   const porAppointment = {};
   (data || []).forEach((p) => {
     if (!porAppointment[p.appointment_id]) porAppointment[p.appointment_id] = [];
+    // `precoSessao`/`tipoCobranca` já saem RESOLVIDOS: o valor combinado
+    // pro grupo (migration 0051) quando existe, senão o da ficha da
+    // pessoa — quem consome (check-in, detalhe do compromisso, financeiro)
+    // não precisa saber de onde veio. O valor do grupo é sempre em reais,
+    // por isso a moeda vira BRL quando ele está definido.
+    const temValorDoGrupo = p.valor_sessao != null;
     porAppointment[p.appointment_id].push({
       id: p.patient_id,
       nome: p.patients?.nome ?? null,
-      precoSessao: p.patients?.preco_sessao ?? null,
-      precoMoeda: p.patients?.preco_moeda ?? 'BRL',
-      tipoCobranca: p.patients?.tipo_cobranca ?? 'mensal',
+      precoSessao: temValorDoGrupo ? p.valor_sessao : (p.patients?.preco_sessao ?? null),
+      precoMoeda: temValorDoGrupo ? 'BRL' : (p.patients?.preco_moeda ?? 'BRL'),
+      tipoCobranca: p.tipo_cobranca || p.patients?.tipo_cobranca || 'mensal',
+      valorDoGrupo: p.valor_sessao ?? null,
       valorMensalFixo: p.patients?.valor_mensal_fixo ?? null,
       presente: p.presente,
       pagamentoRecebido: pagosSet.has(`${p.appointment_id}_${p.patient_id}`),
@@ -1075,7 +1108,7 @@ async function sincronizarParticipantesAppointment(appointmentId, slotId) {
   const userId = await getUserId();
   const { data: slotParts, error: errSlot } = await supabase
     .from('slot_participantes')
-    .select('patient_id')
+    .select('patient_id, valor_sessao, tipo_cobranca')
     .eq('slot_id', slotId);
   if (errSlot) throw errSlot;
   const { error: errDelete } = await supabase
@@ -1084,9 +1117,18 @@ async function sincronizarParticipantesAppointment(appointmentId, slotId) {
     .eq('appointment_id', appointmentId);
   if (errDelete) throw errDelete;
   if (!slotParts || slotParts.length === 0) return;
+  // Valor/cobrança são COPIADOS do template pra ocorrência (migration
+  // 0051): reajustar o grupo depois não pode reescrever o valor das
+  // sessões que já aconteceram.
   const { error: errInsert } = await supabase
     .from('appointment_participantes')
-    .insert(slotParts.map((p) => ({ appointment_id: appointmentId, patient_id: p.patient_id, user_id: userId })));
+    .insert(slotParts.map((p) => ({
+      appointment_id: appointmentId,
+      patient_id: p.patient_id,
+      user_id: userId,
+      valor_sessao: p.valor_sessao ?? null,
+      tipo_cobranca: p.tipo_cobranca ?? null,
+    })));
   if (errInsert) throw errInsert;
 }
 
@@ -1239,24 +1281,39 @@ export async function deleteAppointments(appointmentIds) {
   if (error) throw error;
 }
 
-/** Pagamento "por sessão" vinculado a este compromisso específico, se
- * existir (cobrança mensal não usa appointment_id, então retorna null). */
-export async function getPagamentoPorAppointment(appointmentId) {
+/** Pagamento(s) "por sessão" vinculado(s) a este compromisso, se houver
+ * (cobrança mensal não usa appointment_id, então volta vazio).
+ *
+ * Um compromisso EM GRUPO tem um pagamento por integrante (migration
+ * 0048), então isto pode devolver várias linhas — por isso não usa
+ * `.maybeSingle()`, que estourava erro justamente no caso de grupo. */
+export async function getPagamentosPorAppointment(appointmentId) {
   const { supabase } = require('./supabase');
   const { data, error } = await supabase
     .from('pagamentos')
     .select('*')
-    .eq('appointment_id', appointmentId)
-    .maybeSingle();
+    .eq('appointment_id', appointmentId);
   if (error) throw error;
-  return data;
+  return data || [];
+}
+
+/** Um pagamento só, pra fluxos que tratam o compromisso como individual
+ * (ex: o aviso "esse horário tem um pagamento registrado" ao apagar). Num
+ * grupo, devolve o primeiro — quem quer todos usa a função acima. */
+export async function getPagamentoPorAppointment(appointmentId) {
+  const pagamentos = await getPagamentosPorAppointment(appointmentId);
+  return pagamentos[0] || null;
 }
 
 /** Apaga o pagamento vinculado ao apagar o compromisso junto (usuária
- * escolheu "apagar pagamento também"). */
-export async function deletarPagamentoDeAppointment(appointmentId) {
+ * escolheu "apagar pagamento também"). Com `patientId`, apaga só o
+ * daquele integrante — essencial num grupo, onde apagar pelo compromisso
+ * inteiro derrubaria o pagamento de todo mundo junto. */
+export async function deletarPagamentoDeAppointment(appointmentId, patientId = null) {
   const { supabase } = require('./supabase');
-  const { error } = await supabase.from('pagamentos').delete().eq('appointment_id', appointmentId);
+  let consulta = supabase.from('pagamentos').delete().eq('appointment_id', appointmentId);
+  if (patientId) consulta = consulta.eq('patient_id', patientId);
+  const { error } = await consulta;
   if (error) throw error;
 }
 
@@ -1602,7 +1659,7 @@ export async function getSlotsOcupados() {
   // combinado.
   const { data: gruposRaw, error: errGrupos } = await supabase
     .from('availability_slots')
-    .select('*, slot_participantes(patient_id, patients(nome, preco_sessao, preco_moeda, dia_pagamento, data_paralizacao, tipo_cobranca))')
+    .select('*, slot_participantes(patient_id, valor_sessao, tipo_cobranca, patients(nome, preco_sessao, preco_moeda, dia_pagamento, data_paralizacao, tipo_cobranca))')
     .in('tipo', ['sessao_grupo', 'supervisao_grupo']);
   if (errGrupos) throw errGrupos;
 
@@ -1612,14 +1669,20 @@ export async function getSlotsOcupados() {
     (slot_participantes || []).forEach((sp) => {
       const p = sp.patients;
       if (!p || p.data_paralizacao) return;
+      // Valor combinado PRO GRUPO tem prioridade sobre o preço da sessão
+      // individual da pessoa (migration 0051) — antes o Financeiro somava
+      // sempre o preço individual, que quase nunca é o do grupo. O valor do
+      // grupo é sempre em reais, então a moeda estrangeira da ficha não se
+      // aplica quando ele existe.
+      const temValorDoGrupo = sp.valor_sessao != null;
       doGrupo.push({
         ...resto,
         patient_id: sp.patient_id,
         patient_nome: p.nome ?? null,
-        patient_preco: p.preco_sessao ?? null,
-        patient_preco_moeda: p.preco_moeda ?? null,
+        patient_preco: temValorDoGrupo ? sp.valor_sessao : (p.preco_sessao ?? null),
+        patient_preco_moeda: temValorDoGrupo ? 'BRL' : (p.preco_moeda ?? null),
         patient_dia_pagamento: p.dia_pagamento ?? null,
-        patient_tipo_cobranca: p.tipo_cobranca || 'mensal',
+        patient_tipo_cobranca: sp.tipo_cobranca || p.tipo_cobranca || 'mensal',
       });
     });
   });
@@ -1866,23 +1929,43 @@ export async function getPagamentosSessaoDoMes(patientId, ano, mes) {
  * o pagamento daquela sessão específica foi ou não confirmado. Usado pelo
  * drill-down da Cobrança (tela que abre ao tocar num analisante de
  * cobrança por sessão), pra permitir marcar/desmarcar pagamento sessão a
- * sessão, não só ver o total já recebido. */
+ * sessão, não só ver o total já recebido.
+ *
+ * Cobre os DOIS caminhos: sessão individual (`appointments.patient_id` é a
+ * própria pessoa) e sessão/supervisão em grupo (o compromisso não tem
+ * patient_id — o vínculo está em `appointment_participantes`). Sem o
+ * segundo, integrante de grupo cobrado por sessão simplesmente não
+ * aparecia na cobrança.
+ *
+ * `valorSugerido` é o que deve ser cobrado por aquela sessão: no grupo, o
+ * valor combinado pro grupo (migration 0051); fora dele, o preço da ficha
+ * — quem chama não precisa decidir de onde tirar. */
 export async function getSessoesCobrancaDoMes(patientId, ano, mesIndex) {
   const { supabase } = require('./supabase');
   const inicio = `${ano}-${String(mesIndex + 1).padStart(2, '0')}-01`;
   const ultimoDia = new Date(ano, mesIndex + 1, 0).getDate();
   const fim = `${ano}-${String(mesIndex + 1).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
+  const COBRAVEIS = ['realizado', 'nao_realizado'];
 
-  const [{ data: appointments, error: errA }, { data: pagamentos, error: errP }] = await Promise.all([
+  const [
+    { data: individuais, error: errA },
+    { data: emGrupo, error: errG },
+    { data: pagamentos, error: errP },
+  ] = await Promise.all([
     supabase
       .from('appointments')
-      .select('id, date, start_time, end_time, status, modality')
+      .select('id, date, start_time, end_time, status, modality, tipo')
       .eq('patient_id', patientId)
-      .in('status', ['realizado', 'nao_realizado'])
+      .in('status', COBRAVEIS)
       .gte('date', inicio)
-      .lte('date', fim)
-      .order('date', { ascending: true })
-      .order('start_time', { ascending: true }),
+      .lte('date', fim),
+    supabase
+      .from('appointment_participantes')
+      .select('patient_id, presente, valor_sessao, appointments!inner(id, date, start_time, end_time, status, modality, tipo)')
+      .eq('patient_id', patientId)
+      .in('appointments.status', COBRAVEIS)
+      .gte('appointments.date', inicio)
+      .lte('appointments.date', fim),
     supabase
       .from('pagamentos')
       .select('appointment_id, valor')
@@ -1892,21 +1975,51 @@ export async function getSessoesCobrancaDoMes(patientId, ano, mesIndex) {
       .not('appointment_id', 'is', null),
   ]);
   if (errA) throw errA;
+  if (errG) throw errG;
   if (errP) throw errP;
 
   const mapaPagamentos = {};
   (pagamentos || []).forEach((p) => { mapaPagamentos[p.appointment_id] = p; });
 
-  return (appointments || []).map((a) => ({
-    appointmentId: a.id,
-    date: a.date,
-    startTime: a.start_time,
-    endTime: a.end_time,
-    status: a.status,
-    modality: a.modality,
-    pago: !!mapaPagamentos[a.id],
-    valorPago: mapaPagamentos[a.id]?.valor ?? null,
-  }));
+  const linhas = [
+    ...(individuais || []).map((a) => ({
+      appointmentId: a.id,
+      date: a.date,
+      startTime: a.start_time,
+      endTime: a.end_time,
+      status: a.status,
+      modality: a.modality,
+      tipo: a.tipo,
+      emGrupo: false,
+      presente: null,
+      valorSugerido: null,
+    })),
+    ...(emGrupo || []).map((ap) => {
+      const a = ap.appointments;
+      return {
+        appointmentId: a.id,
+        date: a.date,
+        startTime: a.start_time,
+        endTime: a.end_time,
+        status: a.status,
+        modality: a.modality,
+        tipo: a.tipo,
+        emGrupo: true,
+        presente: ap.presente,
+        valorSugerido: ap.valor_sessao ?? null,
+      };
+    }),
+  ];
+
+  return linhas
+    .map((linha) => ({
+      ...linha,
+      pago: !!mapaPagamentos[linha.appointmentId],
+      valorPago: mapaPagamentos[linha.appointmentId]?.valor ?? null,
+    }))
+    .sort((a, b) => (a.date === b.date
+      ? (a.startTime || '').localeCompare(b.startTime || '')
+      : a.date.localeCompare(b.date)));
 }
 
 /** Soma dos pagamentos por sessão de um paciente num intervalo de datas

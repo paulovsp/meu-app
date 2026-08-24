@@ -72,4 +72,23 @@ describe('getResumoAssinaturaECreditosDoMes', () => {
     const resultado = await getResumoAssinaturaECreditosDoMes(2026, 8);
     expect(resultado.assinaturaValorBRL).toBe(0);
   });
+
+  it('soma recarga avulsa (dinheiro novo pago no mês) como créditos comprados', async () => {
+    supabase.from.mockImplementation((tabela) => {
+      if (tabela === 'profiles') return makeQueryBuilder({ data: perfilMensal, error: null });
+      if (tabela === 'uso_ia') return makeQueryBuilder({ data: [{ custo_estimado: -4 }], error: null });
+      throw new Error(`tabela inesperada: ${tabela}`);
+    });
+    const resultado = await getResumoAssinaturaECreditosDoMes(2026, 8);
+    expect(resultado.creditosCompradosBRL).toBe(20); // 4 USD * 5 (taxa mockada)
+  });
+
+  it('NÃO inclui consumo de crédito nem renovação mensal — só recarga avulsa é despesa nova', async () => {
+    // O filtro .eq('tipo', 'recarga_avulsa') já exclui 'relatorio'/'busca'/
+    // 'transcricao' (consumo) e 'renovacao' (já embutida na Assinatura) —
+    // aqui simula o banco devolvendo vazio, como faria esse filtro na prática.
+    mockPerfil(perfilMensal);
+    const resultado = await getResumoAssinaturaECreditosDoMes(2026, 8);
+    expect(resultado.creditosCompradosBRL).toBe(0);
+  });
 });

@@ -133,7 +133,7 @@ export default function PagamentosScreen() {
   }
 
   const totalManual = despesas.reduce((soma, d) => soma + Number(d.valor || 0), 0);
-  const totalSistema = (resumoSistema?.assinaturaValorBRL || 0) + (resumoSistema?.creditosGastosBRL || 0);
+  const totalSistema = (resumoSistema?.assinaturaValorBRL || 0) + (resumoSistema?.creditosCompradosBRL || 0);
   const totalGeral = totalManual + totalSistema;
 
   return (
@@ -177,8 +177,8 @@ export default function PagamentosScreen() {
               <Text style={s.sistemaValor}>{formatarMoeda(resumoSistema?.assinaturaValorBRL)}</Text>
             </View>
             <View style={s.sistemaLinha}>
-              <Text style={s.sistemaLabel}>Créditos de IA usados</Text>
-              <Text style={s.sistemaValor}>{formatarMoeda(resumoSistema?.creditosGastosBRL)}</Text>
+              <Text style={s.sistemaLabel}>Créditos de IA comprados</Text>
+              <Text style={s.sistemaValor}>{formatarMoeda(resumoSistema?.creditosCompradosBRL)}</Text>
             </View>
           </View>
 

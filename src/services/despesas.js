@@ -68,10 +68,19 @@ export async function removerDespesa(id) {
 }
 
 /**
- * Assinatura do app + créditos de IA usados no mês, pra aparecer como um
- * resumo automático no topo da tela Pagamentos — não vira linha manual na
- * tabela `despesas_consultorio` (evitaria duplicar/dessincronizar com o
- * que o mercadopago-webhook e as Edge Functions de IA já gravam sozinhos).
+ * Assinatura do app + créditos de IA COMPRADOS avulsamente no mês (via
+ * recarga no Mercado Pago), pra aparecer como um resumo automático no topo
+ * da tela Pagamentos — não vira linha manual na tabela `despesas_consultorio`
+ * (evitaria duplicar/dessincronizar com o que o mercadopago-webhook e as
+ * Edge Functions de IA já gravam sozinhas).
+ *
+ * Deliberadamente NÃO soma o consumo de crédito (`tipo` 'relatorio'/'busca'/
+ * 'transcricao') — isso é só uso do saldo já pago, não é uma despesa nova
+ * naquele mês. E também não soma a renovação mensal da assinatura (`tipo`
+ * 'renovacao') — esse crédito já está embutido no valor de "Assinatura"
+ * logo acima, contá-lo de novo aqui duplicaria a despesa. Só a recarga
+ * avulsa (`tipo` 'recarga_avulsa') é dinheiro novo saindo do bolso naquele
+ * mês especificamente.
  */
 export async function getResumoAssinaturaECreditosDoMes(ano, mes) {
   const { data: { session } } = await supabase.auth.getSession();
@@ -86,16 +95,18 @@ export async function getResumoAssinaturaECreditosDoMes(ano, mes) {
 
   const inicio = new Date(ano, mes - 1, 1);
   const fim = new Date(ano, mes, 1);
-  const { data: usos, error: erroUsos } = await supabase
+  const { data: recargas, error: erroRecargas } = await supabase
     .from('uso_ia')
     .select('custo_estimado')
     .eq('user_id', userId)
+    .eq('tipo', 'recarga_avulsa')
     .gte('criado_em', inicio.toISOString())
-    .lt('criado_em', fim.toISOString())
-    .gt('custo_estimado', 0);
-  if (erroUsos) throw erroUsos;
+    .lt('criado_em', fim.toISOString());
+  if (erroRecargas) throw erroRecargas;
 
-  const creditosGastosUsd = (usos || []).reduce((soma, u) => soma + Number(u.custo_estimado || 0), 0);
+  // Recarga é gravada com custo_estimado negativo (crédito somado ao saldo,
+  // não gasto) — Math.abs traz de volta o valor positivo comprado.
+  const creditosCompradosUsd = (recargas || []).reduce((soma, u) => soma + Math.abs(Number(u.custo_estimado || 0)), 0);
 
   // `assinatura_valor_mensal_equivalente` é um snapshot do plano ATUAL do
   // profile, não um histórico por mês — sem esta checagem, a linha
@@ -110,6 +121,6 @@ export async function getResumoAssinaturaECreditosDoMes(ano, mes) {
   return {
     plano: perfil?.assinatura_plano || null,
     assinaturaValorBRL: assinaturaAtivaNoMes ? Number(perfil?.assinatura_valor_mensal_equivalente || 0) : 0,
-    creditosGastosBRL: usdParaBRL(creditosGastosUsd),
+    creditosCompradosBRL: usdParaBRL(creditosCompradosUsd),
   };
 }

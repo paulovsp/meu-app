@@ -86,10 +86,10 @@ function Vazio({ texto }) {
   );
 }
 
-function LinhaSessao({ item }) {
+function LinhaSessao({ item, onPress }) {
   const rotuloSessoes = item.sessoesPagas === 1 ? '1 sessão paga' : `${item.sessoesPagas} sessões pagas`;
   return (
-    <View style={s.linha}>
+    <TouchableOpacity style={s.linha} onPress={() => onPress(item)}>
       <Ionicons name="receipt-outline" size={22} color={item.recebido ? '#44745B' : '#A9A299'} style={s.checkBtn} />
       <View style={s.linhaInfo}>
         <Text style={s.linhaNome} numberOfLines={1}>{item.nome}</Text>
@@ -97,7 +97,8 @@ function LinhaSessao({ item }) {
           {rotuloSessoes} este mês · {formatarMoeda(item.valorPrevisto)}
         </Text>
       </View>
-    </View>
+      <Ionicons name="chevron-forward" size={18} color="#A9A299" />
+    </TouchableOpacity>
   );
 }
 
@@ -349,7 +350,13 @@ export default function CobrancaScreen() {
           <View style={s.secao}>
             <Text style={s.secaoTitulo}>Cobrança por sessão em {MESES_LABEL[mesIndex]}</Text>
             {recebimentosSessao.map((item) => (
-              <LinhaSessao key={item.patient_id} item={item} />
+              <LinhaSessao
+                key={item.patient_id}
+                item={item}
+                onPress={(i) => navigation.navigate('DetalheCobrancaSessao', {
+                  patientId: i.patient_id, patientNome: i.nome, ano, mesIndex,
+                })}
+              />
             ))}
           </View>
         )}

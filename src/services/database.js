@@ -1861,6 +1861,54 @@ export async function getPagamentosSessaoDoMes(patientId, ano, mes) {
   };
 }
 
+/** Lista, uma a uma, as sessões cobráveis (realizada ou falta — cancelada
+ * nunca cobra) de um paciente "por sessão" num mês, cada uma já dizendo se
+ * o pagamento daquela sessão específica foi ou não confirmado. Usado pelo
+ * drill-down da Cobrança (tela que abre ao tocar num analisante de
+ * cobrança por sessão), pra permitir marcar/desmarcar pagamento sessão a
+ * sessão, não só ver o total já recebido. */
+export async function getSessoesCobrancaDoMes(patientId, ano, mesIndex) {
+  const { supabase } = require('./supabase');
+  const inicio = `${ano}-${String(mesIndex + 1).padStart(2, '0')}-01`;
+  const ultimoDia = new Date(ano, mesIndex + 1, 0).getDate();
+  const fim = `${ano}-${String(mesIndex + 1).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
+
+  const [{ data: appointments, error: errA }, { data: pagamentos, error: errP }] = await Promise.all([
+    supabase
+      .from('appointments')
+      .select('id, date, start_time, end_time, status, modality')
+      .eq('patient_id', patientId)
+      .in('status', ['realizado', 'nao_realizado'])
+      .gte('date', inicio)
+      .lte('date', fim)
+      .order('date', { ascending: true })
+      .order('start_time', { ascending: true }),
+    supabase
+      .from('pagamentos')
+      .select('appointment_id, valor')
+      .eq('patient_id', patientId)
+      .eq('ano', ano)
+      .eq('mes', mesIndex)
+      .not('appointment_id', 'is', null),
+  ]);
+  if (errA) throw errA;
+  if (errP) throw errP;
+
+  const mapaPagamentos = {};
+  (pagamentos || []).forEach((p) => { mapaPagamentos[p.appointment_id] = p; });
+
+  return (appointments || []).map((a) => ({
+    appointmentId: a.id,
+    date: a.date,
+    startTime: a.start_time,
+    endTime: a.end_time,
+    status: a.status,
+    modality: a.modality,
+    pago: !!mapaPagamentos[a.id],
+    valorPago: mapaPagamentos[a.id]?.valor ?? null,
+  }));
+}
+
 /** Soma dos pagamentos por sessão de um paciente num intervalo de datas
  * (inclusive), pela data do compromisso vinculado — usado no catch-up de
  * envio fiscal semanal, que agrega só a semana, não o mês inteiro. */

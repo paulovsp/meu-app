@@ -44,6 +44,7 @@ import FormularioCursoScreen from '../screens/FormularioCursoScreen';
 import AgendaScreen from '../screens/AgendaScreen';
 import FinanceiroScreen from '../screens/FinanceiroScreen';
 import CobrancaScreen from '../screens/CobrancaScreen';
+import DetalheCobrancaSessaoScreen from '../screens/DetalheCobrancaSessaoScreen';
 import FiscalScreen from '../screens/FiscalScreen';
 import PagamentosScreen from '../screens/PagamentosScreen';
 import ConfiguracaoFiscalAutomaticaScreen from '../screens/ConfiguracaoFiscalAutomaticaScreen';
@@ -210,6 +211,12 @@ function AppStackNavigator() {
         name="Cobranca"
         component={CobrancaScreen}
         options={{ title: 'Recebíveis' }}
+      />
+
+      <Stack.Screen
+        name="DetalheCobrancaSessao"
+        component={DetalheCobrancaSessaoScreen}
+        options={{ title: 'Cobrança por sessão' }}
       />
 
       <Stack.Screen

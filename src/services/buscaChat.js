@@ -15,15 +15,10 @@
 import { getSessions, getRecords } from './database';
 import { calcularAnosEMeses } from './validacao';
 import { criarPseudonimizador } from './pseudonimizacao';
+import { precoInputPor1M, precoOutputPor1M } from './precificacaoIA';
 
 export class CreditosInsuficientesError extends Error {}
 export class AssinaturaInativaError extends Error {}
-
-// Espelha os preços da Edge Function `ia-busca` (DeepSeek V4-Flash, por 1M
-// tokens) — só pra estimar o orçamento ANTES da chamada. O custo real
-// (com desconto de cache, se houver) vem na resposta da própria função.
-const PRECO_INPUT_POR_1M = 0.14;
-const PRECO_OUTPUT_POR_1M = 0.28;
 // Teto de saída maior que o padrão da Edge Function — perguntas que pedem
 // leitura clínica de alta complexidade, com referências teóricas, podem
 // precisar de uma resposta bem mais longa que uma resposta factual simples.
@@ -185,8 +180,8 @@ function estimarTokens(texto) {
 export function estimarCustoResposta({ contexto, historico }) {
   const textoHistorico = (historico || []).map((m) => m.content).join(' ');
   const tokensEntrada = estimarTokens(contexto) + estimarTokens(textoHistorico);
-  const custoEntrada = (tokensEntrada / 1_000_000) * PRECO_INPUT_POR_1M;
-  const custoSaidaMax = (MAX_TOKENS_RESPOSTA / 1_000_000) * PRECO_OUTPUT_POR_1M;
+  const custoEntrada = (tokensEntrada / 1_000_000) * precoInputPor1M();
+  const custoSaidaMax = (MAX_TOKENS_RESPOSTA / 1_000_000) * precoOutputPor1M();
   return custoEntrada + custoSaidaMax;
 }
 
@@ -206,6 +201,7 @@ export async function chamarBuscaChat(historico, contexto, sessaoRedacao) {
         ...mensagensRedigidas,
       ],
       maxTokens: MAX_TOKENS_RESPOSTA,
+      tipo: 'busca',
     },
   });
 

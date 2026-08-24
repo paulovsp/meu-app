@@ -15,6 +15,7 @@ import {
   getSessions, getRecords, getAppointmentsByPatient, getPagamentosPorPaciente,
   getHistoricoParalizacoes,
 } from './database';
+import { precoInputPor1M, precoOutputPor1M } from './precificacaoIA';
 
 export const TIPOS_RELATORIO = [
   { valor: 'ultimas_sessoes', label: 'Resumo das últimas sessões' },
@@ -309,11 +310,6 @@ async function montarMensagens(paciente, tipo, parametros) {
   throw new Error(`Tipo de relatório desconhecido: ${tipo}`);
 }
 
-// Preços DeepSeek V4-Flash — espelha ia-busca/index.ts, só pra estimar o
-// orçamento ANTES da chamada (mesmo padrão de buscaChat.js:estimarCustoResposta).
-// O custo real (com desconto de cache, se houver) sai menor ou igual, nunca maior.
-const PRECO_INPUT_POR_1M = 0.14;
-const PRECO_OUTPUT_POR_1M = 0.28;
 // Achado por investigação direta no banco (uso_ia): tetos baixos (3000,
 // depois 8000) vinham sendo consumidos por inteiro em praticamente toda
 // chamada — inclusive nas que voltavam com o relatório em branco (o
@@ -339,8 +335,8 @@ export async function estimarCustoRelatorio(paciente, tipo, parametros = {}) {
   }
   const mensagens = await montarMensagens(paciente, tipo, parametros);
   const tokensEntrada = mensagens.reduce((soma, m) => soma + estimarTokens(m.content), 0);
-  const custoEntrada = (tokensEntrada / 1_000_000) * PRECO_INPUT_POR_1M;
-  const custoSaidaMax = (MAX_TOKENS_RESPOSTA / 1_000_000) * PRECO_OUTPUT_POR_1M;
+  const custoEntrada = (tokensEntrada / 1_000_000) * precoInputPor1M();
+  const custoSaidaMax = (MAX_TOKENS_RESPOSTA / 1_000_000) * precoOutputPor1M();
   return custoEntrada + custoSaidaMax;
 }
 
@@ -358,7 +354,7 @@ export async function gerarRelatorio(paciente, tipo, parametros = {}) {
   } else {
     const mensagens = await montarMensagens(paciente, tipo, parametros);
     const { data, error } = await supabase.functions.invoke('ia-busca', {
-      body: { mensagens, maxTokens: MAX_TOKENS_RESPOSTA },
+      body: { mensagens, maxTokens: MAX_TOKENS_RESPOSTA, tipo: 'relatorio' },
     });
     if (error) {
       let mensagemErro = error.message;

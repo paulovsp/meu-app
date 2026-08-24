@@ -6,6 +6,8 @@
 // prompt de usuário, sempre uma única rodada — não é mais um histórico de
 // chat de verdade).
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { precosAtuais } from '../_shared/precificacaoDeepSeek.ts';
+import { MULTIPLICADOR_COBRANCA_USUARIO } from '../_shared/margemCobranca.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -15,10 +17,10 @@ const DEEPSEEK_API_KEY = Deno.env.get('DEEPSEEK_API_KEY')!;
 const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions';
 const DEEPSEEK_MODEL = 'deepseek-v4-flash';
 
-// Preços DeepSeek V4-Flash (jul/2026 — ajustar aqui se mudar), por 1M tokens.
-const PRECO_INPUT_MISS_POR_1M = 0.14;
-const PRECO_INPUT_HIT_POR_1M = 0.0028;
-const PRECO_OUTPUT_POR_1M = 0.28;
+// Tipos de chamador válidos — usados só pra rotular `uso_ia.tipo` corretamente
+// (antes hardcoded como 'relatorio' pra qualquer chamador, inclusive a Busca
+// Dr.Sig, impossibilitando distinguir a origem real do gasto no log).
+const TIPOS_VALIDOS = new Set(['relatorio', 'busca']);
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -44,10 +46,11 @@ Deno.serve(async (req) => {
     const userId = userData.user.id;
 
     const body = await req.json();
-    const { mensagens, maxTokens } = body || {};
+    const { mensagens, maxTokens, tipo } = body || {};
     if (!Array.isArray(mensagens) || mensagens.length === 0) {
       return json({ error: 'Mensagens ausentes.' }, 400);
     }
+    const tipoUso = TIPOS_VALIDOS.has(tipo) ? tipo : 'relatorio';
     // Chamador escolhe o teto de saída (chat = resposta curta, relatório
     // elaborado = precisa de bem mais espaço pra não cortar no meio). O
     // limite de segurança aqui só existe pra impedir um valor absurdo por
@@ -106,10 +109,18 @@ Deno.serve(async (req) => {
       : Math.max((Number(usage.prompt_tokens) || 0) - cacheHit, 0);
     const completionTokens = Number(usage.completion_tokens) || 0;
 
-    const custo =
-      (cacheMiss / 1_000_000) * PRECO_INPUT_MISS_POR_1M +
-      (cacheHit / 1_000_000) * PRECO_INPUT_HIT_POR_1M +
-      (completionTokens / 1_000_000) * PRECO_OUTPUT_POR_1M;
+    // Preço calculado no momento exato desta resposta (não do início da
+    // chamada) — a chamada à DeepSeek pode levar segundos, mas a variação
+    // entre pico/fora de pico só importa nos poucos segundos de borda do
+    // horário, então o efeito prático é desprezível.
+    const precos = precosAtuais();
+    const custoReal =
+      (cacheMiss / 1_000_000) * precos.inputMiss +
+      (cacheHit / 1_000_000) * precos.inputHit +
+      (completionTokens / 1_000_000) * precos.output;
+    // Cobrado do usuário: sempre o dobro do custo real pago à DeepSeek
+    // (mesmo multiplicador aplicado à transcrição — ver margemCobranca.ts).
+    const custo = custoReal * MULTIPLICADOR_COBRANCA_USUARIO;
 
     const { data: atualizado } = await supabaseAdmin
       .from('profiles')
@@ -120,7 +131,7 @@ Deno.serve(async (req) => {
 
     await supabaseAdmin.from('uso_ia').insert({
       user_id: userId,
-      tipo: 'relatorio',
+      tipo: tipoUso,
       provedor: 'deepseek',
       modelo: DEEPSEEK_MODEL,
       unidades: cacheHit + cacheMiss + completionTokens,

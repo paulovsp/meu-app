@@ -76,7 +76,13 @@ export default function CursosScreen() {
               )}
               <View style={s.cardMetaRow}>
                 {item.carga_horaria ? <Text style={s.cardMeta}>{item.carga_horaria}h</Text> : null}
+                {item.quantidade_aulas && item.duracao_aula_min
+                  ? <Text style={s.cardMeta}>{item.quantidade_aulas}x {item.duracao_aula_min}min</Text>
+                  : null}
                 {formatarData(item.data) ? <Text style={s.cardMeta}>{formatarData(item.data)}</Text> : null}
+                {item.horario_inicio
+                  ? <Text style={s.cardMeta}>{item.horario_inicio}{item.horario_fim ? `–${item.horario_fim}` : ''}</Text>
+                  : null}
                 {item.formato ? <Text style={s.cardMeta}>{FORMATO_LABEL[item.formato] || item.formato}</Text> : null}
                 {formatarMoeda(item.custo) ? <Text style={s.cardMeta}>{formatarMoeda(item.custo)}</Text> : null}
               </View>

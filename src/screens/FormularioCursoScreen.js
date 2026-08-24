@@ -13,10 +13,12 @@ import { Ionicons } from '@expo/vector-icons';
 import {
   criarCurso, editarCurso, removerCurso, marcarConsentimentoProfessor,
   transcreverAudioCurso, salvarTranscricaoManual, getCursoById,
+  calcularCargaHoraria, terminoDerivadoDaAula,
 } from '../services/cursos';
 import { mensagemDeErro } from '../services/erros';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
 import { dataBRParaISO, dataISOParaBR } from '../services/validacao';
+import { mascararHorario, normalizarHorario } from '../services/horarios';
 
 const COLORS = {
   bg: '#F7F5F0',
@@ -86,7 +88,12 @@ export default function FormularioCursoScreen() {
   const [titulo, setTitulo] = useState(cursoInicial?.titulo || '');
   const [professor, setProfessor] = useState(cursoInicial?.professor || '');
   const [instituicao, setInstituicao] = useState(cursoInicial?.instituicao || '');
-  const [cargaHoraria, setCargaHoraria] = useState(cursoInicial?.carga_horaria ? String(cursoInicial.carga_horaria) : '');
+  // Carga horária deixou de ser digitada: sai de aulas × duração (ver
+  // calcularCargaHoraria em services/cursos.js).
+  const [quantidadeAulas, setQuantidadeAulas] = useState(cursoInicial?.quantidade_aulas ? String(cursoInicial.quantidade_aulas) : '');
+  const [duracaoAulaMin, setDuracaoAulaMin] = useState(cursoInicial?.duracao_aula_min ? String(cursoInicial.duracao_aula_min) : '');
+  const [horarioInicio, setHorarioInicio] = useState(cursoInicial?.horario_inicio || '');
+  const [horarioFim, setHorarioFim] = useState(cursoInicial?.horario_fim || '');
   const [custo, setCusto] = useState(cursoInicial?.custo ? String(cursoInicial.custo) : '');
   const [formato, setFormato] = useState(cursoInicial?.formato || 'presencial');
   const [local, setLocal] = useState(cursoInicial?.local || '');
@@ -106,7 +113,10 @@ export default function FormularioCursoScreen() {
       setTitulo(encontrado.titulo || '');
       setProfessor(encontrado.professor || '');
       setInstituicao(encontrado.instituicao || '');
-      setCargaHoraria(encontrado.carga_horaria ? String(encontrado.carga_horaria) : '');
+      setQuantidadeAulas(encontrado.quantidade_aulas ? String(encontrado.quantidade_aulas) : '');
+      setDuracaoAulaMin(encontrado.duracao_aula_min ? String(encontrado.duracao_aula_min) : '');
+      setHorarioInicio(encontrado.horario_inicio || '');
+      setHorarioFim(encontrado.horario_fim || '');
       setCusto(encontrado.custo ? String(encontrado.custo) : '');
       setFormato(encontrado.formato || 'presencial');
       setLocal(encontrado.local || '');
@@ -146,14 +156,33 @@ export default function FormularioCursoScreen() {
     try {
       const dados = {
         titulo, professor, instituicao,
-        cargaHoraria: cargaHoraria ? parseFloat(cargaHoraria.replace(',', '.')) : null,
+        quantidadeAulas: quantidadeAulas ? parseInt(quantidadeAulas, 10) : null,
+        duracaoAulaMin: duracaoAulaMin ? parseInt(duracaoAulaMin, 10) : null,
+        horarioInicio, horarioFim,
         custo: custo ? parseFloat(custo.replace(',', '.')) : null,
         formato, local: formato === 'presencial' ? local : null,
         data: data ? dataBRParaISO(data) : null, anotacoes,
       };
       const salvo = curso ? await editarCurso(curso.id, dados) : await criarCurso(dados);
       setCurso(salvo);
-      Alert.alert('Curso salvo', curso ? 'Alterações salvas.' : 'Curso adicionado ao seu currículo. Agora você pode gravar a aula, se quiser.');
+      // Os campos voltam já normalizados ("845" -> "08:45", carga horária
+      // calculada), pra tela refletir o que de fato foi gravado.
+      setHorarioInicio(salvo.horario_inicio || '');
+      setHorarioFim(salvo.horario_fim || '');
+
+      // O curso é salvo mesmo se a Agenda recusar o horário (colisão com
+      // outro compromisso) — nesse caso avisa, em vez de fingir que deu tudo
+      // certo ou de perder o cadastro inteiro por causa disso.
+      const base = curso ? 'Alterações salvas.' : 'Curso adicionado ao seu currículo. Agora você pode gravar a aula, se quiser.';
+      if (salvo._agenda?.ok === false) {
+        const detalhe = salvo._agenda.motivo === 'horario_ocupado'
+          ? 'Mas o horário não entrou na Agenda: já existe outro compromisso nesse dia e horário.'
+          : 'Mas não foi possível colocar o horário na Agenda agora.';
+        Alert.alert('Curso salvo', `${base}\n\n${detalhe}`);
+      } else {
+        const naAgenda = salvo.data && salvo.horario_inicio ? '\n\nO horário foi lançado na Agenda.' : '';
+        Alert.alert('Curso salvo', `${base}${naAgenda}`);
+      }
     } catch (err) {
       Alert.alert('Erro ao salvar', mensagemDeErro(err));
     } finally {
@@ -287,6 +316,26 @@ export default function FormularioCursoScreen() {
     }
   }
 
+  // Horário do curso: mesma digitação por números do resto do app
+  // ("1930" -> 19:30). O término sai da duração da aula enquanto a pessoa
+  // não digitar um próprio.
+  const terminoManualRef = useRef(!!cursoInicial?.horario_fim);
+
+  function aoDigitarHorarioInicio(texto) {
+    const mascarado = mascararHorario(texto);
+    setHorarioInicio(mascarado);
+    if (terminoManualRef.current) return;
+    const sugerido = terminoDerivadoDaAula(mascarado, duracaoAulaMin);
+    if (sugerido) setHorarioFim(sugerido);
+  }
+
+  function aoDigitarHorarioFim(texto) {
+    terminoManualRef.current = true;
+    setHorarioFim(mascararHorario(texto));
+  }
+
+  const cargaHorariaCalculada = calcularCargaHoraria(quantidadeAulas, duracaoAulaMin);
+
   async function salvarTranscricaoManualHandler() {
     try {
       await salvarTranscricaoManual(curso.id, transcricaoManual);
@@ -312,14 +361,69 @@ export default function FormularioCursoScreen() {
 
         <View style={s.row2}>
           <View style={{ flex: 1 }}>
-            <Text style={s.label}>Carga horária (h)</Text>
-            <TextInput style={s.input} value={cargaHoraria} onChangeText={setCargaHoraria} placeholder="0" placeholderTextColor="#756E66" keyboardType="decimal-pad" />
+            <Text style={s.label}>Quantidade de aulas</Text>
+            <TextInput
+              style={s.input}
+              value={quantidadeAulas}
+              onChangeText={(t) => setQuantidadeAulas(t.replace(/\D/g, ''))}
+              placeholder="Ex: 12"
+              placeholderTextColor="#756E66"
+              keyboardType="number-pad"
+            />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={s.label}>Custo (R$)</Text>
-            <TextInput style={s.input} value={custo} onChangeText={setCusto} placeholder="0,00" placeholderTextColor="#756E66" keyboardType="decimal-pad" />
+            <Text style={s.label}>Duração da aula (min)</Text>
+            <TextInput
+              style={s.input}
+              value={duracaoAulaMin}
+              onChangeText={(t) => setDuracaoAulaMin(t.replace(/\D/g, ''))}
+              placeholder="Ex: 90"
+              placeholderTextColor="#756E66"
+              keyboardType="number-pad"
+            />
           </View>
         </View>
+        <Text style={s.cargaCalculada}>
+          {cargaHorariaCalculada != null
+            ? `Carga horária total: ${String(cargaHorariaCalculada).replace('.', ',')}h`
+            : 'Carga horária total: informe as aulas e a duração de cada uma.'}
+        </Text>
+
+        <View style={s.row2}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.label}>Horário de início</Text>
+            <TextInput
+              style={s.input}
+              value={horarioInicio}
+              onChangeText={aoDigitarHorarioInicio}
+              onBlur={() => { const n = normalizarHorario(horarioInicio); if (n) setHorarioInicio(n); }}
+              placeholder="1930"
+              placeholderTextColor="#756E66"
+              keyboardType="numeric"
+              maxLength={5}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={s.label}>Horário de término</Text>
+            <TextInput
+              style={s.input}
+              value={horarioFim}
+              onChangeText={aoDigitarHorarioFim}
+              onBlur={() => { const n = normalizarHorario(horarioFim); if (n) setHorarioFim(n); }}
+              placeholder="21:00"
+              placeholderTextColor="#756E66"
+              keyboardType="numeric"
+              maxLength={5}
+            />
+          </View>
+        </View>
+        <Text style={s.cargaCalculada}>
+          Com data e horário de início preenchidos, o curso aparece na Agenda.
+          O término se preenche sozinho a partir da duração da aula.
+        </Text>
+
+        <Text style={s.label}>Custo (R$)</Text>
+        <TextInput style={s.input} value={custo} onChangeText={setCusto} placeholder="0,00" placeholderTextColor="#756E66" keyboardType="decimal-pad" />
 
         <Text style={s.label}>Formato</Text>
         <View style={s.chipsRow}>
@@ -439,6 +543,10 @@ const s = StyleSheet.create({
   },
   textArea: { minHeight: 90, textAlignVertical: 'top' },
   row2: { flexDirection: 'row', gap: 12 },
+  cargaCalculada: {
+    fontSize: 12, color: COLORS.textMid, fontStyle: 'italic',
+    lineHeight: 17, marginTop: 8,
+  },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
     paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20,

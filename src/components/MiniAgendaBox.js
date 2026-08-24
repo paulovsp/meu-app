@@ -131,7 +131,9 @@ export default function MiniAgendaBox({ navigation, altura }) {
           <View style={[s.caixa, altura ? { height: altura } : null]}>
             <View style={s.header}>
               <Ionicons name="calendar-outline" size={16} color={salvia.tinta} />
-              <Text style={s.titulo} numberOfLines={1}>Agenda de hoje</Text>
+              {/* Só "Agenda": o widget é estreito e "Agenda de hoje" era
+                  cortado no meio da palavra em telas menores. */}
+              <Text style={s.titulo} numberOfLines={1}>Agenda</Text>
               {carregando && (
                 <ActivityIndicator size="small" color={salvia.tinta} style={s.spinner} />
               )}

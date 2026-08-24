@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import {
   Alert,
@@ -24,11 +24,17 @@ import {
   getPatients,
   addPatient,
   cancelarCompromissosFuturosDoHorario,
+  parsePreco,
+  formatarMoeda,
 } from '../services/database';
 import { mensagemDeErro } from '../services/erros';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
 import { TIPOS_EVENTO, infoTipoEvento, corTipoEvento, ehTipoGrupo, tipoTemPacienteUnico } from '../services/tiposEvento';
 import { dataBRParaISO, dataISOParaBR } from '../services/validacao';
+import {
+  mascararHorario, normalizarHorario, horarioValido, horarioParaMinutos, terminoPadrao,
+  DURACAO_PADRAO_SESSAO_MIN,
+} from '../services/horarios';
 
 const SEMANAS_CICLO = [1, 2, 3, 4];
 
@@ -41,18 +47,6 @@ const DIAS = [
   { value: 5, label: 'Sexta' },
   { value: 6, label: 'Sábado' },
 ];
-
-// Máscara automática: usuária digita só números, o "07:10" (com o zero à
-// esquerda) sai sozinho — evita o erro comum de digitar "7:10" sem o zero.
-function formatarHorario(texto, setter) {
-  const numeros = texto.replace(/\D/g, '').slice(0, 4);
-  const formatado = numeros.length > 2 ? `${numeros.slice(0, 2)}:${numeros.slice(2)}` : numeros;
-  setter(formatado);
-}
-
-function horarioValido(horario) {
-  return /^([01]\d|2[0-3]):([0-5]\d)$/.test(horario);
-}
 
 function formatarData(texto, setter) {
   const numeros = texto.replace(/\D/g, '').slice(0, 8);
@@ -88,10 +82,11 @@ function pacientesElegiveis(tipoEvento, pacientes) {
   return pacientes.filter((p) => p.eh_analisante);
 }
 
-function horarioParaMinutos(horario) {
-  const [horas, minutos] = horario.split(':').map(Number);
-  return horas * 60 + minutos;
-}
+const TIPOS_COBRANCA_PARTICIPANTE = [
+  { valor: 'mensal', label: 'Mensal' },
+  { valor: 'mensal_fixo', label: 'Mensal fixo' },
+  { valor: 'por_sessao', label: 'Por sessão' },
+];
 
 function obterDiaLabel(dayOfWeek) {
   const dia = DIAS.find((item) => item.value === dayOfWeek);
@@ -124,11 +119,20 @@ export default function DisponibilidadeScreen() {
   const [diaSemana, setDiaSemana] = useState(1);
   const [horarioInicio, setHorarioInicio] = useState('');
   const [horarioFim, setHorarioFim] = useState('');
+  // O término se preenche sozinho (início + 50 min) enquanto a pessoa não
+  // digitar um término próprio — a partir daí, mexer no início não sobrescreve
+  // mais o que ela escolheu à mão. Um horário já existente, aberto pra
+  // edição, também conta como "definido pela pessoa".
+  const terminoManualRef = useRef(false);
   const [modalidade, setModalidade] = useState('ambos');
   const [slotEditandoId, setSlotEditandoId] = useState(null);
   const [tipoEvento, setTipoEvento] = useState('sessao_individual');
   const [titulo, setTitulo] = useState('');
   const [participantesIds, setParticipantesIds] = useState([]);
+  // { [patientId]: { valorSessao: '120', tipoCobranca: 'por_sessao' } } —
+  // valor e forma de cobrança combinados PRA ESTE GRUPO (migration 0051).
+  // Campo vazio / ausente = herda o que está na ficha da pessoa.
+  const [pagamentoParticipantes, setPagamentoParticipantes] = useState({});
 
   const [analisanteId, setAnalisanteId] = useState(null);
   const [analisanteNome, setAnalisanteNome] = useState('');
@@ -206,8 +210,45 @@ export default function DisponibilidadeScreen() {
       setDiaSemana(params.dayOfWeek);
 
       if (params.startTime) setHorarioInicio(params.startTime);
-      if (params.endTime) setHorarioFim(params.endTime);
+      if (params.endTime) {
+        setHorarioFim(params.endTime);
+        terminoManualRef.current = true;
+      } else if (params.startTime) {
+        const sugerido = terminoPadrao(params.startTime);
+        if (sugerido) setHorarioFim(sugerido);
+      }
     }
+  }
+
+  // ── Digitação dos horários (ver src/services/horarios.js) ──
+  function aoDigitarInicio(texto) {
+    const mascarado = mascararHorario(texto);
+    setHorarioInicio(mascarado);
+    if (terminoManualRef.current) return;
+    const sugerido = terminoPadrao(mascarado);
+    if (sugerido) setHorarioFim(sugerido);
+  }
+
+  function aoDigitarFim(texto) {
+    terminoManualRef.current = true;
+    setHorarioFim(mascararHorario(texto));
+  }
+
+  // Ao sair do campo, o que foi digitado vira o horário final ("845" ->
+  // "08:45", "8" -> "08:00") — se não der pra interpretar, o texto fica como
+  // está e a validação do salvar avisa.
+  function normalizarCampoInicio() {
+    const normalizado = normalizarHorario(horarioInicio);
+    if (!normalizado) return;
+    setHorarioInicio(normalizado);
+    if (terminoManualRef.current) return;
+    const sugerido = terminoPadrao(normalizado);
+    if (sugerido) setHorarioFim(sugerido);
+  }
+
+  function normalizarCampoFim() {
+    const normalizado = normalizarHorario(horarioFim);
+    if (normalizado) setHorarioFim(normalizado);
   }
 
   function limparFormulario() {
@@ -215,10 +256,12 @@ export default function DisponibilidadeScreen() {
     setDiaSemana(1);
     setHorarioInicio('');
     setHorarioFim('');
+    terminoManualRef.current = false;
     setModalidade('ambos');
     setTipoEvento('sessao_individual');
     setTitulo('');
     setParticipantesIds([]);
+    setPagamentoParticipantes({});
     setAnalisanteId(null);
     setAnalisanteNome('');
     setMostrarNovoAnalisante(false);
@@ -241,6 +284,26 @@ export default function DisponibilidadeScreen() {
       atual.includes(patientId) ? atual.filter((id) => id !== patientId) : [...atual, patientId]
     );
   }
+
+  function definirPagamentoParticipante(patientId, campos) {
+    setPagamentoParticipantes((atual) => ({
+      ...atual,
+      [patientId]: { ...(atual[patientId] || {}), ...campos },
+    }));
+  }
+
+  /** O que este grupo rende por encontro: soma do valor combinado de cada
+   * integrante, caindo no preço da ficha de quem não tem valor próprio —
+   * é exatamente a mesma regra usada em getSlotsOcupados (database.js),
+   * pra tela e Financeiro nunca mostrarem números diferentes. */
+  const totalGrupoPorEncontro = participantesIds.reduce((soma, pid) => {
+    const combinado = pagamentoParticipantes[pid]?.valorSessao;
+    if (combinado != null && String(combinado).trim() !== '') {
+      return soma + parsePreco(combinado);
+    }
+    const paciente = pacientes.find((p) => p.id === pid);
+    return soma + parsePreco(paciente?.preco_sessao);
+  }, 0);
 
   function selecionarAnalisante(paciente) {
     setAnalisanteId(paciente.id);
@@ -295,16 +358,21 @@ export default function DisponibilidadeScreen() {
    *    nunca entram nessa lista — coexistem sem alteração.
    */
   async function salvarSlot() {
-    const inicio = horarioInicio.trim();
-    const fim = horarioFim.trim();
+    // Interpreta o que foi digitado antes de validar — quem escreveu "845"
+    // e tocou direto em salvar (sem sair do campo) também é atendido.
+    const inicio = normalizarHorario(horarioInicio);
+    const fim = normalizarHorario(horarioFim);
 
     if (!horarioValido(inicio) || !horarioValido(fim)) {
       Alert.alert(
         'Horário inválido',
-        'Informe os horários no formato HH:MM.\n\nExemplo: 07:45'
+        'Informe os horários no formato HH:MM.\n\nExemplo: 07:45 (dá pra digitar só "745").'
       );
       return;
     }
+    // Reflete na tela o que de fato vai ser salvo.
+    setHorarioInicio(inicio);
+    setHorarioFim(fim);
 
     if (horarioParaMinutos(inicio) >= horarioParaMinutos(fim)) {
       Alert.alert(
@@ -398,7 +466,17 @@ export default function DisponibilidadeScreen() {
           livresParaRemover: livres,
           tipo: tipoEvento,
           titulo: tipoEvento === 'outros' ? titulo.trim() : null,
-          participantes: ehTipoGrupo(tipoEvento) ? participantesIds : [],
+          // Cada integrante vai com o valor e a cobrança combinados pro
+          // grupo (vazio = herda a ficha) — ver migration 0051.
+          participantes: ehTipoGrupo(tipoEvento)
+            ? participantesIds.map((pid) => ({
+                patientId: pid,
+                valorSessao: pagamentoParticipantes[pid]?.valorSessao?.trim()
+                  ? parsePreco(pagamentoParticipantes[pid].valorSessao)
+                  : null,
+                tipoCobranca: pagamentoParticipantes[pid]?.tipoCobranca || null,
+              }))
+            : [],
           recorrencia,
         });
         await carregarSlots();
@@ -435,10 +513,24 @@ export default function DisponibilidadeScreen() {
     setDiaSemana(slot.day_of_week);
     setHorarioInicio(slot.start_time);
     setHorarioFim(slot.end_time);
+    // Horário que já existe tem término escolhido — não pode ser
+    // sobrescrito pelo padrão de 50 min se a pessoa ajustar só o início.
+    terminoManualRef.current = true;
     setModalidade(slot.modality);
     setTipoEvento(slot.tipo || 'sessao_individual');
     setTitulo(slot.titulo || '');
     setParticipantesIds((slot.participantes || []).map((p) => p.id));
+    // Reabre com o valor/cobrança combinados que já estavam salvos pra
+    // cada integrante (nulos ficam vazios = herda a ficha).
+    setPagamentoParticipantes(
+      Object.fromEntries((slot.participantes || []).map((p) => [
+        p.id,
+        {
+          valorSessao: p.valorSessao != null ? String(p.valorSessao) : '',
+          tipoCobranca: p.tipoCobranca || null,
+        },
+      ]))
+    );
     setAnalisanteId(slot.patient_id || null);
     setAnalisanteNome(slot.patient_name || '');
     setMostrarNovoAnalisante(false);
@@ -673,8 +765,9 @@ export default function DisponibilidadeScreen() {
               <Text style={styles.label}>Início</Text>
               <TextInput
                 value={horarioInicio}
-                onChangeText={(texto) => formatarHorario(texto, setHorarioInicio)}
-                placeholder="07:45"
+                onChangeText={aoDigitarInicio}
+                onBlur={normalizarCampoInicio}
+                placeholder="745"
                 keyboardType="numeric"
                 maxLength={5}
                 style={styles.input}
@@ -685,7 +778,8 @@ export default function DisponibilidadeScreen() {
               <Text style={styles.label}>Término</Text>
               <TextInput
                 value={horarioFim}
-                onChangeText={(texto) => formatarHorario(texto, setHorarioFim)}
+                onChangeText={aoDigitarFim}
+                onBlur={normalizarCampoFim}
                 placeholder="08:35"
                 keyboardType="numeric"
                 maxLength={5}
@@ -693,6 +787,10 @@ export default function DisponibilidadeScreen() {
               />
             </View>
           </View>
+          <Text style={styles.horarioDica}>
+            Dá pra digitar só os números ("745" vira 07:45). O término se preenche
+            sozinho com {DURACAO_PADRAO_SESSAO_MIN} minutos — mude se precisar.
+          </Text>
 
           <Text style={styles.label}>Tipo de evento</Text>
           <View style={styles.tipoEventoContainer}>
@@ -822,6 +920,61 @@ export default function DisponibilidadeScreen() {
                   );
                 })}
               </View>
+
+              {/* Quanto cada integrante paga NESTE grupo e como é cobrado
+                  (migration 0051). Sem isso, Financeiro/Recebíveis usavam o
+                  preço da sessão INDIVIDUAL da pessoa, que quase nunca é o
+                  valor combinado do grupo. Em branco = herda a ficha. */}
+              {participantesIds.length > 0 && (
+                <>
+                  <Text style={styles.label}>Pagamento de cada participante</Text>
+                  <Text style={styles.horarioDica}>
+                    Deixe o valor em branco pra usar o preço da ficha da pessoa.
+                    O total do grupo é a soma de todos.
+                  </Text>
+                  {participantesIds.map((pid) => {
+                    const paciente = pacientes.find((p) => p.id === pid);
+                    const dados = pagamentoParticipantes[pid] || {};
+                    const cobranca = dados.tipoCobranca || paciente?.tipo_cobranca || 'mensal';
+                    return (
+                      <View key={`pagamento-${pid}`} style={styles.participantePagamentoCard}>
+                        <Text style={styles.participantePagamentoNome} numberOfLines={1}>
+                          {paciente?.nome || paciente?.name || 'Participante'}
+                        </Text>
+                        <View style={styles.participantePagamentoLinha}>
+                          <Text style={styles.participantePagamentoLabel}>R$</Text>
+                          <TextInput
+                            style={[styles.input, styles.participantePagamentoInput]}
+                            value={dados.valorSessao ?? ''}
+                            onChangeText={(t) => definirPagamentoParticipante(pid, { valorSessao: t.replace(/[^\d,.]/g, '') })}
+                            placeholder={paciente?.preco_sessao ? `Ficha: ${paciente.preco_sessao}` : 'Valor por sessão'}
+                            placeholderTextColor="#A9A299"
+                            keyboardType="decimal-pad"
+                          />
+                        </View>
+                        <View style={styles.participantePagamentoLinha}>
+                          {TIPOS_COBRANCA_PARTICIPANTE.map((opcao) => (
+                            <TouchableOpacity
+                              key={`cobranca-${pid}-${opcao.valor}`}
+                              style={[styles.cobrancaChip, cobranca === opcao.valor && styles.cobrancaChipAtivo]}
+                              onPress={() => definirPagamentoParticipante(pid, { tipoCobranca: opcao.valor })}
+                            >
+                              <Text style={[styles.cobrancaChipTxt, cobranca === opcao.valor && styles.cobrancaChipTxtAtivo]}>
+                                {opcao.label}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+                    );
+                  })}
+                  <View style={styles.totalGrupoBox}>
+                    <Text style={styles.totalGrupoTxt}>
+                      Total por encontro do grupo: {formatarMoeda(totalGrupoPorEncontro)}
+                    </Text>
+                  </View>
+                </>
+              )}
             </>
           )}
 
@@ -923,9 +1076,19 @@ export default function DisponibilidadeScreen() {
                 </Text>
               )}
               {slot.participantes?.length > 0 && (
-                <Text style={styles.slotAnalisante}>
-                  {slot.participantes.map((p) => p.nome).join(', ')}
-                </Text>
+                <>
+                  <Text style={styles.slotAnalisante}>
+                    {slot.participantes.map((p) => p.nome).join(', ')}
+                  </Text>
+                  {/* Soma do que o grupo rende por encontro — mesma regra
+                      do Financeiro (valor do grupo, ou o da ficha). */}
+                  <Text style={styles.slotValorGrupo}>
+                    {formatarMoeda(slot.participantes.reduce(
+                      (soma, p) => soma + parsePreco(p.valorSessao ?? p.precoFicha),
+                      0
+                    ))} por encontro
+                  </Text>
+                </>
               )}
               {slot.titulo && (
                 <Text style={styles.slotAnalisante}>{slot.titulo}</Text>
@@ -1010,7 +1173,33 @@ const styles = StyleSheet.create({
   diaBtnAtivo: { backgroundColor: '#497363' },
   diaBtnTxt: { fontSize: 12, color: '#4E4941', lineHeight: 17 },
   diaBtnTxtAtivo: { fontSize: 12, color: '#FFFFFF', fontWeight: '500', lineHeight: 17 },
-  horariosRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
+  horariosRow: { flexDirection: 'row', gap: 12, marginBottom: 8 },
+  horarioDica: { fontSize: 11.5, color: '#8C857B', fontStyle: 'italic', lineHeight: 16, marginBottom: 16 },
+  participantePagamentoCard: {
+    backgroundColor: '#FDFCFA',
+    borderWidth: 1,
+    borderColor: '#EAE5DC',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+    gap: 8,
+  },
+  participantePagamentoNome: { fontSize: 14, fontWeight: '500', color: '#302C28', lineHeight: 20 },
+  participantePagamentoLinha: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  participantePagamentoLabel: { fontSize: 14, color: '#8C857B', lineHeight: 20 },
+  participantePagamentoInput: { flex: 1, marginBottom: 0 },
+  cobrancaChip: {
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16,
+    borderWidth: 1, borderColor: '#DDD6CA', backgroundColor: '#F7F5F0',
+  },
+  cobrancaChipAtivo: { backgroundColor: '#497363', borderColor: '#497363' },
+  cobrancaChipTxt: { fontSize: 12, color: '#8C857B', lineHeight: 17 },
+  cobrancaChipTxtAtivo: { color: '#FFFFFF', fontWeight: '500' },
+  totalGrupoBox: {
+    backgroundColor: '#E4EFE9', borderRadius: 10, padding: 12,
+    borderLeftWidth: 3, borderLeftColor: '#497363', marginBottom: 12,
+  },
+  totalGrupoTxt: { fontSize: 13, fontWeight: '500', color: '#497363', lineHeight: 19 },
   inputGroup: { flex: 1 },
   input: {
     height: 44,
@@ -1133,6 +1322,7 @@ const styles = StyleSheet.create({
   slotTipo: { fontSize: 12, fontWeight: '500', marginTop: 4, lineHeight: 17 },
   slotModalidade: { fontSize: 12, color: '#756E66', marginTop: 4, lineHeight: 17 },
   slotAnalisante: { fontSize: 12, color: '#7E4441', marginTop: 4, fontWeight: '600', lineHeight: 17 },
+  slotValorGrupo: { fontSize: 11.5, color: '#497363', marginTop: 2, fontWeight: '500', lineHeight: 16 },
   slotAcoes: { flexDirection: 'row', gap: 6 },
   btnAcao: { padding: 7 },
   btnAcaoTexto: { fontSize: 18 },

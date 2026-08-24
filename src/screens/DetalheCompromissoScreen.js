@@ -14,6 +14,7 @@ import {
   cancelarCompromissosFuturosDoHorario,
   deleteAppointment,
   deleteAppointments,
+  marcarHorarioLiberado,
   getPagamentoPorAppointment,
   deletarPagamentoDeAppointment,
   desvincularPagamentoDeAppointment,
@@ -307,6 +308,10 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
         else await desvincularPagamentoDeAppointment(compromisso.id);
       }
       await deleteAppointment(compromisso.id);
+      // Sem isso, a Agenda recriava sozinha o mesmo compromisso (a partir
+      // do horário recorrente) na próxima vez que a tela carregasse — o
+      // ícone nunca saía da tela e não dava pra marcar outra coisa ali.
+      await marcarHorarioLiberado(compromisso.date, compromisso.start_time);
       navigation.goBack();
     } catch (e) {
       setAgindo(false);

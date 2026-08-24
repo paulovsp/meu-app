@@ -49,6 +49,7 @@ import PagamentosScreen from '../screens/PagamentosScreen';
 import ConfiguracaoFiscalAutomaticaScreen from '../screens/ConfiguracaoFiscalAutomaticaScreen';
 import EditarHorarioScreen from '../screens/DisponibilidadeScreen';
 import EditarHorarioUnicoScreen from '../screens/EditarHorarioUnicoScreen';
+import MarcarHorarioAvulsoScreen from '../screens/MarcarHorarioAvulsoScreen';
 import DetalheCompromissoScreen from '../screens/DetalheCompromissoScreen';
 
 // Início — afazeres e relatórios
@@ -239,6 +240,12 @@ function AppStackNavigator() {
         name="EditarHorarioUnico"
         component={EditarHorarioUnicoScreen}
         options={{ title: 'Editar só este horário' }}
+      />
+
+      <Stack.Screen
+        name="MarcarHorarioAvulso"
+        component={MarcarHorarioAvulsoScreen}
+        options={{ title: 'Marcar horário' }}
       />
 
       <Stack.Screen

@@ -480,6 +480,74 @@ export function slotAtivoNaData(slot, dataISO) {
   return slot.recorrencia_semanas_ativas.includes(semanaCiclo);
 }
 
+/** "Apagar só este horário" (item 1, v16) marca a data+horário como
+ * liberado — impede `inserirAppointmentSeNaoExiste` de recriar o mesmo
+ * compromisso a partir do horário recorrente, e faz a Agenda mostrar esse
+ * horário como livre. Não mexe no horário recorrente em si (continua
+ * valendo pras outras semanas). */
+export async function marcarHorarioLiberado(dataISO, startTime) {
+  const { supabase } = require('./supabase');
+  const userId = await getUserId();
+  const { error } = await supabase
+    .from('horarios_liberados')
+    .upsert({ user_id: userId, date: dataISO, start_time: startTime }, { onConflict: 'user_id,date,start_time' });
+  if (error) throw error;
+}
+
+/** Desfaz a liberação — chamado ao criar de fato um novo compromisso
+ * avulso naquela data+horário (ver `criarAppointmentAvulso`), pra não
+ * bloquear indefinidamente aquele horário. */
+export async function desmarcarHorarioLiberado(dataISO, startTime) {
+  const { supabase } = require('./supabase');
+  const userId = await getUserId();
+  const { error } = await supabase
+    .from('horarios_liberados')
+    .delete()
+    .eq('user_id', userId).eq('date', dataISO).eq('start_time', startTime);
+  if (error) throw error;
+}
+
+/** Horários liberados num intervalo de datas (visão semanal da Agenda
+ * busca de uma vez; a diária passa a mesma data como início e fim). */
+export async function getHorariosLiberadosNoIntervalo(dataInicioISO, dataFimISO) {
+  const { supabase } = require('./supabase');
+  const userId = await getUserId();
+  const { data, error } = await supabase
+    .from('horarios_liberados')
+    .select('date, start_time')
+    .eq('user_id', userId)
+    .gte('date', dataInicioISO)
+    .lte('date', dataFimISO);
+  if (error) throw error;
+  return data || [];
+}
+
+/** Cria um compromisso avulso pra uma data+horário específico — usado
+ * quando a psicanalista escolhe marcar algo novo num horário que foi
+ * liberado (ver `marcarHorarioLiberado`). Não mexe em `availability_slots`
+ * (não é recorrente, só vale nessa data), e desfaz a liberação daquele
+ * horário, já que agora há um compromisso de fato ali. */
+export async function criarAppointmentAvulso({ patientId, dataISO, startTime, endTime, modality, tipo = 'sessao_individual', titulo = null }) {
+  const { supabase } = require('./supabase');
+  const userId = await getUserId();
+  const { data, error } = await supabase
+    .from('appointments')
+    .upsert(
+      {
+        user_id: userId, patient_id: patientId, date: dataISO,
+        start_time: startTime, end_time: endTime, modality, status: 'agendado',
+        tipo, titulo,
+      },
+      { onConflict: 'user_id,date,start_time' }
+    )
+    .select(APPOINTMENT_SELECT_COM_PACIENTE)
+    .single();
+  if (error) throw error;
+  await desmarcarHorarioLiberado(dataISO, startTime);
+  const [comParticipantes] = await anexarParticipantesAosAppointments([achatarAppointmentComPaciente(data)]);
+  return comParticipantes;
+}
+
 export async function getAvailabilitySlots() {
   const { supabase } = require('./supabase');
   const hojeISO = new Date().toISOString().slice(0, 10);
@@ -1063,14 +1131,20 @@ async function inserirAppointmentSeNaoExiste(userId, slot, dataISO) {
 export async function ensureAppointmentsForDate(dataISO, dayOfWeek) {
   const { supabase } = require('./supabase');
   const userId = await getUserId();
-  const { data: slots, error } = await supabase
-    .from('availability_slots')
-    .select('*')
-    .eq('day_of_week', dayOfWeek)
-    .or('patient_id.not.is.null,tipo.in.(sessao_grupo,supervisao_grupo,outros)');
+  const [{ data: slots, error }, { data: liberadosData, error: erroLiberados }] = await Promise.all([
+    supabase
+      .from('availability_slots')
+      .select('*')
+      .eq('day_of_week', dayOfWeek)
+      .or('patient_id.not.is.null,tipo.in.(sessao_grupo,supervisao_grupo,outros)'),
+    supabase.from('horarios_liberados').select('start_time').eq('user_id', userId).eq('date', dataISO),
+  ]);
   if (error) throw error;
+  if (erroLiberados) throw erroLiberados;
+  const liberados = new Set((liberadosData || []).map((l) => l.start_time));
   for (const slot of slots) {
     if (!slotAtivoNaData(slot, dataISO)) continue;
+    if (liberados.has(slot.start_time)) continue;
     await inserirAppointmentSeNaoExiste(userId, slot, dataISO);
   }
 }
@@ -1084,6 +1158,16 @@ export async function ensureAppointmentsForDate(dataISO, dayOfWeek) {
 export async function getOrCreateAppointmentForSlot(slot, dataISO) {
   const { supabase } = require('./supabase');
   const userId = await getUserId();
+  const { data: liberado } = await supabase
+    .from('horarios_liberados')
+    .select('id')
+    .eq('user_id', userId).eq('date', dataISO).eq('start_time', slot.start_time)
+    .maybeSingle();
+  // Horário liberado (apagado pontualmente) — não recria o compromisso a
+  // partir do molde recorrente; retorna null pra quem chamou saber que
+  // esse horário está de fato livre nessa data.
+  if (liberado) return null;
+
   await inserirAppointmentSeNaoExiste(userId, slot, dataISO);
   const { data, error } = await supabase
     .from('appointments')

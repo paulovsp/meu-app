@@ -25,6 +25,7 @@ import {
   parsePreco,
   ensureAppointmentsForDate,
   getOrCreateAppointmentForSlot,
+  getHorariosLiberadosNoIntervalo,
   temTranscricaoParaData,
   slotAtivoNaData,
 } from '../services/database';
@@ -124,6 +125,10 @@ export default function AgendaScreen({ navigation }) {
   const [dataRef, setDataRef] = useState(new Date());
   const [availability, setAvailability] = useState([]);
   const [appointments, setAppointments] = useState([]);
+  // Horários apagados pontualmente ("só este horário") — chave
+  // `${date}|${start_time}` — impede que o horário recorrente continue
+  // aparecendo ocupado numa data específica que foi liberada de propósito.
+  const [liberados, setLiberados] = useState(new Set());
   const [temTranscricaoMap, setTemTranscricaoMap] = useState({});
   const [carregando, setCarregando] = useState(true);
   const [menuAberto, setMenuAberto] = useState(false);
@@ -147,11 +152,15 @@ export default function AgendaScreen({ navigation }) {
       setAvailability(disponibilidades || []);
 
       if (modoView === 'diario') {
-        await ensureAppointmentsForDate(toISO(dataRef), dataRef.getDay());
-        const agendamentosDia = await getAppointmentsByDate(toISO(dataRef));
-        setAppointments(agendamentosDia || []);
-
         const dataISO = toISO(dataRef);
+        await ensureAppointmentsForDate(dataISO, dataRef.getDay());
+        const [agendamentosDia, liberadosData] = await Promise.all([
+          getAppointmentsByDate(dataISO),
+          getHorariosLiberadosNoIntervalo(dataISO, dataISO),
+        ]);
+        setAppointments(agendamentosDia || []);
+        setLiberados(new Set((liberadosData || []).map((l) => `${l.date}|${l.start_time}`)));
+
         const patientIdsUnicos = [...new Set(agendamentosDia.map((a) => a.patient_id).filter(Boolean))];
         const mapa = {};
         for (const patientId of patientIdsUnicos) {
@@ -162,11 +171,12 @@ export default function AgendaScreen({ navigation }) {
       }
 
       const fimSemana = getFimSemana(inicioSemana);
-      const agendamentosSemana = await getAppointmentsByDateRange(
-        toISO(inicioSemana),
-        toISO(fimSemana)
-      );
+      const [agendamentosSemana, liberadosData] = await Promise.all([
+        getAppointmentsByDateRange(toISO(inicioSemana), toISO(fimSemana)),
+        getHorariosLiberadosNoIntervalo(toISO(inicioSemana), toISO(fimSemana)),
+      ]);
       setAppointments(agendamentosSemana || []);
+      setLiberados(new Set((liberadosData || []).map((l) => `${l.date}|${l.start_time}`)));
     } catch (e) {
       Alert.alert('Erro ao carregar agenda', mensagemDeErro(e));
     } finally {
@@ -238,6 +248,14 @@ export default function AgendaScreen({ navigation }) {
     });
   }
 
+  // "Apagar só este horário" (item 1, v16) marca essa data+horário como
+  // liberada — o horário recorrente segue valendo pras outras semanas, mas
+  // nessa data específica mostra livre e permite marcar outra coisa (ver
+  // MarcarHorarioAvulsoScreen), em vez de reabrir o horário recorrente.
+  function estaLiberado(dataISO, startTime) {
+    return liberados.has(`${dataISO}|${startTime}`);
+  }
+
   function abrirEdicaoHorario({ slot, dataISO, appointment }) {
     navigation.navigate('EditarHorario', {
       slotId: slot?.id || null,
@@ -258,6 +276,15 @@ export default function AgendaScreen({ navigation }) {
     const compromisso = buscarCompromissoDoSlot(dataISO, slot);
     if (compromisso) {
       navigation.navigate('DetalheCompromisso', { appointmentId: compromisso.id });
+      return;
+    }
+    if (estaLiberado(dataISO, slot.start_time)) {
+      navigation.navigate('MarcarHorarioAvulso', {
+        dataISO,
+        startTime: slot.start_time,
+        endTime: slot.end_time,
+        modality: slot.modality,
+      });
       return;
     }
     if (slot.patient_id || slot.tipo === 'outros' || ehTipoGrupo(slot.tipo)) {
@@ -316,7 +343,10 @@ export default function AgendaScreen({ navigation }) {
   function renderSlotBotao({ slot, dataISO, key }) {
     const compromisso = buscarCompromissoDoSlot(dataISO, slot);
     const tipo = compromisso?.tipo || slot.tipo || 'sessao_individual';
-    const ocupado = !!compromisso || !!slot.patient_id || tipo === 'outros' || ehTipoGrupo(tipo);
+    // Liberado (apagado pontualmente) e sem compromisso novo ainda criado
+    // nessa data: mostra livre mesmo com o horário recorrente ocupado.
+    const liberado = !compromisso && estaLiberado(dataISO, slot.start_time);
+    const ocupado = !liberado && (!!compromisso || !!slot.patient_id || tipo === 'outros' || ehTipoGrupo(tipo));
     const modality = compromisso?.modality || slot.modality;
     const horario = slot.start_time;
 
@@ -363,7 +393,8 @@ export default function AgendaScreen({ navigation }) {
   function renderSlotDiarioCard({ slot, dataISO, key }) {
     const compromisso = buscarCompromissoDoSlot(dataISO, slot);
     const tipo = compromisso?.tipo || slot.tipo || 'sessao_individual';
-    const ocupado = !!compromisso || !!slot.patient_id || tipo === 'outros' || ehTipoGrupo(tipo);
+    const liberado = !compromisso && estaLiberado(dataISO, slot.start_time);
+    const ocupado = !liberado && (!!compromisso || !!slot.patient_id || tipo === 'outros' || ehTipoGrupo(tipo));
     const modality = compromisso?.modality || slot.modality;
     const eventoIndividual = tipo === 'sessao_individual' || tipo === 'supervisao_individual';
 

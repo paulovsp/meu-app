@@ -15,11 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import CabecalhoTela from '../components/CabecalhoTela';
 import * as ImagePicker from 'expo-image-picker';
-import * as ImageManipulator from 'expo-image-manipulator';
 import { isSupported as ocrSuportado, extractTextFromImage } from 'expo-text-extractor';
-import {
-  RichText, Toolbar, useEditorBridge, useBridgeState, useKeyboard, TenTapStartKit, PlaceholderBridge,
-} from '@10play/tentap-editor';
 import {
   listarPacientes, addRecord, editRecord, getAppointmentByPatientAndDate,
 } from '../services/database';
@@ -55,54 +51,13 @@ const TIPO_CONTEXTO = {
   },
 };
 
-// ─── barra extra (cor, marca-texto, inserir imagem) ───────────────────────
-// A barra padrão do @10play/tentap-editor já cobre negrito/itálico/sublinhado/
-// tachado/títulos/listas/link, mas não expõe cor de texto, marca-texto nem
-// inserir imagem — mesmo esses módulos já estando carregados no editor
-// (TenTapStartKit inclui ColorBridge/HighlightBridge/ImageBridge). Em vez de
-// brigar com o sistema de ícones (Image, não vetor) da <Toolbar> da lib pra
-// adicionar esses botões nela, uma faixa própria fica encaixada logo acima —
-// mesma regra de exibição (só some do rodapé o teclado ou o editor perde o
-// foco), pra formar uma única barra de formatação maior.
-const CORES_TEXTO = ['#302C28', '#C0392B', '#B9770E', '#1F618D', '#1E8449', '#6C3483'];
-const CORES_MARCA = ['#FDE68A', '#BBF7D0', '#BFDBFE', '#FBCFE8', '#FED7AA'];
-
-function BarraFormatacaoExtra({ editor, visivel, onInserirImagem, desabilitado }) {
-  if (!visivel) return null;
-  return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      style={s.barraExtra}
-      contentContainerStyle={s.barraExtraConteudo}
-      keyboardShouldPersistTaps="always"
-    >
-      <Text style={s.barraExtraLabel}>Cor</Text>
-      {CORES_TEXTO.map((cor) => (
-        <TouchableOpacity key={cor} style={[s.swatch, { backgroundColor: cor }]} onPress={() => editor.setColor(cor)} />
-      ))}
-      <TouchableOpacity style={s.swatchLimpar} onPress={() => editor.unsetColor()}>
-        <Ionicons name="close" size={13} color="#8C857B" />
-      </TouchableOpacity>
-
-      <View style={s.barraExtraDivisor} />
-
-      <Text style={s.barraExtraLabel}>Marca-texto</Text>
-      {CORES_MARCA.map((cor) => (
-        <TouchableOpacity key={cor} style={[s.swatch, { backgroundColor: cor }]} onPress={() => editor.toggleHighlight(cor)} />
-      ))}
-      <TouchableOpacity style={s.swatchLimpar} onPress={() => editor.unsetHighlight()}>
-        <Ionicons name="close" size={13} color="#8C857B" />
-      </TouchableOpacity>
-
-      <View style={s.barraExtraDivisor} />
-
-      <TouchableOpacity style={s.swatchAcao} onPress={onInserirImagem} disabled={desabilitado}>
-        <Ionicons name="image-outline" size={18} color={desabilitado ? '#C4BEB4' : '#497363'} />
-      </TouchableOpacity>
-    </ScrollView>
-  );
-}
+// ─── caixa de texto simples, sem nenhuma formatação — cresce até um teto
+// (3x a altura inicial) acompanhando o texto digitado; a partir daí, quem
+// rola pra ver o resto é a barra de scroll interna da própria caixa, não a
+// tela toda crescendo sem limite (era isso que empurrava o botão Salvar pra
+// muito longe num registro grande). ───
+const ALTURA_BASE_EDITOR = 150;
+const ALTURA_MAX_EDITOR = ALTURA_BASE_EDITOR * 3;
 
 function formatarDataDigitada(texto, setter) {
   const numeros = texto.replace(/\D/g, '').slice(0, 8);
@@ -140,13 +95,46 @@ function gerarIntroducao(tipoValor, pacienteNome, data) {
 
 // Todo registro salvo por esta tela começa com a introdução automática
 // acima seguida de uma linha em branco — ao abrir pra editar, isso é
-// removido do editor (é regerado do zero ao salvar, com o tipo/nome atuais
-// na hora), senão o texto apareceria duplicado/desatualizado pra quem edita.
+// removido (é regerado do zero ao salvar, com o tipo/nome atuais na hora),
+// senão o texto apareceria duplicado/desatualizado pra quem edita.
 function removerIntroducaoAutomatica(conteudoCompleto) {
   const texto = conteudoCompleto || '';
   if (!texto.startsWith('Registro do tipo ')) return texto;
   const idx = texto.indexOf('\n\n');
   return idx !== -1 ? texto.slice(idx + 2) : texto;
+}
+
+function escaparHtml(texto) {
+  return texto
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+// Converte o texto puro digitado nesta caixa pra um HTML seguro (escapado,
+// sem risco de injetar marcação) — é o formato que DetalheRegistroScreen.js
+// já sabe exibir (WebView com `white-space: pre-wrap`, mas o <br> explícito
+// garante a quebra de linha independente disso).
+function textoParaHtmlSeguro(texto) {
+  return escaparHtml(texto || '').split('\n').join('<br>');
+}
+
+// Caminho inverso, usado só ao ABRIR um registro existente pra editar —
+// registros antigos (de antes desta simplificação) podem ter HTML de
+// verdade (negrito, cor, imagem embutida); aqui tudo isso é reduzido a
+// texto puro (a formatação antiga se perde, mas o texto em si é preservado).
+function htmlParaTextoPlano(html) {
+  if (!html) return '';
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .trim();
 }
 
 // ─── componente principal ──────────────────────────────────────────────────
@@ -193,36 +181,10 @@ export default function NovoRegistroScreen() {
   const [salvando, setSalvando] = useState(false);
   const [processando, setProcessando] = useState('');
 
-  // ─── editor de texto rico (item 1, v13 — troca do react-native-pell-
-  // rich-editor, cuja formatação não aplicava de forma confiável na seleção
-  // real do texto, pelo @10play/tentap-editor, baseado em TipTap/ProseMirror
-  // — o mesmo motor por trás do Notion/Google Docs mobile). initialContent
-  // só é lido uma vez, no mount — igual ao comportamento anterior.
-  // `dynamicHeight: true` é essencial: o WebView do RichText tem o scroll
-  // nativo travado de propósito pela própria lib (ela não rola por dentro) —
-  // sem isso, texto que passasse da altura da caixa ficava simplesmente
-  // inacessível, sem nenhum jeito de rolar até ele (era exatamente o "não dava
-  // pra rolar pra ver o texto inteiro" reportado). Com dynamicHeight, a caixa
-  // CRESCE para caber o documento inteiro, e quem rola é o ScrollView da tela
-  // toda — igual rolar uma página comprida, não uma caixinha por dentro. ───
-  const editor = useEditorBridge({
-    // Placeholder em português — o padrão da lib ("Write something...") é
-    // em inglês; PlaceholderBridge depois de TenTapStartKit vence o de mesmo
-    // nome (uniqueBy da lib é "last wins"), sem precisar clonar a lista.
-    bridgeExtensions: [
-      ...TenTapStartKit,
-      PlaceholderBridge.configureExtension({ placeholder: 'Escreva aqui o conteúdo do registro...' }),
-    ],
-    initialContent: removerIntroducaoAutomatica(registroExistente?.content) || '',
-    avoidIosKeyboard: true,
-    dynamicHeight: true,
-  });
-  // Mesma regra de exibição da <Toolbar> da lib (ver Toolbar.tsx) — a barra
-  // extra (cor/marca-texto/imagem) só aparece junto com ela, formando uma
-  // única faixa de formatação no rodapé.
-  const editorState = useBridgeState(editor);
-  const { isKeyboardUp } = useKeyboard();
-  const barraExtraVisivel = isKeyboardUp && editorState.isFocused;
+  const [conteudo, setConteudo] = useState(
+    () => htmlParaTextoPlano(removerIntroducaoAutomatica(registroExistente?.content))
+  );
+  const [alturaEditor, setAlturaEditor] = useState(ALTURA_BASE_EDITOR);
 
   useEffect(() => {
     async function carregar() {
@@ -239,29 +201,16 @@ export default function NovoRegistroScreen() {
     carregar();
   }, []);
 
-  function escaparHtml(texto) {
-    return texto
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-  }
-
   // ─── importar texto de imagem — OCR no próprio aparelho (Google ML Kit
   // no Android, Apple Vision no iOS via expo-text-extractor), sem enviar a
   // imagem pra lugar nenhum: sem custo, sem provedor, funciona offline. ───
-  // Acrescenta ao final do conteúdo já escrito (o bridge do tentap não expõe
-  // "inserir na posição do cursor" publicamente) — precisa escapar e
-  // converter quebras de linha em <br>, senão o texto reconhecido vira uma
-  // linha só dentro do editor.
   async function anexarTexto(linhas) {
     const texto = (linhas || []).join('\n').trim();
     if (!texto) {
       Alert.alert('Sem texto', 'Não encontrei texto útil nessa imagem.');
       return;
     }
-    const html = escaparHtml(texto).split('\n').join('<br>');
-    const atual = (await editor.getHTML()) || '';
-    editor.setContent(`${atual}<p>${html}</p>`);
+    setConteudo((atual) => (atual ? `${atual}\n\n${texto}` : texto));
   }
 
   async function processarImagem(uri) {
@@ -321,71 +270,6 @@ export default function NovoRegistroScreen() {
     }
   }
 
-  // ─── inserir a imagem em si no texto (diferente do "importar texto via
-  // imagem" acima, que só lê e extrai o texto por OCR) — vai pro editor via
-  // editor.setImage(), que espera uma URL ou um data URI em base64 (a lib já
-  // carrega o ImageBridge com allowBase64). Redimensiona só se a foto for
-  // maior que 1000px de largura, pra não inflar à toa o HTML salvo. ───
-  async function inserirImagemNoEditor(uri, larguraOriginal) {
-    try {
-      setProcessando('Inserindo imagem...');
-      const acoes = larguraOriginal && larguraOriginal > 1000 ? [{ resize: { width: 1000 } }] : [];
-      const resultado = await ImageManipulator.manipulateAsync(
-        uri, acoes, { format: ImageManipulator.SaveFormat.JPEG, base64: true, compress: 0.7 }
-      );
-      editor.setImage(`data:image/jpeg;base64,${resultado.base64}`);
-    } catch (err) {
-      console.error('[inserirImagemNoEditor]', err);
-      Alert.alert('Erro ao inserir imagem', err?.message || 'Falha ao inserir imagem.');
-    } finally {
-      setProcessando('');
-    }
-  }
-
-  async function tirarFotoInserir() {
-    try {
-      const perm = await ImagePicker.requestCameraPermissionsAsync();
-      if (perm.status !== 'granted') {
-        Alert.alert('Permissão negada', 'Precisamos de acesso à câmera.');
-        return;
-      }
-      const result = await ImagePicker.launchCameraAsync({ mediaTypes: MEDIA_IMAGES, quality: 1, allowsEditing: false });
-      if (result.canceled) return;
-      const asset = result.assets?.[0];
-      if (!asset?.uri) throw new Error('URI da foto não encontrado.');
-      await inserirImagemNoEditor(asset.uri, asset.width);
-    } catch (err) {
-      console.error('[tirarFotoInserir]', err);
-      Alert.alert('Erro na câmera', err?.message || 'Não foi possível tirar foto.');
-    }
-  }
-
-  async function selecionarDaGaleriaInserir() {
-    try {
-      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (perm.status !== 'granted') {
-        Alert.alert('Permissão negada', 'Precisamos de acesso à galeria.');
-        return;
-      }
-      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: MEDIA_IMAGES, quality: 1, allowsEditing: false });
-      if (result.canceled) return;
-      const asset = result.assets?.[0];
-      if (!asset?.uri) throw new Error('URI da imagem não encontrado.');
-      await inserirImagemNoEditor(asset.uri, asset.width);
-    } catch (err) {
-      console.error('[selecionarDaGaleriaInserir]', err);
-      Alert.alert('Erro na galeria', err?.message || 'Não foi possível abrir galeria.');
-    }
-  }
-
-  function abrirInserirImagem() {
-    Alert.alert('Inserir imagem', 'Escolha a origem da imagem.', [
-      { text: 'Cancelar', style: 'cancel' },
-      { text: 'Câmera', onPress: tirarFotoInserir },
-      { text: 'Galeria', onPress: selecionarDaGaleriaInserir },
-    ]);
-  }
-
   async function salvar() {
     if (!paciente) {
       Alert.alert('Selecione um analisante', 'Escolha um analisante antes de salvar.');
@@ -402,12 +286,8 @@ export default function NovoRegistroScreen() {
       Alert.alert('Data da sessão obrigatória', 'Informe a data da sessão no formato DD/MM/AAAA.');
       return;
     }
-    // Lê o HTML direto do editor no momento de salvar (não guarda em state a
-    // cada digitação) — evita qualquer risco de salvar uma versão
-    // desatualizada por causa de uma atualização de state ainda em trânsito.
-    const conteudoHtml = (await editor.getHTML()) || '';
-    const textoSemFormatacao = conteudoHtml.replace(/<[^>]*>/g, '').trim();
-    if (!textoSemFormatacao) {
+    const textoDigitado = conteudo.trim();
+    if (!textoDigitado) {
       Alert.alert('Conteúdo vazio', 'Escreva algo antes de salvar.');
       return;
     }
@@ -439,7 +319,7 @@ export default function NovoRegistroScreen() {
         ? new Date(`${dataRegistroISO}T12:00:00`)
         : (editando && registroExistente.date ? new Date(registroExistente.date) : new Date());
       const introducao = gerarIntroducao(tipo, paciente.nome, dataIntroducao);
-      const conteudoFinal = `${introducao}\n\n${conteudoHtml.trim()}`;
+      const conteudoFinal = `${introducao}\n\n${textoParaHtmlSeguro(textoDigitado)}`;
       if (editando) {
         await editRecord(registroExistente.id, {
           type: 'text',
@@ -588,25 +468,22 @@ export default function NovoRegistroScreen() {
 
         <View style={s.fieldGroup}>
           <Text style={s.label}>Conteúdo</Text>
-          <View style={s.editorHintBox}>
-            <Text style={s.editorHintText}>
-              Escreva livremente abaixo. Toque no texto pra abrir a barra de
-              formatação no rodapé da tela — selecione um trecho e toque num
-              botão (negrito, itálico, sublinhado, tachado, títulos, listas,
-              link, cor, marca-texto ou inserir imagem) pra aplicar só
-              naquele trecho.
-            </Text>
-          </View>
-
-          {/* ─── editor rico de verdade (TipTap/ProseMirror via WebView) ───
-              Bold/itálico/etc. aplicam na seleção real do editor, não
-              dependem do estado de seleção instável do TextInput do RN — é o
-              que fazia negrito "não funcionar" no editor antigo. A caixa
-              cresce com dynamicHeight (ver comentário no useEditorBridge) —
-              quem rola pra ver o documento inteiro é este ScrollView. */}
-          <View style={s.editorBox}>
-            <RichText editor={editor} style={s.editorInput} />
-          </View>
+          {/* Caixa de texto simples — cresce até 3x a altura inicial
+              acompanhando o texto; passado isso, rola por dentro dela
+              mesma (scroll nativo do TextInput multiline). */}
+          <TextInput
+            style={[s.editorInput, { height: alturaEditor }]}
+            multiline
+            textAlignVertical="top"
+            placeholder="Escreva aqui o conteúdo do registro..."
+            placeholderTextColor="#A9A299"
+            value={conteudo}
+            onChangeText={setConteudo}
+            onContentSizeChange={(e) => {
+              const alturaConteudo = e.nativeEvent.contentSize.height;
+              setAlturaEditor(Math.min(Math.max(alturaConteudo, ALTURA_BASE_EDITOR), ALTURA_MAX_EDITOR));
+            }}
+          />
         </View>
 
         <TouchableOpacity style={s.saveBtn} onPress={salvar} disabled={salvando}>
@@ -619,20 +496,6 @@ export default function NovoRegistroScreen() {
 
         <View style={{ height: 60 }} />
       </ScrollView>
-
-      {/* ─── barra de formatação, fora do ScrollView, presa ao rodapé ───
-          A própria lib só a mostra quando o teclado está aberto e o editor
-          está focado (ver Toolbar.tsx) — ficando fora do scroll, continua
-          alcançável mesmo depois de rolar bem para baixo num documento longo.
-          A barra extra (cor/marca-texto/imagem) fica acima dela, formando
-          uma faixa só, com a mesma regra de exibição. */}
-      <BarraFormatacaoExtra
-        editor={editor}
-        visivel={barraExtraVisivel}
-        onInserirImagem={abrirInserirImagem}
-        desabilitado={!!processando}
-      />
-      <Toolbar editor={editor} />
     </SafeAreaView>
   );
 }
@@ -727,62 +590,19 @@ const s = StyleSheet.create({
     padding: 14,
   },
   processandoText: { fontSize: 14, color: '#497363', lineHeight: 20 },
-  editorHintBox: {
-    backgroundColor: '#E4EFE9',
-    borderRadius: 8,
-    padding: 10,
-    borderLeftWidth: 3,
-    borderLeftColor: '#497363',
-    marginBottom: 4,
-  },
-  editorHintText: { fontSize: 12, color: '#497363', lineHeight: 17 },
 
-  // `editorBox` cresce naturalmente pra caber o conteúdo (dynamicHeight,
-  // ver comentário no useEditorBridge) — sem altura fixa, senão documentos
-  // maiores que a caixa ficariam sem nenhum jeito de rolar até o final.
-  editorBox: {
+  // Cresce com `alturaEditor` (state, ver onContentSizeChange) até no
+  // máximo ALTURA_MAX_EDITOR — passado isso, o próprio TextInput rola por
+  // dentro (comportamento nativo de multiline com altura fixa).
+  editorInput: {
     backgroundColor: '#FDFCFA',
     borderWidth: 1,
     borderColor: '#EAE5DC',
     borderRadius: 12,
-    overflow: 'hidden',
-    minHeight: 300,
-    marginTop: 4,
-  },
-  editorInput: {
-    flex: 1,
-  },
-
-  barraExtra: {
-    backgroundColor: '#FDFCFA',
-    borderTopWidth: 1,
-    borderTopColor: '#EAE5DC',
-    maxHeight: 44,
-  },
-  barraExtraConteudo: {
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    gap: 6,
-  },
-  barraExtraLabel: {
-    fontSize: 11, fontWeight: '600', color: '#8C857B',
-    textTransform: 'uppercase', letterSpacing: 0.3, marginRight: 2,
-  },
-  swatch: {
-    width: 24, height: 24, borderRadius: 12,
-    borderWidth: 1, borderColor: '#EAE5DC',
-  },
-  swatchLimpar: {
-    width: 24, height: 24, borderRadius: 12,
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: '#EAE5DC', backgroundColor: '#F7F5F0',
-  },
-  swatchAcao: {
-    width: 30, height: 30, borderRadius: 15,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  barraExtraDivisor: {
-    width: 1, height: 22, backgroundColor: '#EAE5DC', marginHorizontal: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 16,
+    color: '#302C28',
   },
 
   patientCard: {

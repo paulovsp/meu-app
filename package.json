@@ -10,7 +10,6 @@
     "test": "jest"
   },
   "dependencies": {
-    "@10play/tentap-editor": "^1.0.1",
     "@expo/vector-icons": "^15.1.1",
     "@notifee/react-native": "^9.1.8",
     "@react-native-async-storage/async-storage": "2.2.0",

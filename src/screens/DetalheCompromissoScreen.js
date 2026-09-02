@@ -90,31 +90,15 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
   const estadoInfo = ESTADO_LABEL[estado];
   const podeAgir = compromisso.status === 'agendado';
 
-  // Item 4 (v13): appointments já guarda start_time/end_time próprios,
-  // independentes do horário recorrente — "só este dia" é uma edição
-  // pontual dessa linha, sem tocar em availability_slots.
-  function editarHorario() {
-    const dataFormatada = compromisso.date.split('-').reverse().join('/');
-    Alert.alert(
-      'Editar horário',
-      'Editar só este horário, ou este e todos os futuros?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: `Só este (${dataFormatada})`,
-          onPress: () => navigation.navigate('EditarHorarioUnico', {
-            appointmentId: compromisso.id,
-            date: compromisso.date,
-            startTime: compromisso.start_time,
-            endTime: compromisso.end_time,
-          }),
-        },
-        { text: 'Este e todos os futuros', onPress: editarHorarioRecorrente },
-      ]
-    );
-  }
-
-  async function editarHorarioRecorrente() {
+  // "Editar informações do horário" abre a tela COMPLETA (tipo de evento,
+  // modalidade, paciente, recorrência) — pré-preenchida a partir do
+  // horário recorrente por trás deste compromisso, se houver um (edita a
+  // recorrência, valendo pros próximos também), ou a partir do próprio
+  // compromisso, se for avulso (sem horário recorrente, ex: marcado via
+  // "horário liberado" — nesse caso não existe slot pra pré-preencher, e
+  // sem mandar essas informações a tela abriria em branco mesmo já tendo
+  // paciente/tipo/modalidade definidos).
+  async function editarInformacoesDoHorario() {
     const [ano, mes, dia] = compromisso.date.split('-').map(Number);
     const dayOfWeek = new Date(ano, mes - 1, dia).getDay();
     try {
@@ -125,10 +109,29 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
         startTime: compromisso.start_time,
         endTime: compromisso.end_time,
         dayOfWeek,
+        tipo,
+        modality: compromisso.modality,
+        titulo: compromisso.titulo || null,
+        patientId: compromisso.patient_id || null,
+        patientNome: compromisso.patient_nome || null,
+        participantesIds: (compromisso.participantes || []).map((p) => p.id),
       });
     } catch (e) {
       Alert.alert('Erro', mensagemDeErro(e));
     }
+  }
+
+  // Item 4 (v13): appointments já guarda start_time/end_time próprios,
+  // independentes do horário recorrente — muda só a hora DESTE compromisso
+  // específico, sem tocar em availability_slots nem nas outras informações
+  // (paciente, tipo, modalidade continuam iguais).
+  function editarSoAHoraDeHoje() {
+    navigation.navigate('EditarHorarioUnico', {
+      appointmentId: compromisso.id,
+      date: compromisso.date,
+      startTime: compromisso.start_time,
+      endTime: compromisso.end_time,
+    });
   }
 
   async function iniciarSessao() {
@@ -470,8 +473,12 @@ Nenhum relato ou transcrição foi adicionado para esta sessão ainda.
         </View>
       )}
 
-      <TouchableOpacity style={styles.btnEditarHorario} onPress={editarHorario}>
+      <TouchableOpacity style={styles.btnEditarHorario} onPress={editarInformacoesDoHorario}>
         <Text style={styles.btnEditarHorarioTxt}>Editar informações do horário</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.btnEditarSoHora} onPress={editarSoAHoraDeHoje}>
+        <Text style={styles.btnEditarSoHoraTxt}>Editar só o horário de hoje</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -546,6 +553,11 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: '#497363',
   },
   btnEditarHorarioTxt: { color: '#497363', fontWeight: '500' },
+  // Ação secundária, deliberadamente mais discreta que o botão principal
+  // acima — edita só a hora de hoje, sem tocar em nenhuma outra
+  // informação do compromisso (ver editarSoAHoraDeHoje).
+  btnEditarSoHora: { alignItems: 'center', paddingVertical: 10, marginBottom: 10 },
+  btnEditarSoHoraTxt: { color: '#8C857B', fontSize: 12.5, textDecorationLine: 'underline', lineHeight: 18 },
   btnApagar: {
     backgroundColor: '#F1E4E3', padding: 14, borderRadius: 10, alignItems: 'center',
     marginBottom: 10, borderWidth: 1, borderColor: '#975451',

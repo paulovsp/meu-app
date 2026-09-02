@@ -19,6 +19,7 @@ import { mensagemDeErro } from '../services/erros';
 import { dataBRParaISO, dataISOParaBR } from '../services/validacao';
 import TelefoneInput from '../components/TelefoneInput';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
+import { mascararHorario, normalizarHorario, horarioValido, terminoPadrao } from '../services/horarios';
 
 const DIAS_SEMANA = [
   { valor: 1, label: 'Seg' },
@@ -113,6 +114,9 @@ export default function FormularioAnalisanteScreen() {
               recorrencia_tipo: s.recorrencia_tipo === 'avulso' ? 'semanal' : (s.recorrencia_tipo || 'semanal'),
               recorrencia_data_referencia: dataISOParaBR(s.recorrencia_data_referencia),
               recorrencia_semanas_ativas: s.recorrencia_semanas_ativas?.length ? s.recorrencia_semanas_ativas : SEMANAS_CICLO,
+              // Horário que já existe já tem término escolhido — editar o
+              // início não pode sobrescrever isso com o padrão de 50min.
+              terminoManual: true,
             })));
             return;
           }
@@ -124,6 +128,7 @@ export default function FormularioAnalisanteScreen() {
       setHorarios([{
         id: Date.now(), day_of_week: 1, start_time: '', end_time: '', modality: 'presencial',
         recorrencia_tipo: 'semanal', recorrencia_data_referencia: '', recorrencia_semanas_ativas: SEMANAS_CICLO,
+        terminoManual: false,
       }]);
     }
     carregarHorarios();
@@ -167,6 +172,7 @@ export default function FormularioAnalisanteScreen() {
     setHorarios(prev => [...prev, {
       id: Date.now(), day_of_week: 1, start_time: '', end_time: '', modality: 'presencial',
       recorrencia_tipo: 'semanal', recorrencia_data_referencia: '', recorrencia_semanas_ativas: SEMANAS_CICLO,
+      terminoManual: false,
     }]);
   }
 
@@ -178,13 +184,48 @@ export default function FormularioAnalisanteScreen() {
     setHorarios(prev => prev.map(h => h.id === id ? { ...h, [campo]: valor } : h));
   }
 
-  function formatarHora(texto, id, campo) {
-    const numeros = texto.replace(/\D/g, '').slice(0, 4);
-    let formatado = numeros;
-    if (numeros.length > 2) {
-      formatado = `${numeros.slice(0, 2)}:${numeros.slice(2)}`;
-    }
-    atualizarHorario(id, campo, formatado);
+  // Digitação livre do horário (ver src/services/horarios.js — "845" vira
+  // "8:45" enquanto digita, "08:45" ao sair do campo). O término deste
+  // horário se preenche sozinho (início + 50min) enquanto não tiver sido
+  // mexido à mão nesta linha específica.
+  function digitarInicioHorario(texto, id) {
+    const mascarado = mascararHorario(texto);
+    setHorarios(prev => prev.map(h => {
+      if (h.id !== id) return h;
+      const atualizado = { ...h, start_time: mascarado };
+      if (!h.terminoManual) {
+        const sugerido = terminoPadrao(mascarado);
+        if (sugerido) atualizado.end_time = sugerido;
+      }
+      return atualizado;
+    }));
+  }
+
+  function digitarFimHorario(texto, id) {
+    const mascarado = mascararHorario(texto);
+    setHorarios(prev => prev.map(h => (h.id === id ? { ...h, end_time: mascarado, terminoManual: true } : h)));
+  }
+
+  function normalizarInicioHorario(id) {
+    setHorarios(prev => prev.map(h => {
+      if (h.id !== id) return h;
+      const normalizado = normalizarHorario(h.start_time);
+      if (!normalizado) return h;
+      const atualizado = { ...h, start_time: normalizado };
+      if (!h.terminoManual) {
+        const sugerido = terminoPadrao(normalizado);
+        if (sugerido) atualizado.end_time = sugerido;
+      }
+      return atualizado;
+    }));
+  }
+
+  function normalizarFimHorario(id) {
+    setHorarios(prev => prev.map(h => {
+      if (h.id !== id) return h;
+      const normalizado = normalizarHorario(h.end_time);
+      return normalizado ? { ...h, end_time: normalizado } : h;
+    }));
   }
 
   function formatarDataHorario(texto, id, campo) {
@@ -254,14 +295,27 @@ export default function FormularioAnalisanteScreen() {
       .join(', ');
   }
 
-  function validarHorarios() {
-    for (const h of horarios) {
-      if (h.start_time && h.start_time.length !== 5) {
-        Alert.alert('Horário inválido', 'Preencha o horário no formato HH:MM (ex: 14:00).');
+  // Normaliza start_time/end_time de toda a lista de uma vez só, no
+  // momento de salvar — cobre o caso de a pessoa tocar em "Salvar" sem
+  // sair do campo (onBlur não chegou a disparar). Daqui em diante,
+  // validação/resumo/sincronização usam sempre esta lista normalizada,
+  // nunca o `horarios` do state direto.
+  function normalizarListaHorarios(lista) {
+    return lista.map(h => ({
+      ...h,
+      start_time: normalizarHorario(h.start_time) || h.start_time,
+      end_time: normalizarHorario(h.end_time) || h.end_time,
+    }));
+  }
+
+  function validarHorarios(lista) {
+    for (const h of lista) {
+      if (h.start_time && !horarioValido(h.start_time)) {
+        Alert.alert('Horário inválido', 'Preencha o horário no formato HH:MM (ex: 14:00, ou só 1400).');
         return false;
       }
-      if (h.end_time && h.end_time.length !== 5) {
-        Alert.alert('Horário inválido', 'Preencha o horário final no formato HH:MM (ex: 15:00).');
+      if (h.end_time && !horarioValido(h.end_time)) {
+        Alert.alert('Horário inválido', 'Preencha o horário final no formato HH:MM (ex: 15:00, ou só 1500).');
         return false;
       }
       if (!h.start_time || h.start_time.length !== 5) continue;
@@ -278,17 +332,17 @@ export default function FormularioAnalisanteScreen() {
     return true;
   }
 
-  async function sincronizarAgenda(patientId) {
+  async function sincronizarAgenda(patientId, listaNormalizada) {
     // Remove todos os slots antigos deste paciente e recria com os atuais
     await deleteAvailabilitySlotsByPatient(patientId);
-    const validos = horarios.filter(h => h.start_time && h.start_time.length === 5);
+    const validos = listaNormalizada.filter(h => h.start_time && h.start_time.length === 5);
     const conflitos = [];
 
     for (const h of validos) {
       const inicio = h.start_time;
-      const fim = h.end_time && h.end_time.length === 5
+      const fim = (h.end_time && h.end_time.length === 5)
         ? h.end_time
-        : somarUmaHora(inicio);
+        : terminoPadrao(inicio);
 
       // Verifica sobreposição: se houver horário OCUPADO com modalidade
       // compatível, pula este horário e avisa. Se houver apenas horários
@@ -340,26 +394,19 @@ export default function FormularioAnalisanteScreen() {
     }
   }
 
-  function somarUmaHora(hora) {
-    const [hh, mm] = hora.split(':').map(Number);
-    const total = (hh * 60 + mm + 60) % (24 * 60);
-    const novaHH = String(Math.floor(total / 60)).padStart(2, '0');
-    const novaMM = String(total % 60).padStart(2, '0');
-    return `${novaHH}:${novaMM}`;
-  }
-
   async function salvar() {
     if (!nome.trim()) {
       Alert.alert('Campo obrigatório', 'Por favor, informe o nome do analisante.');
       return;
     }
-    if (!validarHorarios()) return;
+    const horariosNormalizados = normalizarListaHorarios(horarios);
+    if (!validarHorarios(horariosNormalizados)) return;
     if (tipoCobranca === 'mensal_fixo' && !(Number(valorMensalFixo.replace(',', '.')) > 0)) {
       Alert.alert('Campo obrigatório', 'Informe o valor mensal fixo.');
       return;
     }
 
-    const resumoHorario = gerarResumoHorarios(horarios);
+    const resumoHorario = gerarResumoHorarios(horariosNormalizados);
     const diaPagamentoNum = Number(diaPagamento) > 0 ? Number(diaPagamento) : null;
     const nascimentoISO = dataBRParaISO(nascimento);
     const dataInicioISO = dataBRParaISO(dataInicio);
@@ -424,7 +471,7 @@ export default function FormularioAnalisanteScreen() {
         }
       }
 
-      await sincronizarAgenda(patientId);
+      await sincronizarAgenda(patientId, horariosNormalizados);
 
       navigation.goBack();
     } catch (e) {
@@ -488,10 +535,11 @@ export default function FormularioAnalisanteScreen() {
             <Text style={styles.subLabel}>Início</Text>
             <TextInput
               style={styles.input}
-              placeholder="14:00"
+              placeholder="1400"
               placeholderTextColor="#A9A299"
               value={item.start_time}
-              onChangeText={(t) => formatarHora(t, item.id, 'start_time')}
+              onChangeText={(t) => digitarInicioHorario(t, item.id)}
+              onBlur={() => normalizarInicioHorario(item.id)}
               keyboardType="numeric"
               maxLength={5}
             />
@@ -500,10 +548,11 @@ export default function FormularioAnalisanteScreen() {
             <Text style={styles.subLabel}>Fim (opcional)</Text>
             <TextInput
               style={styles.input}
-              placeholder="15:00"
+              placeholder="1450"
               placeholderTextColor="#A9A299"
               value={item.end_time}
-              onChangeText={(t) => formatarHora(t, item.id, 'end_time')}
+              onChangeText={(t) => digitarFimHorario(t, item.id)}
+              onBlur={() => normalizarFimHorario(item.id)}
               keyboardType="numeric"
               maxLength={5}
             />

@@ -217,6 +217,19 @@ export default function DisponibilidadeScreen() {
         const sugerido = terminoPadrao(params.startTime);
         if (sugerido) setHorarioFim(sugerido);
       }
+
+      // Sem slotId (veio de um compromisso avulso — sem horário recorrente
+      // por trás, ex: marcado num "horário liberado") — usa a informação do
+      // próprio compromisso pra pré-preencher, senão a tela abriria em
+      // branco mesmo já tendo tipo/modalidade/paciente definidos.
+      if (params.tipo) setTipoEvento(params.tipo);
+      if (params.modality) setModalidade(params.modality);
+      if (params.titulo) setTitulo(params.titulo);
+      if (params.patientId) {
+        setAnalisanteId(params.patientId);
+        setAnalisanteNome(params.patientNome || '');
+      }
+      if (params.participantesIds?.length) setParticipantesIds(params.participantesIds);
     }
   }
 

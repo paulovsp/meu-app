@@ -254,68 +254,79 @@ export default function InicioScreen({ navigation }) {
   // ser perguntados.
   const processandoCheckinRef = useRef(false);
 
+  // Devolve uma Promise que só resolve quando a fila inteira de check-in
+  // termina (fila vazia, fechada, ou a pessoa navegou pra escrever/gravar
+  // o relato) — é o que permite quem chama (perguntarCheckinsPendentes)
+  // esperar esse popup terminar antes de mostrar o próximo, em vez de
+  // disparar os dois populars ao mesmo tempo (Alert.alert é um modal
+  // nativo único: um segundo Alert enquanto o primeiro ainda está na tela
+  // substitui o de baixo, que nunca mais volta a aparecer).
   function processarFilaCheckin(fila, indice) {
-    if (indice >= fila.length) {
-      processandoCheckinRef.current = false;
-      return;
-    }
-    const compromisso = fila[indice];
-    const tipo = compromisso.tipo || 'sessao_individual';
-    const eventoIndividual = tipo === 'sessao_individual' || tipo === 'supervisao_individual';
-    let navegouPraRelato = false;
+    return new Promise((resolveFila) => {
+      if (indice >= fila.length) {
+        processandoCheckinRef.current = false;
+        resolveFila();
+        return;
+      }
+      const compromisso = fila[indice];
+      const tipo = compromisso.tipo || 'sessao_individual';
+      const eventoIndividual = tipo === 'sessao_individual' || tipo === 'supervisao_individual';
+      let navegouPraRelato = false;
 
-    perguntarCheckin(compromisso, {
-      // Só oferece "adicionar relato" pra sessão/supervisão individual —
-      // grupo, evento livre etc. não têm um prontuário único pra gravar.
-      // Duas formas de relato contam igualmente (ver estaSemRelato em
-      // database.js): gravar áudio (transcrito depois) ou escrever
-      // diretamente em Novo Registro, com a data da sessão já preenchida.
-      aoRealizada: eventoIndividual
-        ? () => new Promise((resolve) => {
-            Alert.alert(
-              'Adicionar relato?',
-              `Quer adicionar o relato de ${compromisso.patient_nome} agora?`,
-              [
-                { text: 'Depois', onPress: () => resolve() },
-                {
-                  text: 'Escrever registro',
-                  onPress: () => {
-                    navegouPraRelato = true;
-                    navigation.navigate('AddRecord', {
-                      patientId: compromisso.patient_id,
-                      appointmentId: compromisso.id,
-                      dataSessao: compromisso.date,
-                    });
-                    resolve();
+      perguntarCheckin(compromisso, {
+        // Só oferece "adicionar relato" pra sessão/supervisão individual —
+        // grupo, evento livre etc. não têm um prontuário único pra gravar.
+        // Duas formas de relato contam igualmente (ver estaSemRelato em
+        // database.js): gravar áudio (transcrito depois) ou escrever
+        // diretamente em Novo Registro, com a data da sessão já preenchida.
+        aoRealizada: eventoIndividual
+          ? () => new Promise((resolve) => {
+              Alert.alert(
+                'Adicionar relato?',
+                `Quer adicionar o relato de ${compromisso.patient_nome} agora?`,
+                [
+                  { text: 'Depois', onPress: () => resolve() },
+                  {
+                    text: 'Escrever registro',
+                    onPress: () => {
+                      navegouPraRelato = true;
+                      navigation.navigate('AddRecord', {
+                        patientId: compromisso.patient_id,
+                        appointmentId: compromisso.id,
+                        dataSessao: compromisso.date,
+                      });
+                      resolve();
+                    },
                   },
-                },
-                {
-                  text: 'Gravar áudio',
-                  onPress: () => {
-                    navegouPraRelato = true;
-                    navigation.navigate('NewSession', {
-                      patientId: compromisso.patient_id,
-                      patientNome: compromisso.patient_nome,
-                      platform: compromisso.modality,
-                      appointmentId: compromisso.id,
-                    });
-                    resolve();
+                  {
+                    text: 'Gravar áudio',
+                    onPress: () => {
+                      navegouPraRelato = true;
+                      navigation.navigate('NewSession', {
+                        patientId: compromisso.patient_id,
+                        patientNome: compromisso.patient_nome,
+                        platform: compromisso.modality,
+                        appointmentId: compromisso.id,
+                      });
+                      resolve();
+                    },
                   },
-                },
-              ]
-            );
-          })
-        : undefined,
-      // Ao navegar pra gravar/escrever, não insiste no resto da fila em
-      // cima da tela nova — o resto continua 'agendado' e volta a ser
-      // perguntado na próxima vez que a Início ganhar foco.
-      aoConcluir: (info) => {
-        if (navegouPraRelato || info?.fechado) {
-          processandoCheckinRef.current = false;
-          return;
-        }
-        processarFilaCheckin(fila, indice + 1);
-      },
+                ]
+              );
+            })
+          : undefined,
+        // Ao navegar pra gravar/escrever, não insiste no resto da fila em
+        // cima da tela nova — o resto continua 'agendado' e volta a ser
+        // perguntado na próxima vez que a Início ganhar foco.
+        aoConcluir: (info) => {
+          if (navegouPraRelato || info?.fechado) {
+            processandoCheckinRef.current = false;
+            resolveFila();
+            return;
+          }
+          processarFilaCheckin(fila, indice + 1).then(resolveFila);
+        },
+      });
     });
   }
 
@@ -326,7 +337,7 @@ export default function InicioScreen({ navigation }) {
       const pendentes = candidatos.filter((c) => horarioJaPassou(c.date, c.end_time));
       if (pendentes.length === 0) return;
       processandoCheckinRef.current = true;
-      processarFilaCheckin(pendentes, 0);
+      await processarFilaCheckin(pendentes, 0);
     } catch (e) {
       console.error('Falha ao verificar compromissos pendentes de check-in:', e?.message || e);
     }
@@ -367,8 +378,15 @@ export default function InicioScreen({ navigation }) {
       })();
       processarEnviosFiscaisAutomaticos().catch((e) => console.error('Falha no catch-up fiscal automático:', e?.message || e));
       verificarEEnviarAlertaAtraso().catch((e) => console.error('Falha no alerta de atraso:', e?.message || e));
-      perguntarCheckinsPendentes();
-      avisarRecebimentosAtrasados();
+      // Em sequência, não em paralelo — Alert.alert é um modal nativo
+      // único; disparar os dois populars ao mesmo tempo fazia o de atraso
+      // substituir o de check-in na tela (o de baixo nunca mais aparecia).
+      // Cada popup de check-in agora só cede vez ao de atraso depois que a
+      // fila inteira terminar (ver processarFilaCheckin).
+      (async () => {
+        await perguntarCheckinsPendentes();
+        await avisarRecebimentosAtrasados();
+      })();
       let cancelado = false;
       supabase
         .from('profiles')

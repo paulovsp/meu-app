@@ -686,9 +686,36 @@ export async function deleteAvailabilitySlotsByPatient(patientId) {
  * apagar o horário em si) — usado quando a análise é paralisada (item 3).
  * `modalidade` é opcional: se vier 'online'/'presencial', reescreve a
  * modalidade de todos os horários liberados; se vier null/undefined, cada
- * horário mantém a modalidade que já tinha. */
+ * horário mantém a modalidade que já tinha (mesma modalidade de antes).
+ *
+ * Zerar `patient_id` aqui não bastava sozinho: a Agenda considera um
+ * horário ocupado se existir QUALQUER compromisso já materializado
+ * naquela data+hora (`buscarCompromissoDoSlot`, sem filtrar por status) —
+ * então uma data que já tinha sido aberta na Agenda antes (ex: hoje)
+ * continuava mostrando o paciente antigo ali, mesmo com o horário
+ * recorrente já livre. Diferente de "apagar horário pontual"
+ * (marcarHorarioLiberado): ali o horário recorrente segue ocupado pras
+ * outras semanas, por isso precisa de um marcador por data; aqui o
+ * horário recorrente inteiro está sendo liberado, então datas futuras não
+ * recriam o compromisso sozinhas (`ensureAppointmentsForDate` só
+ * materializa slot com `patient_id` preenchido) — só falta apagar o que já
+ * tinha sido materializado antes de zerar o vínculo. */
 export async function liberarHorariosDoPaciente(patientId, modalidade = null) {
   const { supabase } = require('./supabase');
+
+  const { data: slots, error: errSlots } = await supabase
+    .from('availability_slots')
+    .select('day_of_week, start_time')
+    .eq('patient_id', patientId);
+  if (errSlots) throw errSlots;
+
+  for (const slot of slots || []) {
+    const futuros = await listarCompromissosFuturosDoHorario({
+      patientId, dayOfWeek: slot.day_of_week, startTime: slot.start_time,
+    });
+    if (futuros.length > 0) await deleteAppointments(futuros.map((a) => a.id));
+  }
+
   const payload = { patient_id: null };
   if (modalidade === 'online' || modalidade === 'presencial') payload.modality = modalidade;
   const { error } = await supabase.from('availability_slots').update(payload).eq('patient_id', patientId);

@@ -25,7 +25,9 @@ import { horarioJaPassou, getEstadoCompromisso, ESTADO_LABEL } from '../services
 import { mensagemDeErro } from '../services/erros';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
 import { infoTipoEvento, ehTipoGrupo } from '../services/tiposEvento';
-import { nomeExibicaoCompromisso, perguntarPagamentoSessao, perguntarCheckin } from '../services/checkinCompromisso';
+import {
+  nomeExibicaoCompromisso, perguntarPagamentoSessao, perguntarCheckin, perguntarTipoNaoRealizada,
+} from '../services/checkinCompromisso';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function DetalheCompromissoScreen({ route, navigation }) {
@@ -90,14 +92,17 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
   const estadoInfo = ESTADO_LABEL[estado];
   const podeAgir = compromisso.status === 'agendado';
 
-  // "Editar informações do horário" abre a tela COMPLETA (tipo de evento,
-  // modalidade, paciente, recorrência) — pré-preenchida a partir do
-  // horário recorrente por trás deste compromisso, se houver um (edita a
-  // recorrência, valendo pros próximos também), ou a partir do próprio
-  // compromisso, se for avulso (sem horário recorrente, ex: marcado via
-  // "horário liberado" — nesse caso não existe slot pra pré-preencher, e
-  // sem mandar essas informações a tela abriria em branco mesmo já tendo
-  // paciente/tipo/modalidade definidos).
+  // "Editar informações do horário" é a ÚNICA porta de entrada pra editar
+  // qualquer coisa sobre este horário — tipo de evento, modalidade,
+  // paciente, recorrência E hora, tudo na mesma tela (DisponibilidadeScreen).
+  // Pré-preenchida a partir do horário recorrente por trás deste
+  // compromisso, se houver um, ou a partir do próprio compromisso, se for
+  // avulso (sem horário recorrente, ex: marcado via "horário liberado" —
+  // nesse caso não existe slot pra pré-preencher, e sem mandar essas
+  // informações a tela abriria em branco mesmo já tendo paciente/tipo/
+  // modalidade definidos). Manda `appointmentId` sempre — é o que permite
+  // a própria tela perguntar, na hora de salvar, "só hoje ou todos os
+  // futuros?" (ver salvarSlot em DisponibilidadeScreen.js).
   async function editarInformacoesDoHorario() {
     const [ano, mes, dia] = compromisso.date.split('-').map(Number);
     const dayOfWeek = new Date(ano, mes - 1, dia).getDay();
@@ -105,6 +110,7 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
       const slot = await getAvailabilitySlotByDayAndTime(dayOfWeek, compromisso.start_time);
       navigation.navigate('EditarHorario', {
         slotId: slot?.id || null,
+        appointmentId: compromisso.id,
         date: compromisso.date,
         startTime: compromisso.start_time,
         endTime: compromisso.end_time,
@@ -119,19 +125,6 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
     } catch (e) {
       Alert.alert('Erro', mensagemDeErro(e));
     }
-  }
-
-  // Item 4 (v13): appointments já guarda start_time/end_time próprios,
-  // independentes do horário recorrente — muda só a hora DESTE compromisso
-  // específico, sem tocar em availability_slots nem nas outras informações
-  // (paciente, tipo, modalidade continuam iguais).
-  function editarSoAHoraDeHoje() {
-    navigation.navigate('EditarHorarioUnico', {
-      appointmentId: compromisso.id,
-      date: compromisso.date,
-      startTime: compromisso.start_time,
-      endTime: compromisso.end_time,
-    });
   }
 
   async function iniciarSessao() {
@@ -170,7 +163,26 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
     }
   }
 
-  async function cancelarCompromisso() {
+  // Cancelar "só este" um compromisso que ainda não aconteceu (data/hora no
+  // futuro) é sempre cancelamento de verdade — não tem como ter sido falta
+  // de algo que ainda vai acontecer. Mas nada muda o status sozinho quando
+  // o horário passa: "Cancelar Compromisso" também fica disponível pra um
+  // compromisso já vencido que ninguém confirmou ainda (mesmo estado que
+  // dispara o popup de check-in) — nesse caso precisa perguntar se foi
+  // cancelado com antecedência ou se foi falta, porque isso decide se conta
+  // como cobrança (falta cobra normalmente; cancelamento nunca cobra) —
+  // reflete direto em Financeiro/Recebíveis/Fiscal pra quem é cobrado por
+  // sessão (ver getSessoesCobrancaDoMes, que só considera 'realizado' e
+  // 'nao_realizado' como cobráveis).
+  function cancelarCompromisso() {
+    if (horarioJaPassou(compromisso.date, compromisso.end_time)) {
+      perguntarTipoNaoRealizada(compromisso, carregar);
+      return;
+    }
+    efetivarCancelamentoDireto();
+  }
+
+  async function efetivarCancelamentoDireto() {
     setAgindo(true);
     try {
       await updateAppointmentStatus(compromisso.id, 'cancelado');
@@ -477,10 +489,6 @@ Nenhum relato ou transcrição foi adicionado para esta sessão ainda.
         <Text style={styles.btnEditarHorarioTxt}>Editar informações do horário</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.btnEditarSoHora} onPress={editarSoAHoraDeHoje}>
-        <Text style={styles.btnEditarSoHoraTxt}>Editar só o horário de hoje</Text>
-      </TouchableOpacity>
-
       <TouchableOpacity
         style={[styles.btnApagar, agindo && { opacity: 0.7 }]}
         onPress={perguntarExclusao}
@@ -553,11 +561,6 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: '#497363',
   },
   btnEditarHorarioTxt: { color: '#497363', fontWeight: '500' },
-  // Ação secundária, deliberadamente mais discreta que o botão principal
-  // acima — edita só a hora de hoje, sem tocar em nenhuma outra
-  // informação do compromisso (ver editarSoAHoraDeHoje).
-  btnEditarSoHora: { alignItems: 'center', paddingVertical: 10, marginBottom: 10 },
-  btnEditarSoHoraTxt: { color: '#8C857B', fontSize: 12.5, textDecorationLine: 'underline', lineHeight: 18 },
   btnApagar: {
     backgroundColor: '#F1E4E3', padding: 14, borderRadius: 10, alignItems: 'center',
     marginBottom: 10, borderWidth: 1, borderColor: '#975451',

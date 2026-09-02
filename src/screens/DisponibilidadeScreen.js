@@ -26,6 +26,7 @@ import {
   cancelarCompromissosFuturosDoHorario,
   parsePreco,
   formatarMoeda,
+  atualizarHorarioAppointment,
 } from '../services/database';
 import { mensagemDeErro } from '../services/erros';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
@@ -134,6 +135,16 @@ export default function DisponibilidadeScreen() {
   // Campo vazio / ausente = herda o que está na ficha da pessoa.
   const [pagamentoParticipantes, setPagamentoParticipantes] = useState({});
 
+  // Presentes só quando esta tela foi aberta a partir de UM compromisso
+  // específico (via "Editar informações do horário", DetalheCompromissoScreen.js)
+  // — é o que permite perguntar, na hora de salvar, "só hoje ou todos os
+  // futuros?" em vez de sempre mexer no horário recorrente inteiro. Ausentes
+  // (null) quando a tela é aberta pra criar um horário novo, ou editando um
+  // slot direto da lista desta própria tela — nesses casos salva sempre
+  // como recorrente, sem perguntar (não existe "hoje" nesse contexto).
+  const [appointmentIdEditando, setAppointmentIdEditando] = useState(null);
+  const [dataOcorrenciaEditando, setDataOcorrenciaEditando] = useState(null);
+
   const [analisanteId, setAnalisanteId] = useState(null);
   const [analisanteNome, setAnalisanteNome] = useState('');
   const [mostrarNovoAnalisante, setMostrarNovoAnalisante] = useState(false);
@@ -201,12 +212,16 @@ export default function DisponibilidadeScreen() {
 
       if (slotClicado) {
         editarSlot(slotClicado);
+        setAppointmentIdEditando(params.appointmentId || null);
+        setDataOcorrenciaEditando(params.date || null);
       }
       return;
     }
 
     if (params.dayOfWeek !== undefined) {
       limparFormulario();
+      setAppointmentIdEditando(params.appointmentId || null);
+      setDataOcorrenciaEditando(params.date || null);
       setDiaSemana(params.dayOfWeek);
 
       if (params.startTime) setHorarioInicio(params.startTime);
@@ -266,6 +281,8 @@ export default function DisponibilidadeScreen() {
 
   function limparFormulario() {
     setSlotEditandoId(null);
+    setAppointmentIdEditando(null);
+    setDataOcorrenciaEditando(null);
     setDiaSemana(1);
     setHorarioInicio('');
     setHorarioFim('');
@@ -361,6 +378,23 @@ export default function DisponibilidadeScreen() {
     }
   }
 
+  // Muda só a hora DESTE compromisso específico (tabela appointments),
+  // sem tocar no horário recorrente nem em nenhuma outra informação
+  // (paciente/tipo/modalidade continuam iguais) — é o que "só hoje"
+  // significa (item 4, v13, antes numa tela separada, hoje só mais uma
+  // opção desta mesma tela na hora de salvar).
+  async function salvarSoHoje(inicio, fim) {
+    setSalvando(true);
+    try {
+      await atualizarHorarioAppointment(appointmentIdEditando, { startTime: inicio, endTime: fim });
+      navigation.goBack();
+    } catch (e) {
+      Alert.alert('Erro ao salvar', mensagemDeErro(e));
+    } finally {
+      setSalvando(false);
+    }
+  }
+
   /**
    * ⚠️ CORRIGIDO (item 6): agora em duas etapas.
    * 1) verificarConflitoSlot só CONFERE e diz o que encontrou — não altera nada.
@@ -383,10 +417,38 @@ export default function DisponibilidadeScreen() {
       );
       return;
     }
-    // Reflete na tela o que de fato vai ser salvo.
+    // Reflete na tela o que de fato será usado daqui em diante — pro
+    // restante desta função e pro Alert abaixo.
     setHorarioInicio(inicio);
     setHorarioFim(fim);
 
+    // Veio de um compromisso específico (não de criar/editar o horário
+    // recorrente em abstrato) — pergunta se a mudança vale só pra hoje
+    // (só a hora desta ocorrência muda) ou pro horário recorrente inteiro
+    // (tudo o que está nesta tela passa a valer também pros futuros).
+    // Tudo o mais (validação de grupo/paciente/recorrência, conflito de
+    // horário, etc.) só faz sentido pro caminho recorrente, por isso essa
+    // pergunta acontece ANTES do resto.
+    if (appointmentIdEditando) {
+      const dataFormatada = dataOcorrenciaEditando
+        ? dataOcorrenciaEditando.split('-').reverse().join('/')
+        : 'hoje';
+      Alert.alert(
+        'Salvar horário',
+        `Salvar só para ${dataFormatada} (só a hora muda), ou para este horário e todos os futuros (tudo muda)?`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: `Só ${dataFormatada}`, onPress: () => salvarSoHoje(inicio, fim) },
+          { text: 'Este e todos os futuros', onPress: () => continuarSalvamentoRecorrente(inicio, fim) },
+        ]
+      );
+      return;
+    }
+
+    await continuarSalvamentoRecorrente(inicio, fim);
+  }
+
+  async function continuarSalvamentoRecorrente(inicio, fim) {
     if (horarioParaMinutos(inicio) >= horarioParaMinutos(fim)) {
       Alert.alert(
         'Intervalo inválido',

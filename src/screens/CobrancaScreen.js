@@ -69,11 +69,15 @@ function limparTelefoneParaWhatsapp(telefone) {
   return digitos.length <= 11 ? `55${digitos}` : digitos;
 }
 
-function mensagemLembrete(item, profissional) {
+// Dia 31 configurado num mês sem dia 31 (abril, junho, setembro, novembro,
+// fevereiro) precisa virar o último dia REAL do mês sendo cobrado — tanto
+// no texto do lembrete quanto na tela — senão a mensagem cita uma data que
+// não existe naquele mês.
+function mensagemLembrete(item, profissional, ano, mesIndex) {
   return montarMensagemCobranca(profissional, {
     nome: item.nome,
     valor: formatarMoeda(item.valorPrevisto),
-    diaPagamento: item.dia_pagamento,
+    diaPagamento: Math.min(item.dia_pagamento, diasNoMes(ano, mesIndex)),
   });
 }
 
@@ -102,7 +106,7 @@ function LinhaSessao({ item, onPress }) {
   );
 }
 
-function LinhaRecebimento({ item, status, onToggle, onWhatsapp, onEmail, atualizando }) {
+function LinhaRecebimento({ item, diaEfetivo, status, onToggle, onWhatsapp, onEmail, atualizando }) {
   // Cobrar (WhatsApp/e-mail) só faz sentido enquanto a sessão/mês ainda não
   // foi marcado como recebido — depois disso, insistir seria um lembrete
   // sem propósito.
@@ -125,7 +129,7 @@ function LinhaRecebimento({ item, status, onToggle, onWhatsapp, onEmail, atualiz
       <View style={s.linhaInfo}>
         <Text style={s.linhaNome} numberOfLines={1}>{item.nome}</Text>
         <Text style={s.linhaSub}>
-          {item.recebido ? 'Recebido' : `Previsto dia ${item.dia_pagamento}`} · {formatarMoeda(item.valorPrevisto)}
+          {item.recebido ? 'Recebido' : `Previsto dia ${diaEfetivo}`} · {formatarMoeda(item.valorPrevisto)}
         </Text>
       </View>
 
@@ -217,7 +221,7 @@ export default function CobrancaScreen() {
       Alert.alert('Sem telefone', `${item.nome} não tem telefone cadastrado na ficha.`);
       return;
     }
-    Linking.openURL(`https://wa.me/${numero}?text=${encodeURIComponent(mensagemLembrete(item, profissional))}`);
+    Linking.openURL(`https://wa.me/${numero}?text=${encodeURIComponent(mensagemLembrete(item, profissional, ano, mesIndex))}`);
   }
 
   function enviarEmail(item) {
@@ -226,7 +230,7 @@ export default function CobrancaScreen() {
       return;
     }
     const assunto = encodeURIComponent('Lembrete de contribuição financeira');
-    const corpo = encodeURIComponent(mensagemLembrete(item, profissional));
+    const corpo = encodeURIComponent(mensagemLembrete(item, profissional, ano, mesIndex));
     Linking.openURL(`mailto:${item.email}?subject=${assunto}&body=${corpo}`);
   }
 
@@ -336,6 +340,7 @@ export default function CobrancaScreen() {
               <LinhaRecebimento
                 key={item.patient_id}
                 item={item}
+                diaEfetivo={Math.min(item.dia_pagamento, diasNoMes(ano, mesIndex))}
                 status={statusRecebimento(item, ano, mesIndex)}
                 onToggle={alternarRecebido}
                 onWhatsapp={enviarWhatsapp}

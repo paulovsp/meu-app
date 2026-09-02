@@ -2154,6 +2154,19 @@ export function filtrarRecebimentosMensais(recebimentos) {
   return (recebimentos || []).filter((r) => r.tipo_cobranca !== 'por_sessao');
 }
 
+// Dia 31 configurado num mês de 30 (ou 28/29) dias precisa "cair" pro
+// último dia real do mês, nunca desaparecer da comparação — sem isso, um
+// analisante com dia_pagamento=31 nunca era considerado atrasado em abril/
+// junho/setembro/novembro/fevereiro (31 nunca é "< hojeDia", já que hojeDia
+// nunca passa do último dia real daquele mês). Mesmas duas funções abaixo
+// pressupõem o mês ATUAL (ver seus comentários), por isso calculam o
+// tamanho do mês a partir de "hoje", não de um ano/mês recebido por fora.
+function diaPagamentoEfetivoNoMesAtual(diaPagamento) {
+  const hoje = new Date();
+  const ultimoDiaDoMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate();
+  return Math.min(diaPagamento, ultimoDiaDoMes);
+}
+
 /** Cor-resumo (vermelho/amarelo/verde) pra um card que mostra o total de
  * recebimentos de UM mês contra o que já foi de fato recebido (itens 8 e 9)
  * — pressupõe que `recebimentos` é do mês atual (o card não faz sentido pra
@@ -2170,7 +2183,7 @@ export function calcularStatusGeralRecebimentos(recebimentos) {
   for (const item of lista) {
     if (item.recebido) continue;
     temPendente = true;
-    if (item.dia_pagamento && item.dia_pagamento < hojeDia) temAtraso = true;
+    if (item.dia_pagamento && diaPagamentoEfetivoNoMesAtual(item.dia_pagamento) < hojeDia) temAtraso = true;
   }
   if (temAtraso) return 'vermelho';
   if (temPendente) return 'amarelo';
@@ -2184,7 +2197,7 @@ export function calcularStatusGeralRecebimentos(recebimentos) {
 export function calcularStatusItemRecebimento(item) {
   if (item.recebido) return 'verde';
   const hojeDia = new Date().getDate();
-  return item.dia_pagamento && item.dia_pagamento < hojeDia ? 'vermelho' : 'amarelo';
+  return item.dia_pagamento && diaPagamentoEfetivoNoMesAtual(item.dia_pagamento) < hojeDia ? 'vermelho' : 'amarelo';
 }
 
 /** Quais ocorrências (patient_id + data + horário) de cobrança "por sessão"

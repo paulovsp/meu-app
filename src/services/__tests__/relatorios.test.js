@@ -109,6 +109,38 @@ describe('relatórios locais (frequência e pagamento) — sem chamada à IA', (
     const custo = await estimarCustoRelatorio(paciente, 'frequencia', {});
     expect(custo).toBe(0);
   });
+
+  it('relatório de pagamento não fala mais de "atraso médio" (média de dias) — só classifica em dia/com atraso', async () => {
+    getPagamentosPorPaciente.mockResolvedValue([
+      { ano: 2026, mes: 6, recebido: true, data_recebimento: '2026-06-10', valor: 200 },
+    ]);
+    mockInsertRelatorios();
+
+    const relatorio = await gerarRelatorio(paciente, 'pagamento', {});
+
+    expect(relatorio.conteudo).not.toMatch(/atraso médio/i);
+    expect(relatorio.conteudo).toContain('Pagos em dia: 1');
+    expect(relatorio.conteudo).toContain('Pagos com atraso: 0');
+  });
+
+  it('classifica corretamente o dia 31 num mês de 30 dias — pago no último dia real conta como em dia', async () => {
+    // dia_pagamento=31, mas o pagamento é do mês de abril (mes=3, 0-indexed
+    // — só 30 dias) e foi recebido no dia 30, o último dia real daquele mês.
+    // Antes do fix, isso teria comparado 30 contra 31 cru (nunca "atrasado"
+    // por sorte nesse caso específico) — o teste real é que o vencimento
+    // usado é sempre o do MÊS DO PRÓPRIO PAGAMENTO (p.ano/p.mes), nunca o
+    // mês atual, que poderia ter outro tamanho.
+    const pacienteDia31 = { ...paciente, dia_pagamento: 31 };
+    getPagamentosPorPaciente.mockResolvedValue([
+      { ano: 2026, mes: 3, recebido: true, data_recebimento: '2026-04-30', valor: 200 },
+    ]);
+    mockInsertRelatorios();
+
+    const relatorio = await gerarRelatorio(pacienteDia31, 'pagamento', {});
+
+    expect(relatorio.conteudo).toContain('Pagos em dia: 1');
+    expect(relatorio.conteudo).toContain('Pagos com atraso: 0');
+  });
 });
 
 describe('resumo geral do caso — combina sessões e registros sem truncar conteúdo', () => {

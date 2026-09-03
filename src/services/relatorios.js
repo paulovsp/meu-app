@@ -256,19 +256,27 @@ async function gerarConteudoPagamentoLocal(paciente) {
   const emAberto = pagamentos.filter((p) => !p.recebido);
   const valorTotalRecebido = recebidos.reduce((soma, p) => soma + (Number(p.valor) || 0), 0);
 
-  let atrasosDias = [];
+  // Classificação simples (em dia / com atraso) — nunca uma média de DIAS
+  // de atraso. Isso não é um dado de pontualidade fina: `data_recebimento`
+  // é só o instante em que alguém marcou "recebido" no app, não o momento
+  // exato em que o analisante de fato pagou, então uma média numérica de
+  // atraso sugeriria uma precisão que os dados não têm. Cada pagamento usa
+  // o vencimento do SEU PRÓPRIO mês (`p.ano`/`p.mes`, já gravados na hora),
+  // com dia_pagamento ajustado pro tamanho real daquele mês específico —
+  // ex: dia 31 configurado vira dia 30 num mês de 30 dias — nunca pelo mês
+  // atual, que pode ser bem diferente do mês do pagamento sendo avaliado.
+  let pagosEmDia = 0;
+  let pagosComAtraso = 0;
   if (paciente.dia_pagamento) {
-    atrasosDias = recebidos
-      .filter((p) => p.data_recebimento)
-      .map((p) => {
-        const diaRecebimento = new Date(p.data_recebimento).getDate();
-        return diaRecebimento - paciente.dia_pagamento;
-      })
-      .filter((dias) => dias > 0);
+    recebidos.forEach((p) => {
+      if (!p.data_recebimento) return;
+      const ultimoDiaDoMesDoPagamento = new Date(p.ano, p.mes + 1, 0).getDate();
+      const vencimentoEfetivo = Math.min(paciente.dia_pagamento, ultimoDiaDoMesDoPagamento);
+      const diaRecebimento = new Date(p.data_recebimento).getDate();
+      if (diaRecebimento > vencimentoEfetivo) pagosComAtraso++;
+      else pagosEmDia++;
+    });
   }
-  const mediaAtrasoDias = atrasosDias.length
-    ? Math.round((atrasosDias.reduce((s, d) => s + d, 0) / atrasosDias.length) * 10) / 10
-    : null;
 
   const linhas = [
     `Relatório de pagamento — ${paciente.nome}`,
@@ -278,12 +286,10 @@ async function gerarConteudoPagamentoLocal(paciente) {
     `Em aberto: ${emAberto.length}`,
     `Valor total recebido no período: R$ ${valorTotalRecebido.toFixed(2).replace('.', ',')}`,
   ];
-  if (mediaAtrasoDias != null) {
-    linhas.push(`Atraso médio (entre os meses pagos com atraso, considerando o dia de pagamento cadastrado): ${mediaAtrasoDias} dia(s).`);
-  } else if (paciente.dia_pagamento) {
-    linhas.push('Nenhum pagamento recebido em atraso identificado.');
+  if (paciente.dia_pagamento) {
+    linhas.push(`Pagos em dia: ${pagosEmDia}`, `Pagos com atraso: ${pagosComAtraso}`);
   } else {
-    linhas.push('Este analisante não tem dia de pagamento cadastrado — não é possível calcular pontualidade.');
+    linhas.push('Este analisante não tem dia de pagamento cadastrado — não é possível avaliar pontualidade.');
   }
   if (emAberto.length > 0) {
     linhas.push('', '--- Meses em aberto ---');

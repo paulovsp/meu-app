@@ -1,9 +1,12 @@
-// Config plugin: declara o foreground service de gravação do notifee com
+// Config plugin: declara o foreground service de gravação com
 // android:foregroundServiceType="microphone" no AndroidManifest.xml.
 //
-// Por quê: o notifee fornece a classe app.notifee.core.ForegroundService,
-// mas não a declara no próprio AndroidManifest do módulo — quem usa a
-// biblioteca precisa declarar. A partir do Android 14 (API 34), todo
+// Por quê: a biblioteca (react-native-notify-kit — fork mantido de
+// @notifee/react-native, arquivado pela Invertase em 07/04/2026; mesmo
+// nome de classe Java nos dois) fornece a classe
+// app.notifee.core.ForegroundService, mas não a declara no próprio
+// AndroidManifest do módulo — quem usa a biblioteca precisa declarar.
+// A partir do Android 14 (API 34), todo
 // foreground service tem que declarar explicitamente o(s) tipo(s) que usa,
 // e o sistema confere a permissão correspondente (RECORD_AUDIO, no caso de
 // "microphone") na hora de iniciar o service — sem essa declaração, iniciar

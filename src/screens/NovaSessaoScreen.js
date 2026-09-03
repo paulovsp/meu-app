@@ -9,7 +9,13 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import CabecalhoTela from '../components/CabecalhoTela';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
-import notifee, { AndroidImportance, AndroidForegroundServiceType } from '@notifee/react-native';
+// @notifee/react-native foi arquivado pela Invertase em 07/04/2026 — trocado
+// pelo fork mantido react-native-notify-kit (mesmo autor original recomenda
+// no README do projeto arquivado). API 100% compatível — só o caminho do
+// import muda; classe Java do foreground service continua sendo
+// app.notifee.core.ForegroundService (confirmado no pacote), então o plugin
+// plugins/withForegroundServiceMicrophone.js não precisou mudar nada.
+import notifee, { AndroidImportance, AndroidForegroundServiceType } from 'react-native-notify-kit';
 import { Ionicons } from '@expo/vector-icons';
 import {
   listarPacientes, addSession, updateSession,

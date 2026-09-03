@@ -98,6 +98,7 @@ export default function FormularioAnalisanteScreen() {
   // derivada automaticamente a partir da modalidade de cada horário (ver
   // getModalidadeDerivada/getModalidadesPorPaciente em database.js).
   const [horarios, setHorarios] = useState([]);
+  const [salvando, setSalvando] = useState(false);
 
   useEffect(() => {
     async function carregarHorarios() {
@@ -412,6 +413,7 @@ export default function FormularioAnalisanteScreen() {
     const dataInicioISO = dataBRParaISO(dataInicio);
     const dataParalizacaoISO = dataBRParaISO(dataParalizacao);
 
+    setSalvando(true);
     try {
       let patientId;
       if (editando) {
@@ -477,6 +479,8 @@ export default function FormularioAnalisanteScreen() {
     } catch (e) {
       Alert.alert('Erro ao salvar', mensagemDeErro(e));
       console.error(e);
+    } finally {
+      setSalvando(false);
     }
   }
 
@@ -966,10 +970,14 @@ export default function FormularioAnalisanteScreen() {
           />
         </View>
 
-        <TouchableOpacity style={styles.saveBtn} onPress={salvar}>
-          <Text style={styles.saveBtnText}>
-            {editando ? 'Salvar alterações' : 'Cadastrar analisante'}
-          </Text>
+        <TouchableOpacity style={styles.saveBtn} onPress={salvar} disabled={salvando}>
+          {salvando ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.saveBtnText}>
+              {editando ? 'Salvar alterações' : 'Cadastrar analisante'}
+            </Text>
+          )}
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.cancelBtn} onPress={() => navigation.goBack()}>

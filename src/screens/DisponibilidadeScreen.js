@@ -150,6 +150,7 @@ export default function DisponibilidadeScreen() {
   const [mostrarNovoAnalisante, setMostrarNovoAnalisante] = useState(false);
   const [novoAnalisanteNome, setNovoAnalisanteNome] = useState('');
   const [salvando, setSalvando] = useState(false);
+  const [confirmandoNovoAnalisante, setConfirmandoNovoAnalisante] = useState(false);
   const [excluindoId, setExcluindoId] = useState(null);
 
   // ── Recorrência: avulso (uma data só) ou recorrente (semanal, quinzenal,
@@ -356,6 +357,7 @@ export default function DisponibilidadeScreen() {
       return;
     }
 
+    setConfirmandoNovoAnalisante(true);
     try {
       // Criado a partir de um horário de supervisão individual: marca como
       // supervisionando (não analisante) — sem isso, ia sempre parar como
@@ -375,6 +377,8 @@ export default function DisponibilidadeScreen() {
       await carregarPacientes();
     } catch (e) {
       Alert.alert('Erro ao adicionar', mensagemDeErro(e));
+    } finally {
+      setConfirmandoNovoAnalisante(false);
     }
   }
 
@@ -966,8 +970,13 @@ export default function DisponibilidadeScreen() {
                       <TouchableOpacity
                         style={styles.btnConfirmarAnalisante}
                         onPress={confirmarNovoAnalisante}
+                        disabled={confirmandoNovoAnalisante}
                       >
-                        <Text style={styles.btnSalvarTxt}>Adicionar</Text>
+                        {confirmandoNovoAnalisante ? (
+                          <ActivityIndicator color="#fff" />
+                        ) : (
+                          <Text style={styles.btnSalvarTxt}>Adicionar</Text>
+                        )}
                       </TouchableOpacity>
                     </View>
                   )}

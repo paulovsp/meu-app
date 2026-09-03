@@ -101,6 +101,7 @@ export default function FormularioCursoScreen() {
   const [anotacoes, setAnotacoes] = useState(cursoInicial?.anotacoes || '');
   const [salvando, setSalvando] = useState(false);
   const [removendo, setRemovendo] = useState(false);
+  const [salvandoTranscricaoManual, setSalvandoTranscricaoManual] = useState(false);
 
   // Chegando por notificação push (curso-transcrever-webhook), só o id vem
   // no params — busca o registro completo pra preencher a tela, mesmo
@@ -337,11 +338,14 @@ export default function FormularioCursoScreen() {
   const cargaHorariaCalculada = calcularCargaHoraria(quantidadeAulas, duracaoAulaMin);
 
   async function salvarTranscricaoManualHandler() {
+    setSalvandoTranscricaoManual(true);
     try {
       await salvarTranscricaoManual(curso.id, transcricaoManual);
       Alert.alert('Salvo', 'Transcrição/anotações da aula salvas.');
     } catch (err) {
       Alert.alert('Erro', mensagemDeErro(err));
+    } finally {
+      setSalvandoTranscricaoManual(false);
     }
   }
 
@@ -517,8 +521,16 @@ export default function FormularioCursoScreen() {
                 placeholderTextColor="#756E66"
                 multiline
               />
-              <TouchableOpacity style={s.salvarTranscricaoBtn} onPress={salvarTranscricaoManualHandler}>
-                <Text style={s.salvarTranscricaoBtnText}>Salvar transcrição/anotações</Text>
+              <TouchableOpacity
+                style={s.salvarTranscricaoBtn}
+                onPress={salvarTranscricaoManualHandler}
+                disabled={salvandoTranscricaoManual}
+              >
+                {salvandoTranscricaoManual ? (
+                  <ActivityIndicator color={COLORS.btnBlue} />
+                ) : (
+                  <Text style={s.salvarTranscricaoBtnText}>Salvar transcrição/anotações</Text>
+                )}
               </TouchableOpacity>
             </View>
 

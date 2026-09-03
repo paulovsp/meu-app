@@ -477,9 +477,22 @@ Nenhum relato ou transcrição foi adicionado para esta sessão ainda.
           {compromisso.status !== 'agendado' && (
             <TouchableOpacity
               style={styles.btnConferirGrupo}
-              onPress={async () => { await perguntarPagamentoSessao(compromisso); await carregar(); }}
+              onPress={async () => {
+                setAgindo(true);
+                try {
+                  await perguntarPagamentoSessao(compromisso);
+                  await carregar();
+                } finally {
+                  setAgindo(false);
+                }
+              }}
+              disabled={agindo}
             >
-              <Text style={styles.btnConferirGrupoTxt}>Conferir presença e pagamento</Text>
+              {agindo ? (
+                <ActivityIndicator color="#497363" />
+              ) : (
+                <Text style={styles.btnConferirGrupoTxt}>Conferir presença e pagamento</Text>
+              )}
             </TouchableOpacity>
           )}
         </View>

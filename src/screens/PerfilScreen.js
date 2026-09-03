@@ -64,6 +64,7 @@ export default function PerfilScreen({ navigation }) {
   const [notifAtrasoPush, setNotifAtrasoPush] = useState(false);
   const [notifSalvando, setNotifSalvando] = useState(null);
   const [exportando, setExportando] = useState(false);
+  const [excluindoConta, setExcluindoConta] = useState(false);
   const [abrindoCheckout, setAbrindoCheckout] = useState(false);
   const [modalSenhaVisivel, setModalSenhaVisivel] = useState(false);
   const [senhaAtual, setSenhaAtual] = useState('');
@@ -557,12 +558,18 @@ export default function PerfilScreen({ navigation }) {
           text: 'Excluir permanentemente',
           style: 'destructive',
           onPress: async () => {
+            // Ação irreversível e sem trava nenhuma antes — um segundo
+            // toque durante a exclusão (que apaga em cascata todos os
+            // dados) podia disparar excluirConta() duas vezes em paralelo.
+            setExcluindoConta(true);
             try {
               await excluirConta();
               await desativarLoginBiometrico();
               await supabase.auth.signOut();
             } catch (e) {
               Alert.alert('Erro ao excluir conta', mensagemDeErro(e));
+            } finally {
+              setExcluindoConta(false);
             }
           },
         },
@@ -1209,8 +1216,12 @@ export default function PerfilScreen({ navigation }) {
               <Text style={st.sairBtnText}>Sair da conta</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={st.excluirContaBtn} onPress={excluirContaHandler}>
-              <Text style={st.excluirContaBtnText}>Excluir minha conta</Text>
+            <TouchableOpacity style={st.excluirContaBtn} onPress={excluirContaHandler} disabled={excluindoConta}>
+              {excluindoConta ? (
+                <ActivityIndicator color="#8C857B" />
+              ) : (
+                <Text style={st.excluirContaBtnText}>Excluir minha conta</Text>
+              )}
             </TouchableOpacity>
           </>
         )}

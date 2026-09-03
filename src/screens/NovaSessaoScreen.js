@@ -566,7 +566,19 @@ Você pode bloquear a tela ou usar outros apps — a gravação continua.
             </View>
           </View>
 
-          {!gravando && !gravacaoAutorizada ? (
+          {transcrevendo ? (
+            // Sem isso, assim que a gravação parava (gravando vira false já
+            // no início de encerrarETranscrever, antes do upload terminar),
+            // o botão "Iniciar Gravação" reaparecia enquanto o áudio ainda
+            // estava subindo — parecia que nada tinha acontecido, e tocar
+            // nele de novo trocava o objeto de gravação por baixo do
+            // processo ainda em andamento, arriscando perder o áudio já
+            // gravado. Este bloco tem que vir ANTES de checar `gravando`.
+            <View style={s.gravandoBox}>
+              <ActivityIndicator size="large" color="#975451" />
+              <Text style={[s.gravandoInfo, { marginTop: 10 }]}>{progressoTranscricao || 'Processando...'}</Text>
+            </View>
+          ) : !gravando && !gravacaoAutorizada ? (
             <View style={s.bloqueioAutorizacao}>
               <Ionicons name="shield-checkmark-outline" size={40} color="#A9A299" />
               <Text style={s.bloqueioAutorizacaoTitulo}>Autorização necessária</Text>
@@ -614,14 +626,15 @@ Você pode bloquear a tela ou usar outros apps — a gravação continua.
           )}
 
           {gravando && (
-            <TouchableOpacity style={s.btnEncerrar} onPress={encerrarETranscrever}>
+            <TouchableOpacity style={s.btnEncerrar} onPress={encerrarETranscrever} disabled={transcrevendo}>
               <Text style={s.btnEncerrarText}>⏹ Encerrar Sessão e Transcrever</Text>
             </TouchableOpacity>
           )}
 
           <TouchableOpacity
-            style={s.btnVoltar}
+            style={[s.btnVoltar, transcrevendo && { opacity: 0.5 }]}
             onPress={() => setStep(isOnline ? STEPS.SELECT_PLATFORM : STEPS.SELECT_TYPE)}
+            disabled={transcrevendo}
           >
             <Text style={s.btnVoltarText}>← Voltar</Text>
           </TouchableOpacity>

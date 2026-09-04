@@ -154,6 +154,21 @@ export default function FormularioCursoScreen() {
     };
   }, []);
 
+  // Trava qualquer forma de sair da tela (seta do cabeçalho, gesto/botão
+  // físico de voltar) enquanto a gravação anterior ainda está sendo
+  // enviada — mesmo risco de corromper o áudio descrito em iniciarGravacao().
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+      if (!enviandoTranscricao) return;
+      e.preventDefault();
+      Alert.alert(
+        'Aguarde',
+        'A gravação ainda está sendo enviada para transcrição. Sair agora arrisca corromper o áudio — aguarde terminar.'
+      );
+    });
+    return unsubscribe;
+  }, [navigation, enviandoTranscricao]);
+
   async function salvar() {
     if (!titulo.trim()) {
       Alert.alert('Campo obrigatório', 'Informe o título do curso.');
@@ -253,7 +268,18 @@ export default function FormularioCursoScreen() {
         },
       });
       notificationIdRef.current = id;
-    } catch (_) {}
+    } catch (err) {
+      // Sem o foreground service de verdade, o Android pode suspender o
+      // microfone quando a tela apaga ou o app é minimizado: a gravação
+      // "continua" (duração certa) mas fica sem fala nenhuma captada.
+      // Avisa na hora, em vez de descobrir só depois que a transcrição
+      // voltou vazia.
+      console.warn('Notificação:', err.message);
+      Alert.alert(
+        'Proteção em segundo plano indisponível',
+        'Não foi possível ativar a notificação que mantém a gravação ativa com a tela apagada ou o app minimizado. Mantenha esta tela aberta e a tela do celular ligada até encerrar, para não arriscar perder o áudio.'
+      );
+    }
   }
 
   async function removerNotificacao() {
@@ -267,6 +293,19 @@ export default function FormularioCursoScreen() {
   }
 
   async function iniciarGravacao() {
+    // Trava de segurança: sem isso, dava pra sair da tela e voltar (ou só
+    // tocar em gravar de novo) enquanto encerrarEEnviar ainda estava
+    // finalizando a gravação anterior — as duas brigam pelo único
+    // MediaRecorder nativo disponível, corrompendo o áudio da primeira
+    // (arquivo com duração certa, mas sem fala nenhuma) ou derrubando com
+    // erro. Ver a mesma trava e explicação em NovaSessaoScreen.js.
+    if (enviandoTranscricao) {
+      Alert.alert(
+        'Aguarde',
+        'A gravação anterior ainda está sendo enviada para transcrição. Aguarde terminar antes de gravar de novo — começar agora arrisca corromper a gravação em andamento.'
+      );
+      return;
+    }
     setPreparando(true);
     try {
       const { granted } = await Audio.requestPermissionsAsync();

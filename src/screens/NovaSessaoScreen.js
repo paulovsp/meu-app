@@ -170,6 +170,25 @@ export default function NovaSessaoScreen() {
     carregar();
   }, []);
 
+  // Trava QUALQUER forma de sair da tela (seta do cabeçalho — que muda
+  // `step` internamente, não passa por aqui —, gesto de voltar do iOS,
+  // botão físico/gesto de voltar do Android) enquanto a sessão anterior
+  // ainda está sendo salva/enviada. Sem isso, dava pra sair no meio do
+  // envio e voltar (ou abrir outra sessão), disparando uma segunda
+  // gravação por cima da que ainda estava sendo finalizada — ver o
+  // comentário em iniciarGravacao().
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+      if (!transcrevendo) return;
+      e.preventDefault();
+      Alert.alert(
+        'Aguarde',
+        'A sessão ainda está sendo salva e enviada para transcrição. Sair agora arrisca corromper a gravação — aguarde terminar.'
+      );
+    });
+    return unsubscribe;
+  }, [navigation, transcrevendo]);
+
   // ─── Autorização de gravação: exigida antes de gravar ─────
   useEffect(() => {
     if (!paciente) { setAutorizacaoStatus(null); return; }
@@ -232,7 +251,19 @@ export default function NovaSessaoScreen() {
       });
       notificationIdRef.current = id;
     } catch (err) {
+      // Antes só um console.warn — ninguém vê isso em produção. Sem o
+      // foreground service de verdade, o Android pode suspender o
+      // microfone quando a tela apaga ou o app é minimizado: a gravação
+      // "continua" (duração certa) mas fica sem fala nenhuma captada —
+      // exatamente o sintoma relatado ("arquivo em branco" em gravações
+      // longas). Avisa na hora, pra pessoa saber que precisa manter a
+      // tela ligada e o app aberto até encerrar, em vez de descobrir só
+      // depois que a transcrição voltou vazia.
       console.warn('Notificação:', err.message);
+      Alert.alert(
+        'Proteção em segundo plano indisponível',
+        'Não foi possível ativar a notificação que mantém a gravação ativa com a tela apagada ou o app minimizado. Mantenha esta tela aberta e a tela do celular ligada até encerrar a sessão, para não arriscar perder o áudio.'
+      );
     }
   }
 
@@ -248,6 +279,25 @@ export default function NovaSessaoScreen() {
 
   // ─── Gravação ─────────────────────────────────────────────
   async function iniciarGravacao() {
+    // Trava de segurança contra o bug real reportado: com o header/gesto de
+    // voltar do Android desprotegidos (ver useEffect de beforeRemove abaixo
+    // e o onVoltar deste step), dava pra chegar de novo neste botão enquanto
+    // a sessão anterior ainda estava sendo finalizada (encerrarETranscrever
+    // ainda rodando em segundo plano). `recordingRef.current = new
+    // Audio.Recording()` logo abaixo reatribui a MESMA ref que aquele fluxo
+    // antigo ainda está usando pra ler o áudio (stopAndUnloadAsync/getURI)
+    // — as duas gravações brigam pelo único MediaRecorder nativo disponível,
+    // corrompendo o áudio da primeira (arquivo com a duração certa, mas sem
+    // fala nenhuma) ou derrubando com erro. Esta checagem é a defesa
+    // definitiva: mesmo que algum caminho de UI escape das outras travas,
+    // aqui a segunda gravação nunca chega a começar de verdade.
+    if (transcrevendo) {
+      Alert.alert(
+        'Aguarde',
+        'A sessão anterior ainda está sendo salva e enviada para transcrição. Aguarde terminar antes de iniciar uma nova gravação — começar agora arrisca corromper a gravação em andamento.'
+      );
+      return;
+    }
     if (!gravacaoAutorizada) {
       Alert.alert('Autorização necessária', `${paciente?.nome} ainda não autorizou a gravação e transcrição das sessões.`);
       return;
@@ -537,7 +587,22 @@ export default function NovaSessaoScreen() {
   if (step === STEPS.RECORDING) {
     return (
       <SafeAreaView style={s.safeArea} edges={['bottom']}>
-        <CabecalhoTela titulo="Nova Sessão" onVoltar={() => setStep(isOnline ? STEPS.SELECT_PLATFORM : STEPS.SELECT_TYPE)} />
+        <CabecalhoTela
+          titulo="Nova Sessão"
+          onVoltar={() => {
+            // Diferente da navegação entre telas (bloqueada pelo listener
+            // beforeRemove acima), isto só troca `step` dentro do MESMO
+            // componente montado — precisa da mesma trava aqui também.
+            if (transcrevendo) {
+              Alert.alert(
+                'Aguarde',
+                'A sessão ainda está sendo salva e enviada para transcrição. Aguarde terminar antes de voltar.'
+              );
+              return;
+            }
+            setStep(isOnline ? STEPS.SELECT_PLATFORM : STEPS.SELECT_TYPE);
+          }}
+        />
         <ScrollView style={s.container} contentContainerStyle={{ paddingBottom: 40 }}>
           <Text style={s.sub}>
             Analisante: <Text style={s.bold}>{paciente?.nome}</Text>

@@ -10,6 +10,7 @@
 // cobrança (é falsificável, vem do cliente).
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { calcularCobrancaIA } from '../_shared/precificacaoIA.ts';
+import { acharBloco, marcarBlocoComErro, salvarBlocoEMontarTexto } from '../_shared/blocosTranscricao.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -64,61 +65,58 @@ Deno.serve(async (req) => {
 
     const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
-    const { data: sessao, error: sessaoError } = await supabaseAdmin
-      .from('sessions')
-      .select('id, transcript, patients(user_id)')
-      .eq('assemblyai_transcript_id', transcriptId)
-      .single();
-    if (sessaoError || !sessao) {
+    // Caminho atual: o texto que chega pertence a um BLOCO da gravação
+    // (gravações acima de 1h são gravadas em blocos — ver migration 0054).
+    // Gravação curta é só o caso de um bloco só, mesmo caminho.
+    const bloco = await acharBloco(supabaseAdmin, transcriptId);
+
+    // Caminho antigo (app anterior a 03/09/2026, que não conhece blocos):
+    // a própria sessão guarda o transcript_id. Mantido pra não perder uma
+    // transcrição que já estava em andamento quando isto foi publicado.
+    let sessionId: string | null = bloco?.session_id ?? null;
+    if (!sessionId) {
+      const { data: sessaoAntiga } = await supabaseAdmin
+        .from('sessions')
+        .select('id')
+        .eq('assemblyai_transcript_id', transcriptId)
+        .maybeSingle();
+      sessionId = sessaoAntiga?.id ?? null;
+    }
+    if (!sessionId) {
       return json({ error: 'Sessão não encontrada para este transcript_id.' }, 404);
     }
-    const userId = (sessao as any).patients?.user_id;
 
-    if (statusRecebido === 'error') {
-      await supabaseAdmin.from('sessions').update({ transcricao_status: 'erro' }).eq('id', sessao.id);
-      await enviarNotificacaoTranscricao(userId, sessao.id, 'Não foi possível transcrever', 'Toque para tentar novamente.', supabaseAdmin);
-      return json({ ok: true });
-    }
-
-    const transcriptResp = await fetch(`${ASSEMBLYAI_TRANSCRIPT_URL}/${transcriptId}`, {
-      headers: { Authorization: ASSEMBLYAI_API_KEY },
-    });
-    if (!transcriptResp.ok) {
-      await supabaseAdmin.from('sessions').update({ transcricao_status: 'erro' }).eq('id', sessao.id);
-      return json({ error: `Erro ao buscar transcrição na AssemblyAI (${transcriptResp.status}).` }, 502);
-    }
-    const transcript = await transcriptResp.json();
-
-    if (transcript.status === 'error') {
-      await supabaseAdmin.from('sessions').update({ transcricao_status: 'erro' }).eq('id', sessao.id);
-      await enviarNotificacaoTranscricao(userId, sessao.id, 'Não foi possível transcrever', String(transcript.error || ''), supabaseAdmin);
-      return json({ ok: true });
-    }
-
-    // A sessão já foi salva pelo app com `transcript` contendo só o
-    // parágrafo de introdução (analisante/modalidade/data/duração), antes
-    // de disparar a transcrição — preserva esse parágrafo aqui, só
-    // anexando o diálogo formatado, em vez de substituir tudo.
-    const introExistente = ((sessao as any).transcript || '').trim();
-    const textoFormatado = formatarTranscricao(transcript);
-    const transcriptFinal = introExistente ? `${introExistente}\n\n${textoFormatado}` : textoFormatado;
-    await supabaseAdmin
+    const { data: sessao } = await supabaseAdmin
       .from('sessions')
-      .update({ transcript: transcriptFinal, transcricao_status: 'concluida' })
-      .eq('id', sessao.id);
+      .select('id, transcript, patients(user_id)')
+      .eq('id', sessionId)
+      .single();
+    const userId = (sessao as any)?.patients?.user_id;
 
-    const duracaoSegundos = Number(transcript.audio_duration) || 0;
-    const custo = calcularCobrancaIA(duracaoSegundos);
+    // A introdução (analisante/modalidade/data/duração) é o primeiro
+    // parágrafo, gravado pelo app antes da transcrição começar. Extrair só
+    // ela — em vez de concatenar no que já estiver lá — deixa a montagem
+    // idempotente: um webhook reentregue pela AssemblyAI, ou um bloco
+    // reenviado, remonta o texto do zero em vez de duplicar o diálogo.
+    const introducao = String((sessao as any)?.transcript || '').split('\n\n')[0].trim();
 
-    // Se a assinatura foi cancelada entre o disparo e a conclusão da
-    // transcrição, o texto já processado ainda é salvo acima (dado clínico
-    // já existe, nunca é retido) — só o débito de crédito é pulado, pra
-    // não cobrar de uma conta que não deveria mais poder gastar crédito.
-    const { data: assinaturaAtiva } = userId
-      ? await supabaseAdmin.rpc('assinatura_ativa', { uid: userId })
-      : { data: false };
+    async function marcarErro(mensagem: string) {
+      if (bloco) await marcarBlocoComErro(supabaseAdmin, bloco);
+      await supabaseAdmin.from('sessions').update({ transcricao_status: 'erro' }).eq('id', sessionId);
+      await enviarNotificacaoTranscricao(userId, sessionId!, 'Não foi possível transcrever', mensagem, supabaseAdmin);
+    }
 
-    if (userId && assinaturaAtiva && custo > 0) {
+    // Cobra por BLOCO, pela duração que a própria AssemblyAI mediu: a soma
+    // dos blocos dá exatamente a duração total, sem cobrar a mais nem a
+    // menos numa gravação longa.
+    async function cobrar(duracaoSegundos: number) {
+      const custo = calcularCobrancaIA(duracaoSegundos);
+      if (!userId || custo <= 0) return;
+      // Se a assinatura foi cancelada entre o disparo e a conclusão, o
+      // texto ainda é salvo (dado clínico nunca é retido) — só o débito é
+      // pulado, pra não cobrar de conta que não deveria mais gastar.
+      const { data: assinaturaAtiva } = await supabaseAdmin.rpc('assinatura_ativa', { uid: userId });
+      if (!assinaturaAtiva) return;
       const { data: perfil } = await supabaseAdmin
         .from('profiles')
         .select('creditos_ia')
@@ -140,7 +138,46 @@ Deno.serve(async (req) => {
       });
     }
 
-    await enviarNotificacaoTranscricao(userId, sessao.id, 'Transcrição pronta', 'A transcrição da sua sessão já está disponível.', supabaseAdmin);
+    if (statusRecebido === 'error') {
+      await marcarErro('Toque para tentar novamente.');
+      return json({ ok: true });
+    }
+
+    const transcriptResp = await fetch(`${ASSEMBLYAI_TRANSCRIPT_URL}/${transcriptId}`, {
+      headers: { Authorization: ASSEMBLYAI_API_KEY },
+    });
+    if (!transcriptResp.ok) {
+      await marcarErro(`Não foi possível buscar o texto (${transcriptResp.status}).`);
+      return json({ error: `Erro ao buscar transcrição na AssemblyAI (${transcriptResp.status}).` }, 502);
+    }
+    const transcript = await transcriptResp.json();
+
+    if (transcript.status === 'error') {
+      await marcarErro(String(transcript.error || ''));
+      return json({ ok: true });
+    }
+
+    const textoFormatado = formatarTranscricao(transcript);
+    const duracaoSegundos = Number(transcript.audio_duration) || 0;
+
+    await cobrar(duracaoSegundos);
+
+    // Caminho antigo (sem blocos): o texto que chegou já é a gravação toda.
+    let corpo: string | null = textoFormatado;
+    if (bloco) {
+      corpo = await salvarBlocoEMontarTexto(supabaseAdmin, bloco, textoFormatado);
+      // Ainda falta bloco: a sessão continua "processando" e ninguém é
+      // notificado — o aviso só faz sentido com o texto inteiro pronto.
+      if (corpo === null) return json({ ok: true, aguardandoOutrosBlocos: true });
+    }
+
+    const transcriptFinal = introducao ? `${introducao}\n\n${corpo}` : corpo;
+    await supabaseAdmin
+      .from('sessions')
+      .update({ transcript: transcriptFinal, transcricao_status: 'concluida' })
+      .eq('id', sessionId);
+
+    await enviarNotificacaoTranscricao(userId, sessionId, 'Transcrição pronta', 'A transcrição da sua sessão já está disponível.', supabaseAdmin);
 
     return json({ ok: true });
   } catch (err) {

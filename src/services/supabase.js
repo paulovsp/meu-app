@@ -8,7 +8,11 @@ import 'react-native-url-polyfill/auto';
 import { createClient } from '@supabase/supabase-js';
 
 export const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+// Exportada porque o envio de áudio pra transcrição não passa pelo client do
+// Supabase: sobe o arquivo direto por FileSystem.uploadAsync (streaming), e
+// aí os cabeçalhos de autenticação precisam ser montados na mão. Ver
+// src/services/gravacaoEmBlocos.js.
+export const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {

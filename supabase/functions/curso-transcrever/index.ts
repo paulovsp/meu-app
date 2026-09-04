@@ -9,7 +9,15 @@
 // Cobrança: NÃO acontece aqui, mesmo motivo do ia-transcrever —
 // `duracaoSegundos` do corpo é só gate de saldo, o débito real usa
 // `audio_duration` da AssemblyAI, feito no curso-transcrever-webhook.
+//
+// Como o áudio chega (mudou em 03/09/2026): binário puro, repassado direto
+// pra AssemblyAI sem esta function tocar nos bytes. O caminho antigo (JSON
+// com base64) estourava o teto de 2s de CPU da Supabase em gravação longa —
+// e uma aula de 2-4h é exatamente o caso extremo. Ver a explicação completa
+// em ia-transcrever/index.ts e na migration 0054. O caminho antigo continua
+// aceito porque o app já instalado no celular ainda usa ele.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { registrarBloco } from '../_shared/blocosTranscricao.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -43,9 +51,31 @@ Deno.serve(async (req) => {
     if (userError || !userData?.user) return json({ error: 'Sessão inválida.' }, 401);
     const userId = userData.user.id;
 
-    const body = await req.json();
-    const { audioBase64, cursoId } = body || {};
-    if (!audioBase64) return json({ error: 'Áudio ausente.' }, 400);
+    // No caminho binário o corpo inteiro é o arquivo, então o que não é
+    // áudio (curso, ordem do bloco) viaja em cabeçalho.
+    const contentType = req.headers.get('content-type') || '';
+    const ehBinario = !contentType.includes('application/json');
+
+    let cursoId: string | null = null;
+    let indice = 0;
+    // 0 = "ainda não sei quantos blocos são" (gravação em andamento); o
+    // número real só chega junto do último bloco.
+    let total = 1;
+    let corpoAudio: BodyInit | null = null;
+
+    if (ehBinario) {
+      cursoId = req.headers.get('x-curso-id');
+      indice = Number(req.headers.get('x-bloco-indice') ?? '0') || 0;
+      total = Number(req.headers.get('x-bloco-total') ?? '1') || 0;
+      if (!req.body) return json({ error: 'Áudio ausente.' }, 400);
+      corpoAudio = req.body;
+    } else {
+      const body = await req.json();
+      const { audioBase64, cursoId: cid } = body || {};
+      if (!audioBase64) return json({ error: 'Áudio ausente.' }, 400);
+      cursoId = cid;
+      corpoAudio = Uint8Array.from(atob(audioBase64), (c) => c.charCodeAt(0));
+    }
     if (!cursoId) return json({ error: 'cursoId ausente.' }, 400);
 
     const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
@@ -79,16 +109,18 @@ Deno.serve(async (req) => {
       return json({ error: 'Consentimento do professor não confirmado pra este curso.' }, 403);
     }
 
-    const bytes = Uint8Array.from(atob(audioBase64), (c) => c.charCodeAt(0));
-
+    // Repassa o áudio adiante. No caminho binário, `corpoAudio` é o próprio
+    // stream da requisição: os bytes atravessam sem passar por JS.
     const uploadResp = await fetch(ASSEMBLYAI_UPLOAD_URL, {
       method: 'POST',
       headers: {
         Authorization: ASSEMBLYAI_API_KEY,
         'Content-Type': 'application/octet-stream',
       },
-      body: bytes,
-    });
+      body: corpoAudio,
+      // Exigido pelo fetch quando o corpo é um stream (envia enquanto lê).
+      ...(ehBinario ? { duplex: 'half' } : {}),
+    } as RequestInit);
     if (!uploadResp.ok) {
       const errBody = await uploadResp.text().catch(() => '');
       return json({ error: `Erro ao enviar áudio pra AssemblyAI (${uploadResp.status}): ${errBody}` }, 502);
@@ -118,11 +150,19 @@ Deno.serve(async (req) => {
     }
     const transcript = await transcriptResp.json();
 
+    // Registra o bloco. Gravação curta é só o caso de um bloco só — um
+    // caminho de código para os dois.
+    await registrarBloco(supabaseAdmin, 'curso_id', cursoId, indice, total, transcript.id);
+
     // supabaseUser (não supabaseAdmin) — RLS de `cursos` garante que só dá
     // pra marcar como "processando" um curso que realmente é do usuário.
+    // `assemblyai_transcript_id` guarda o id do PRIMEIRO bloco, mantendo
+    // compatibilidade com o app antigo, que não conhece blocos.
+    const patch: Record<string, unknown> = { transcricao_status: 'processando' };
+    if (indice === 0) patch.assemblyai_transcript_id = transcript.id;
     const { data: cursoAtualizado, error: updateError } = await supabaseUser
       .from('cursos')
-      .update({ assemblyai_transcript_id: transcript.id, transcricao_status: 'processando' })
+      .update(patch)
       .eq('id', cursoId)
       .select('id')
       .single();
@@ -130,7 +170,7 @@ Deno.serve(async (req) => {
       return json({ error: 'Curso não encontrado ou sem permissão.' }, 404);
     }
 
-    return json({ status: 'processando' });
+    return json({ status: 'processando', indice, total });
   } catch (err) {
     return json({ error: String((err as Error)?.message || err) }, 500);
   }

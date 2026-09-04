@@ -6,8 +6,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import CabecalhoTela from '../components/CabecalhoTela';
+import MedidorDeEntrada from '../components/MedidorDeEntrada';
 import { Audio } from 'expo-av';
-import * as FileSystem from 'expo-file-system/legacy';
 // @notifee/react-native foi arquivado pela Invertase em 07/04/2026 — trocado
 // pelo fork mantido react-native-notify-kit (mesmo autor original recomenda
 // no README do projeto arquivado). API 100% compatível — só o caminho do
@@ -18,9 +18,13 @@ import notifee, { AndroidImportance, AndroidForegroundServiceType } from 'react-
 import { Ionicons } from '@expo/vector-icons';
 import {
   criarCurso, editarCurso, removerCurso, marcarConsentimentoProfessor,
-  transcreverAudioCurso, salvarTranscricaoManual, getCursoById,
+  salvarTranscricaoManual, getCursoById,
   calcularCargaHoraria, terminoDerivadoDaAula,
 } from '../services/cursos';
+import {
+  criarGravadorEmBlocos, enviarBlocoParaTranscricao, enviarGravacaoCompleta,
+  apagarBlocos, escolherArquivoDeAudio, MENSAGEM_SILENCIO,
+} from '../services/gravacaoEmBlocos';
 import { mensagemDeErro } from '../services/erros';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
 import { dataBRParaISO, dataISOParaBR } from '../services/validacao';
@@ -40,25 +44,6 @@ const FORMATOS = [
   { valor: 'online_ao_vivo', label: 'Online ao vivo' },
   { valor: 'gravado', label: 'Gravado/EAD' },
 ];
-
-const RECORDING_OPTIONS = {
-  android: {
-    extension: '.m4a',
-    outputFormat: Audio.AndroidOutputFormat.MPEG_4,
-    audioEncoder: Audio.AndroidAudioEncoder.AAC,
-    sampleRate: 22050,
-    numberOfChannels: 1,
-    bitRate: 64000,
-  },
-  ios: {
-    extension: '.m4a',
-    outputFormat: Audio.IOSOutputFormat.MPEG4AAC,
-    audioQuality: Audio.IOSAudioQuality.HIGH,
-    sampleRate: 22050,
-    numberOfChannels: 1,
-    bitRate: 64000,
-  },
-};
 
 // Mesmo padrão de máscara de data usado em FormularioAnalisanteScreen/
 // PerfilScreen/CadastroScreen — insere as barras enquanto digita, sempre
@@ -138,8 +123,16 @@ export default function FormularioCursoScreen() {
   const [tempo, setTempo] = useState(0);
   const [enviandoTranscricao, setEnviandoTranscricao] = useState(false);
   const [transcricaoManual, setTranscricaoManual] = useState(curso?.transcript || '');
+  // Nível de entrada do microfone (dBFS) pro medidor ao vivo.
+  const [nivelEntrada, setNivelEntrada] = useState(null);
+  // Sobrou bloco sem enviar: habilita tentar de novo em vez de perder a aula.
+  const [podeReenviar, setPodeReenviar] = useState(false);
+  const [progressoEnvio, setProgressoEnvio] = useState('');
 
-  const recordingRef = useRef(new Audio.Recording());
+  const gravadorRef = useRef(null);
+  // Blocos da gravação ({ uri, indice, enviado }) — os arquivos só somem
+  // quando a aula INTEIRA foi aceita pelo servidor.
+  const blocosRef = useRef([]);
   const timerRef = useRef(null);
   const notificationIdRef = useRef(null);
 
@@ -149,7 +142,7 @@ export default function FormularioCursoScreen() {
     }
     return () => {
       clearInterval(timerRef.current);
-      recordingRef.current?.stopAndUnloadAsync().catch(() => {});
+      gravadorRef.current?.liberar().catch(() => {});
       notifee.stopForegroundService().catch(() => {});
     };
   }, []);
@@ -232,7 +225,10 @@ export default function FormularioCursoScreen() {
     ]);
   }
 
-  function pedirConsentimentoEGravar() {
+  // Vale tanto pra gravar na hora quanto pra importar um áudio já gravado —
+  // a autorização do professor é a mesma questão nos dois casos, e a Edge
+  // Function recusa o envio sem ela de qualquer jeito.
+  function pedirConsentimento(aoConfirmar) {
     Alert.alert(
       'Consentimento do professor',
       'Antes de gravar, confirme com o professor/instituição que você tem autorização para gravar esta aula. A gravação e a transcrição são de uso pessoal — não devem ser divulgadas ou compartilhadas com terceiros, e cuidados legais (direitos autorais, propriedade do material) são de sua responsabilidade.',
@@ -244,7 +240,7 @@ export default function FormularioCursoScreen() {
             try {
               await marcarConsentimentoProfessor(curso.id);
               setCurso((atual) => ({ ...atual, consentimento_professor: true }));
-              iniciarGravacao();
+              aoConfirmar();
             } catch (err) {
               Alert.alert('Erro', mensagemDeErro(err));
             }
@@ -321,10 +317,18 @@ export default function FormularioCursoScreen() {
         interruptionModeIOS: 1,
         interruptionModeAndroid: 1,
       });
-      try { await recordingRef.current.stopAndUnloadAsync(); } catch (_) {}
-      recordingRef.current = new Audio.Recording();
-      await recordingRef.current.prepareToRecordAsync(RECORDING_OPTIONS);
-      await recordingRef.current.startAsync();
+      await gravadorRef.current?.liberar();
+
+      blocosRef.current = [];
+      setPodeReenviar(false);
+      setNivelEntrada(null);
+      gravadorRef.current = criarGravadorEmBlocos({
+        aoFecharBloco: enviarBlocoFechado,
+        aoMedirNivel: setNivelEntrada,
+        aoDetectarSilencio: () => Alert.alert('Sem som no microfone', MENSAGEM_SILENCIO),
+      });
+      await gravadorRef.current.iniciar();
+
       setGravando(true);
       setTempo(0);
       timerRef.current = setInterval(() => setTempo((t) => t + 1), 1000);
@@ -336,10 +340,46 @@ export default function FormularioCursoScreen() {
     }
   }
 
+  /** Um bloco de 1h fechou e a aula continua: sobe ele agora. Se falhar, o
+   *  arquivo fica guardado e vai junto na tentativa final — nunca se perde
+   *  bloco por falha de rede no meio de uma aula longa. */
+  async function enviarBlocoFechado(uri, indice) {
+    const bloco = { uri, indice, enviado: false };
+    blocosRef.current.push(bloco);
+    try {
+      await enviarBlocoParaTranscricao({
+        funcao: 'curso-transcrever',
+        uri,
+        cabecalhos: { 'x-curso-id': curso.id },
+        indice,
+        total: 0, // a aula ainda está rolando; o total vai no último bloco
+      });
+      bloco.enviado = true;
+    } catch (_) {}
+  }
+
+  /** Sobe todos os blocos ainda não aceitos e só então apaga os arquivos. */
+  async function enviarTudo() {
+    setProgressoEnvio(
+      blocosRef.current.length > 1
+        ? `Enviando ${blocosRef.current.length} blocos de áudio...`
+        : 'Enviando para transcrição...'
+    );
+    await enviarGravacaoCompleta({
+      funcao: 'curso-transcrever',
+      cabecalhos: { 'x-curso-id': curso.id },
+      blocos: blocosRef.current,
+    });
+    blocosRef.current = [];
+    setPodeReenviar(false);
+    setCurso((atual) => ({ ...atual, transcricao_status: 'processando' }));
+  }
+
   async function encerrarEEnviar() {
     clearInterval(timerRef.current);
     setGravando(false);
     setEnviandoTranscricao(true);
+    setProgressoEnvio('Finalizando gravação...');
     await removerNotificacao();
     await Audio.setAudioModeAsync({
       allowsRecordingIOS: false, playsInSilentModeIOS: false,
@@ -347,19 +387,71 @@ export default function FormularioCursoScreen() {
     });
 
     try {
-      await recordingRef.current.stopAndUnloadAsync();
-      const uri = recordingRef.current.getURI();
-      if (!uri) throw new Error('URI do áudio não encontrado após gravação.');
-      await transcreverAudioCurso(uri, curso.id);
-      try { await FileSystem.deleteAsync(uri, { idempotent: true }); } catch (_) {}
-      setCurso((atual) => ({ ...atual, transcricao_status: 'processando' }));
+      const { uri, indice } = await gravadorRef.current.parar();
+      if (!uri) throw new Error('O arquivo de áudio não foi encontrado após a gravação.');
+      blocosRef.current.push({ uri, indice, enviado: false });
+      await enviarTudo();
       Alert.alert('Enviado', 'A aula foi salva e está sendo transcrita. Você recebe um aviso quando terminar.');
     } catch (err) {
+      // O áudio continua no aparelho — dá pra tentar de novo em vez de a
+      // aula inteira virar perda total.
+      setPodeReenviar(blocosRef.current.length > 0);
+      Alert.alert(
+        'Erro ao enviar para transcrição',
+        err.message + '\n\nO áudio não foi perdido: dá para tentar enviar de novo.',
+      );
+    } finally {
+      setEnviandoTranscricao(false);
+      setProgressoEnvio('');
+      setNivelEntrada(null);
+    }
+  }
+
+  async function tentarEnviarDeNovo() {
+    setEnviandoTranscricao(true);
+    try {
+      await enviarTudo();
+      Alert.alert('Enviado', 'A aula está sendo transcrita. Você recebe um aviso quando terminar.');
+    } catch (err) {
+      Alert.alert('Ainda não foi', mensagemDeErro(err));
+    } finally {
+      setEnviandoTranscricao(false);
+      setProgressoEnvio('');
+    }
+  }
+
+  /** Transcrever um áudio de aula que já existe no aparelho, em vez de
+   *  gravar na hora — gravação feita por outro aparelho, aula gravada pela
+   *  instituição, etc. Daqui pra frente é o mesmo caminho da gravação. */
+  async function importarAudio() {
+    let arquivo;
+    try {
+      arquivo = await escolherArquivoDeAudio();
+    } catch (err) {
+      Alert.alert('Não dá para enviar este arquivo', err.message);
+      return;
+    }
+    if (!arquivo) return;
+    setEnviandoTranscricao(true);
+    try {
+      blocosRef.current = [{ uri: arquivo.uri, indice: 0, enviado: false }];
+      await enviarTudo();
+      Alert.alert('Enviado', 'A aula está sendo transcrita. Você recebe um aviso quando terminar.');
+    } catch (err) {
+      setPodeReenviar(blocosRef.current.length > 0);
       Alert.alert('Erro ao enviar para transcrição', err.message);
     } finally {
       setEnviandoTranscricao(false);
-      recordingRef.current = new Audio.Recording();
+      setProgressoEnvio('');
     }
+  }
+
+  /** A pessoa optou por digitar em vez de tentar o envio de novo: o áudio
+   *  não serve mais e não pode ficar largado no aparelho. */
+  async function descartarAudioGuardado() {
+    await apagarBlocos(blocosRef.current);
+    blocosRef.current = [];
+    setPodeReenviar(false);
   }
 
   // Horário do curso: mesma digitação por números do resto do app
@@ -523,26 +615,61 @@ export default function FormularioCursoScreen() {
           <>
             <Text style={s.sectionTitle}>Gravação e transcrição da aula</Text>
             <View style={s.gravacaoCard}>
-              {!gravando && curso.transcricao_status !== 'processando' && (
-                <TouchableOpacity
-                  style={[s.gravarBtn, preparando && { opacity: 0.7 }]}
-                  onPress={pedirConsentimentoEGravar}
-                  disabled={preparando}
-                >
-                  {preparando ? <ActivityIndicator color="#FFFFFF" /> : (
-                    <>
-                      <Ionicons name="mic-outline" size={18} color="#FFFFFF" />
-                      <Text style={s.gravarBtnText}>Gravar aula</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
+              {!gravando && !enviandoTranscricao && curso.transcricao_status !== 'processando' && (
+                <>
+                  <TouchableOpacity
+                    style={[s.gravarBtn, preparando && { opacity: 0.7 }]}
+                    onPress={() => pedirConsentimento(iniciarGravacao)}
+                    disabled={preparando}
+                  >
+                    {preparando ? <ActivityIndicator color="#FFFFFF" /> : (
+                      <>
+                        <Ionicons name="mic-outline" size={18} color="#FFFFFF" />
+                        <Text style={s.gravarBtnText}>Gravar aula</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={s.importarBtn}
+                    onPress={() => pedirConsentimento(importarAudio)}
+                  >
+                    <Ionicons name="folder-open-outline" size={17} color={COLORS.btnBlue} />
+                    <Text style={s.importarBtnTexto}>Transcrever um áudio já gravado</Text>
+                  </TouchableOpacity>
+                </>
               )}
 
               {gravando && (
                 <View style={s.gravandoBox}>
                   <Text style={s.gravandoTimer}>⏱ {formatarTempo(tempo)}</Text>
+                  <MedidorDeEntrada nivel={nivelEntrada} />
                   <TouchableOpacity style={s.encerrarBtn} onPress={encerrarEEnviar} disabled={enviandoTranscricao}>
                     {enviandoTranscricao ? <ActivityIndicator color="#FFFFFF" /> : <Text style={s.encerrarBtnText}>Encerrar e transcrever</Text>}
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Enviando (a gravação já parou): sem isso a tela não sinaliza
+                  nada entre encerrar e o envio terminar. */}
+              {enviandoTranscricao && !gravando && (
+                <View style={s.statusBox}>
+                  <ActivityIndicator color={COLORS.btnBlue} />
+                  <Text style={s.statusTexto}>{progressoEnvio || 'Enviando...'}</Text>
+                </View>
+              )}
+
+              {/* Envio falhou, mas o áudio continua no aparelho. */}
+              {podeReenviar && !enviandoTranscricao && (
+                <View style={s.reenvioBox}>
+                  <Text style={s.reenvioTitulo}>A gravação não foi enviada</Text>
+                  <Text style={s.reenvioTexto}>
+                    O áudio está guardado no aparelho e não foi perdido.
+                  </Text>
+                  <TouchableOpacity style={s.reenvioBtn} onPress={tentarEnviarDeNovo}>
+                    <Text style={s.reenvioBtnTexto}>Tentar enviar de novo</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={descartarAudioGuardado}>
+                    <Text style={s.descartarTexto}>Descartar áudio e digitar à mão</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -631,6 +758,18 @@ const s = StyleSheet.create({
   statusBox: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
   statusTexto: { fontSize: 13, color: COLORS.textMid, flex: 1, lineHeight: 19 },
   statusErro: { fontSize: 13, color: '#975451', marginBottom: 8, lineHeight: 19 },
+  importarBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    marginTop: 10, marginBottom: 4, paddingVertical: 13, borderRadius: 12,
+    borderWidth: 1, borderColor: '#C6D6CE', backgroundColor: COLORS.surface,
+  },
+  importarBtnTexto: { fontSize: 14, fontWeight: '600', color: COLORS.btnBlue, lineHeight: 20 },
+  reenvioBox: { backgroundColor: '#F7E7E6', borderRadius: 12, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: '#E5CBC9' },
+  reenvioTitulo: { fontSize: 14, fontWeight: '600', color: '#975451', marginBottom: 6, lineHeight: 20 },
+  reenvioTexto: { fontSize: 13, color: '#7A5250', lineHeight: 19, marginBottom: 10 },
+  reenvioBtn: { backgroundColor: '#975451', borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
+  reenvioBtnTexto: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
+  descartarTexto: { marginTop: 10, textAlign: 'center', fontSize: 13, color: '#7A5250', textDecorationLine: 'underline' },
   salvarTranscricaoBtn: {
     marginTop: 12, backgroundColor: COLORS.bg, borderRadius: 10, paddingVertical: 12,
     alignItems: 'center', borderWidth: 1, borderColor: COLORS.border,

@@ -7,8 +7,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import CabecalhoTela from '../components/CabecalhoTela';
+import MedidorDeEntrada from '../components/MedidorDeEntrada';
 import { Audio } from 'expo-av';
-import * as FileSystem from 'expo-file-system/legacy';
 // @notifee/react-native foi arquivado pela Invertase em 07/04/2026 — trocado
 // pelo fork mantido react-native-notify-kit (mesmo autor original recomenda
 // no README do projeto arquivado). API 100% compatível — só o caminho do
@@ -23,30 +23,12 @@ import {
   saveTranscriptTurns,
 } from '../services/database';
 import { getStatusAutorizacao } from '../services/autorizacaoGravacao';
-import { supabase } from '../services/supabase';
 import { mensagemDeErro } from '../services/erros';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
-import { MENSAGEM_ASSINATURA_INATIVA } from '../services/assinatura';
-
-// ─── Opções de gravação ────────────────────────────────────────
-const RECORDING_OPTIONS = {
-  android: {
-    extension: '.m4a',
-    outputFormat: Audio.AndroidOutputFormat.MPEG_4,
-    audioEncoder: Audio.AndroidAudioEncoder.AAC,
-    sampleRate: 22050,
-    numberOfChannels: 1,
-    bitRate: 64000,
-  },
-  ios: {
-    extension: '.m4a',
-    outputFormat: Audio.IOSOutputFormat.MPEG4AAC,
-    audioQuality: Audio.IOSAudioQuality.HIGH,
-    sampleRate: 22050,
-    numberOfChannels: 1,
-    bitRate: 64000,
-  },
-};
+import {
+  criarGravadorEmBlocos, enviarBlocoParaTranscricao, enviarGravacaoCompleta,
+  apagarBlocos, escolherArquivoDeAudio, MENSAGEM_SILENCIO,
+} from '../services/gravacaoEmBlocos';
 
 // ─── Steps ─────────────────────────────────────────────────────
 const STEPS = {
@@ -146,9 +128,18 @@ export default function NovaSessaoScreen() {
   const [duracaoFinal, setDuracaoFinal] = useState(0);
   const [autorizacaoStatus, setAutorizacaoStatus] = useState(null);
   const gravacaoAutorizada = autorizacaoStatus === 'autorizada';
+  // Nível de entrada do microfone em dBFS, pro medidor ao vivo. `null`
+  // enquanto nenhuma leitura chegou.
+  const [nivelEntrada, setNivelEntrada] = useState(null);
+  // true quando sobrou bloco de áudio sem enviar: habilita "tentar de novo"
+  // em vez de a gravação virar perda total.
+  const [podeReenviar, setPodeReenviar] = useState(false);
 
   // ─── Refs ─────────────────────────────────────────────────
-  const recordingRef = useRef(new Audio.Recording());
+  const gravadorRef = useRef(null);
+  // Blocos da gravação atual ({ uri, indice, enviado }). Os arquivos só são
+  // apagados quando a gravação INTEIRA foi aceita pelo servidor.
+  const blocosRef = useRef([]);
   const timerRef = useRef(null);
   const notificationIdRef = useRef(null);
   const sessionIdRef = useRef(null);
@@ -216,7 +207,7 @@ export default function NovaSessaoScreen() {
       // gravar (mesmo em uma tela nova) falha com "Only one Recording
       // object can be prepared at a given time" — só um reload de JS não
       // resolve, porque o estado preso é nativo, não do JavaScript.
-      recordingRef.current?.stopAndUnloadAsync().catch(() => {});
+      gravadorRef.current?.liberar().catch(() => {});
       // Encerra o foreground service se a tela for fechada com a gravação
       // ainda ativa — sem isso, a notificação/serviço fica "preso" mesmo
       // sem gravação nenhuma rolando.
@@ -283,14 +274,13 @@ export default function NovaSessaoScreen() {
     // voltar do Android desprotegidos (ver useEffect de beforeRemove abaixo
     // e o onVoltar deste step), dava pra chegar de novo neste botão enquanto
     // a sessão anterior ainda estava sendo finalizada (encerrarETranscrever
-    // ainda rodando em segundo plano). `recordingRef.current = new
-    // Audio.Recording()` logo abaixo reatribui a MESMA ref que aquele fluxo
-    // antigo ainda está usando pra ler o áudio (stopAndUnloadAsync/getURI)
-    // — as duas gravações brigam pelo único MediaRecorder nativo disponível,
-    // corrompendo o áudio da primeira (arquivo com a duração certa, mas sem
-    // fala nenhuma) ou derrubando com erro. Esta checagem é a defesa
-    // definitiva: mesmo que algum caminho de UI escape das outras travas,
-    // aqui a segunda gravação nunca chega a começar de verdade.
+    // ainda rodando em segundo plano). Começar aqui troca o gravador por
+    // baixo daquele fluxo, que ainda está lendo o áudio — as duas gravações
+    // brigam pelo único MediaRecorder nativo disponível, corrompendo o áudio
+    // da primeira (arquivo com a duração certa, mas sem fala nenhuma) ou
+    // derrubando com erro. Esta checagem é a defesa definitiva: mesmo que
+    // algum caminho de UI escape das outras travas, aqui a segunda gravação
+    // nunca chega a começar de verdade.
     if (transcrevendo) {
       Alert.alert(
         'Aguarde',
@@ -322,11 +312,18 @@ export default function NovaSessaoScreen() {
       // preparar uma nova — o expo-av só permite uma gravação ativa por
       // vez a nível nativo; tentar preparar sem liberar a anterior gera
       // o erro "Only one Recording object can be prepared at a given time".
-      try { await recordingRef.current.stopAndUnloadAsync(); } catch (_) {}
-      recordingRef.current = new Audio.Recording();
+      await gravadorRef.current?.liberar();
 
-      await recordingRef.current.prepareToRecordAsync(RECORDING_OPTIONS);
-      await recordingRef.current.startAsync();
+      blocosRef.current = [];
+      setPodeReenviar(false);
+      setNivelEntrada(null);
+      gravadorRef.current = criarGravadorEmBlocos({
+        aoFecharBloco: enviarBlocoFechado,
+        aoMedirNivel: setNivelEntrada,
+        aoDetectarSilencio: () => Alert.alert('Sem som no microfone', MENSAGEM_SILENCIO),
+      });
+      await gravadorRef.current.iniciar();
+
       setGravando(true);
       setTempo(0);
       timerRef.current = setInterval(() => setTempo(t => t + 1), 1000);
@@ -339,46 +336,65 @@ export default function NovaSessaoScreen() {
   }
 
   // ─── Transcrição via Edge Function (proxy da AssemblyAI + créditos de IA) ──
-  // Assíncrona: a chamada só dispara o pedido de transcrição (upload +
-  // submit na AssemblyAI) e volta — não espera o texto pronto. O resultado
-  // chega depois via webhook (`ia-transcrever-webhook`), que atualiza a
-  // sessão e manda um push. Ver DetalheSessaoScreen.js para o estado
-  // "processando".
-  async function transcreverArquivo(uri, sessionId) {
-    const audioBase64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
-    const { data, error } = await supabase.functions.invoke('ia-transcrever', {
-      body: { audioBase64, sessionId },
-    });
+  // Assíncrona: o envio só dispara o pedido de transcrição (upload + submit
+  // na AssemblyAI) e volta — não espera o texto pronto. O resultado chega
+  // depois via webhook (`ia-transcrever-webhook`), que atualiza a sessão e
+  // manda um push. Ver DetalheSessaoScreen.js para o estado "processando".
 
-    if (error) {
-      let mensagem = error.message;
-      let creditosInsuficientes = false;
-      let assinaturaInativa = false;
-      try {
-        const corpo = await error.context?.json();
-        if (corpo?.error) mensagem = corpo.error;
-        creditosInsuficientes = !!corpo?.creditosInsuficientes;
-        assinaturaInativa = !!corpo?.assinaturaInativa;
-      } catch (_) {}
-      if (assinaturaInativa) throw new Error(MENSAGEM_ASSINATURA_INATIVA);
-      if (creditosInsuficientes) {
-        throw new Error('Créditos de IA insuficientes para transcrever. Fale com o administrador da conta.');
-      }
-      throw new Error(mensagem);
-    }
-    if (data?.error) throw new Error(data.error);
+  /** A sessão precisa existir antes do primeiro envio de áudio. Numa
+   *  gravação curta isso acontece só no fim, como sempre; numa que passa de
+   *  1h, o primeiro bloco fecha antes disso e a sessão nasce ali. */
+  async function garantirSessao() {
+    if (sessionIdRef.current) return sessionIdRef.current;
+    const sid = await addSession(paciente.id, tipo, plataforma?.id || null, null, appointmentId);
+    sessionIdRef.current = sid;
+    return sid;
+  }
+
+  /** Um bloco de 1h fechou e a gravação continua: sobe ele agora, em vez de
+   *  deixar tudo pro fim. Se falhar, o arquivo fica guardado e vai junto na
+   *  tentativa final — nunca se perde bloco por falha de rede no meio. */
+  async function enviarBlocoFechado(uri, indice) {
+    const bloco = { uri, indice, enviado: false };
+    blocosRef.current.push(bloco);
+    try {
+      const sid = await garantirSessao();
+      await enviarBlocoParaTranscricao({
+        funcao: 'ia-transcrever',
+        uri,
+        cabecalhos: { 'x-session-id': sid },
+        indice,
+        total: 0, // a gravação ainda está rolando; o total vai no último
+      });
+      bloco.enviado = true;
+    } catch (_) {}
+  }
+
+  /** Sobe todos os blocos ainda não aceitos e só então apaga os arquivos. */
+  async function enviarTudo(sid) {
+    setProgressoTranscricao(
+      blocosRef.current.length > 1
+        ? `Enviando ${blocosRef.current.length} blocos de áudio...`
+        : 'Enviando para transcrição...'
+    );
+    await enviarGravacaoCompleta({
+      funcao: 'ia-transcrever',
+      cabecalhos: { 'x-session-id': sid },
+      blocos: blocosRef.current,
+    });
+    blocosRef.current = [];
+    setPodeReenviar(false);
+    setTranscricaoAssincrona(true);
   }
 
   // ─── Encerrar e transcrever ───────────────────────────────
   async function encerrarETranscrever() {
-    if (!recordingRef.current._isDoneRecording === false) return;
-
     clearInterval(timerRef.current);
     const duracao = tempo;
     setDuracaoFinal(duracao);
     setGravando(false);
     setTranscrevendo(true);
-    setProgressoTranscricao('Preparando áudio...');
+    setProgressoTranscricao('Finalizando gravação...');
 
     await removerNotificacaoGravacao();
     await Audio.setAudioModeAsync({
@@ -389,13 +405,12 @@ export default function NovaSessaoScreen() {
     });
 
     try {
-      await recordingRef.current.stopAndUnloadAsync();
-      const uri = recordingRef.current.getURI();
-      if (!uri) throw new Error('URI do áudio não encontrado após gravação.');
+      const { uri, indice } = await gravadorRef.current.parar();
+      if (!uri) throw new Error('O arquivo de áudio não foi encontrado após a gravação.');
+      blocosRef.current.push({ uri, indice, enviado: false });
 
       setProgressoTranscricao('Salvando sessão...');
-      const sid = await addSession(paciente.id, tipo, plataforma?.id || null, null, appointmentId);
-      sessionIdRef.current = sid;
+      const sid = await garantirSessao();
 
       const introducao = gerarIntroducaoSessao({
         tipo, plataforma, pacienteNome: paciente?.nome,
@@ -408,23 +423,79 @@ export default function NovaSessaoScreen() {
         duration_seconds: duracao || null,
       });
 
-      setProgressoTranscricao('Enviando para transcrição...');
-      await transcreverArquivo(uri, sid);
-
-      try { await FileSystem.deleteAsync(uri, { idempotent: true }); } catch (_) {}
-
-      setTranscricaoAssincrona(true);
+      await enviarTudo(sid);
     } catch (err) {
+      // O áudio continua no aparelho — a próxima tela oferece tentar de novo
+      // em vez de a gravação virar perda total.
+      setPodeReenviar(blocosRef.current.length > 0);
       Alert.alert(
         'Erro ao enviar para transcrição',
-        err.message + '\n\nVocê pode digitar manualmente na próxima tela.',
+        err.message + '\n\nO áudio não foi perdido: na próxima tela dá para tentar enviar de novo.',
       );
       setTranscricaoAssincrona(false);
     } finally {
       setTranscrevendo(false);
       setProgressoTranscricao('');
+      setNivelEntrada(null);
       setStep(STEPS.REVIEW);
-      recordingRef.current = new Audio.Recording();
+    }
+  }
+
+  /** Transcrever um áudio que já existe no aparelho, em vez de gravar na
+   *  hora — sessão gravada por outro aparelho, gravação exportada de uma
+   *  chamada, etc. Daqui pra frente é o mesmo caminho da gravação. */
+  async function importarAudio() {
+    if (!gravacaoAutorizada) {
+      Alert.alert('Autorização necessária', `${paciente?.nome} ainda não autorizou a gravação e transcrição das sessões.`);
+      return;
+    }
+    let arquivo;
+    try {
+      arquivo = await escolherArquivoDeAudio();
+    } catch (err) {
+      Alert.alert('Não dá para enviar este arquivo', err.message);
+      return;
+    }
+    if (!arquivo) return;
+
+    setTranscrevendo(true);
+    setProgressoTranscricao('Salvando sessão...');
+    try {
+      blocosRef.current = [{ uri: arquivo.uri, indice: 0, enviado: false }];
+      const sid = await garantirSessao();
+      // Sem duração conhecida: o arquivo veio de fora, e o valor que vale
+      // pra cobrança é o que a AssemblyAI mede no áudio de verdade.
+      const introducao = gerarIntroducaoSessao({
+        tipo, plataforma, pacienteNome: paciente?.nome,
+        data: new Date(), duracaoFormatada: null,
+      });
+      await updateSession(sid, {
+        transcript: introducao, audio_uri: null, category: null, duration_seconds: null,
+      });
+      await enviarTudo(sid);
+    } catch (err) {
+      setPodeReenviar(blocosRef.current.length > 0);
+      Alert.alert('Erro ao enviar para transcrição', err.message);
+      setTranscricaoAssincrona(false);
+    } finally {
+      setTranscrevendo(false);
+      setProgressoTranscricao('');
+      setStep(STEPS.REVIEW);
+    }
+  }
+
+  /** "Tentar novamente" da tela de revisão: reenvia só o que ainda não foi
+   *  aceito (cada bloco guarda se já passou). */
+  async function tentarEnviarDeNovo() {
+    setTranscrevendo(true);
+    try {
+      const sid = await garantirSessao();
+      await enviarTudo(sid);
+    } catch (err) {
+      Alert.alert('Ainda não foi', mensagemDeErro(err));
+    } finally {
+      setTranscrevendo(false);
+      setProgressoTranscricao('');
     }
   }
 
@@ -447,7 +518,7 @@ export default function NovaSessaoScreen() {
       // A sessão já foi criada em encerrarETranscrever (precisa existir
       // antes de disparar a transcrição) — aqui só atualiza com o texto
       // digitado manualmente (fallback de quando o disparo assíncrono falha).
-      const sid = sessionIdRef.current || await addSession(paciente.id, tipo, plataforma?.id || null, null, appointmentId);
+      const sid = await garantirSessao();
 
       const introducao = gerarIntroducaoSessao({
         tipo,
@@ -472,6 +543,11 @@ export default function NovaSessaoScreen() {
       if (turns.length > 0) {
         await saveTranscriptTurns(sid, turns);
       }
+
+      // A pessoa optou por digitar em vez de tentar o envio de novo: o áudio
+      // não serve mais pra nada e não pode ficar largado no aparelho.
+      await apagarBlocos(blocosRef.current);
+      blocosRef.current = [];
 
       Alert.alert('Sessão salva!', '', [
         { text: 'OK', onPress: () => navigation.goBack() }
@@ -689,10 +765,20 @@ Você pode bloquear a tela ou usar outros apps — a gravação continua.
                 ? <ActivityIndicator color="#fff" />
                 : <Text style={s.btnIniciarText}>Iniciar Gravação</Text>}
             </TouchableOpacity>
-          ) : (
+          ) : null}
+
+          {!gravando && !transcrevendo && gravacaoAutorizada && (
+            <TouchableOpacity style={s.btnImportar} onPress={importarAudio}>
+              <Ionicons name="folder-open-outline" size={17} color="#497363" />
+              <Text style={s.btnImportarTexto}>Transcrever um áudio já gravado</Text>
+            </TouchableOpacity>
+          )}
+
+          {gravando && (
             <View style={s.gravandoBox}>
               <Text style={s.gravandoTimer}>⏱ {formatarTempo(tempo)}</Text>
               <Text style={s.gravandoInfo}>Gravando o ambiente — mantenha o celular próximo.</Text>
+              <MedidorDeEntrada nivel={nivelEntrada} />
             </View>
           )}
 
@@ -751,6 +837,21 @@ Você pode bloquear a tela ou usar outros apps — a gravação continua.
               </Text>
             )}
           </Text>
+
+          {/* ── Envio falhou, mas o áudio continua no aparelho ── */}
+          {podeReenviar && !transcrevendo && (
+            <View style={s.reenvioBox}>
+              <Text style={s.reenvioTitulo}>A gravação não foi enviada</Text>
+              <Text style={s.reenvioTexto}>
+                O áudio está guardado no aparelho e não foi perdido. Tente
+                enviar de novo — ou digite abaixo, e aí o áudio é descartado
+                ao salvar.
+              </Text>
+              <TouchableOpacity style={s.btnReenviar} onPress={tentarEnviarDeNovo}>
+                <Text style={s.btnReenviarTexto}>Tentar enviar de novo</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* ── Instrução sobre prefixos ── */}
           <View style={s.instrucaoBox}>
@@ -850,6 +951,19 @@ const s = StyleSheet.create({
   infoStep:        { fontSize: 14, color: '#302C28', marginBottom: 8, lineHeight: 22 },
   infoBoxFooter:   { marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#E3EAF1' },
   infoBoxFooterText: { fontSize: 12, color: '#756E66', textAlign: 'center', fontStyle: 'italic', lineHeight: 17 },
+
+  btnImportar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    borderRadius: 14, paddingVertical: 15, marginBottom: 14,
+    borderWidth: 1, borderColor: '#C6D6CE', backgroundColor: '#FDFCFA',
+  },
+  btnImportarTexto: { color: '#497363', fontSize: 15, fontWeight: '600', lineHeight: 22 },
+
+  reenvioBox:    { backgroundColor: '#F7E7E6', borderRadius: 12, padding: 14, marginBottom: 14, borderWidth: 1, borderColor: '#E5CBC9' },
+  reenvioTitulo: { fontSize: 14, fontWeight: '600', color: '#975451', marginBottom: 6, lineHeight: 20 },
+  reenvioTexto:  { fontSize: 13, color: '#7A5250', lineHeight: 20, marginBottom: 10 },
+  btnReenviar:   { backgroundColor: '#975451', borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
+  btnReenviarTexto: { color: '#fff', fontSize: 15, fontWeight: '600' },
 
   instrucaoBox:      { backgroundColor: '#F2E9DC', borderRadius: 12, padding: 14, marginBottom: 14, borderWidth: 1, borderColor: '#E3D5BC' },
   instrucaoTitulo: { fontSize: 14, fontWeight: '500', color: '#7D6540', marginBottom: 6, lineHeight: 20 },

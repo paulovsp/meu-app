@@ -3,10 +3,8 @@
 // — ver comentário na migration 0037). Quando o curso tem custo, gera
 // automaticamente uma despesa vinculada (categoria "cursos") na tela
 // Pagamentos, mantida em sincronia nas edições.
-import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from './supabase';
 import { adicionarDespesa, editarDespesa, removerDespesa } from './despesas';
-import { MENSAGEM_ASSINATURA_INATIVA } from './assinatura';
 import { normalizarHorario, somarMinutos } from './horarios';
 
 /** Carga horária total (em horas) de `quantidade` aulas de `duracaoMin`
@@ -217,30 +215,3 @@ export async function salvarTranscricaoManual(cursoId, texto) {
   if (error) throw error;
 }
 
-/** Dispara a transcrição assíncrona (mesmo padrão de NovaSessaoScreen.js
- * pro áudio de sessão) — sobe o áudio e volta na hora, sem esperar o
- * resultado; a Edge Function chama o webhook quando terminar. */
-export async function transcreverAudioCurso(uri, cursoId) {
-  const audioBase64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
-  const { data, error } = await supabase.functions.invoke('curso-transcrever', {
-    body: { audioBase64, cursoId },
-  });
-
-  if (error) {
-    let mensagem = error.message;
-    let creditosInsuficientes = false;
-    let assinaturaInativa = false;
-    try {
-      const corpo = await error.context?.json();
-      if (corpo?.error) mensagem = corpo.error;
-      creditosInsuficientes = !!corpo?.creditosInsuficientes;
-      assinaturaInativa = !!corpo?.assinaturaInativa;
-    } catch (_) {}
-    if (assinaturaInativa) throw new Error(MENSAGEM_ASSINATURA_INATIVA);
-    if (creditosInsuficientes) {
-      throw new Error('Créditos de IA insuficientes para transcrever. Fale com o administrador da conta.');
-    }
-    throw new Error(mensagem);
-  }
-  if (data?.error) throw new Error(data.error);
-}

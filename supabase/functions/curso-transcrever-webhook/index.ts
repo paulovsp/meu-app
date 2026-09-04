@@ -10,6 +10,7 @@
 // "Locutor X: texto", preservando os rótulos que a AssemblyAI já dá.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { calcularCobrancaIA } from '../_shared/precificacaoIA.ts';
+import { acharBloco, marcarBlocoComErro, salvarBlocoEMontarTexto } from '../_shared/blocosTranscricao.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -55,49 +56,47 @@ Deno.serve(async (req) => {
 
     const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
-    const { data: curso, error: cursoError } = await supabaseAdmin
-      .from('cursos')
-      .select('id, user_id')
-      .eq('assemblyai_transcript_id', transcriptId)
-      .single();
-    if (cursoError || !curso) {
+    // Caminho atual: o texto que chega pertence a um BLOCO da gravação
+    // (aula acima de 1h é gravada em blocos — ver migration 0054). Aula
+    // curta é só o caso de um bloco só, mesmo caminho.
+    const bloco = await acharBloco(supabaseAdmin, transcriptId);
+
+    // Caminho antigo (app anterior a 03/09/2026, que não conhece blocos):
+    // o próprio curso guarda o transcript_id. Mantido pra não perder uma
+    // transcrição que já estava em andamento quando isto foi publicado.
+    let cursoId: string | null = bloco?.curso_id ?? null;
+    if (!cursoId) {
+      const { data: cursoAntigo } = await supabaseAdmin
+        .from('cursos')
+        .select('id')
+        .eq('assemblyai_transcript_id', transcriptId)
+        .maybeSingle();
+      cursoId = cursoAntigo?.id ?? null;
+    }
+    if (!cursoId) {
       return json({ error: 'Curso não encontrado para este transcript_id.' }, 404);
     }
-    const userId = curso.user_id as string;
 
-    if (statusRecebido === 'error') {
-      await supabaseAdmin.from('cursos').update({ transcricao_status: 'erro' }).eq('id', curso.id);
-      await enviarPush(userId, curso.id, 'Não foi possível transcrever a aula', 'Toque para tentar novamente.', supabaseAdmin);
-      return json({ ok: true });
-    }
-
-    const transcriptResp = await fetch(`${ASSEMBLYAI_TRANSCRIPT_URL}/${transcriptId}`, {
-      headers: { Authorization: ASSEMBLYAI_API_KEY },
-    });
-    if (!transcriptResp.ok) {
-      await supabaseAdmin.from('cursos').update({ transcricao_status: 'erro' }).eq('id', curso.id);
-      return json({ error: `Erro ao buscar transcrição na AssemblyAI (${transcriptResp.status}).` }, 502);
-    }
-    const transcript = await transcriptResp.json();
-
-    if (transcript.status === 'error') {
-      await supabaseAdmin.from('cursos').update({ transcricao_status: 'erro' }).eq('id', curso.id);
-      await enviarPush(userId, curso.id, 'Não foi possível transcrever a aula', String(transcript.error || ''), supabaseAdmin);
-      return json({ ok: true });
-    }
-
-    const textoFormatado = formatarTranscricao(transcript);
-    await supabaseAdmin
+    const { data: curso } = await supabaseAdmin
       .from('cursos')
-      .update({ transcript: textoFormatado, transcricao_status: 'concluida' })
-      .eq('id', curso.id);
+      .select('id, user_id')
+      .eq('id', cursoId)
+      .single();
+    const userId = curso?.user_id as string;
 
-    const duracaoSegundos = Number(transcript.audio_duration) || 0;
-    const custo = calcularCobrancaIA(duracaoSegundos);
+    async function marcarErro(mensagem: string) {
+      if (bloco) await marcarBlocoComErro(supabaseAdmin, bloco);
+      await supabaseAdmin.from('cursos').update({ transcricao_status: 'erro' }).eq('id', cursoId);
+      await enviarPush(userId, cursoId!, 'Não foi possível transcrever a aula', mensagem, supabaseAdmin);
+    }
 
-    const { data: assinaturaAtiva } = await supabaseAdmin.rpc('assinatura_ativa', { uid: userId });
-
-    if (assinaturaAtiva && custo > 0) {
+    // Cobra por BLOCO, pela duração que a própria AssemblyAI mediu: a soma
+    // dos blocos dá exatamente a duração total da aula.
+    async function cobrar(duracaoSegundos: number) {
+      const custo = calcularCobrancaIA(duracaoSegundos);
+      if (!userId || custo <= 0) return;
+      const { data: assinaturaAtiva } = await supabaseAdmin.rpc('assinatura_ativa', { uid: userId });
+      if (!assinaturaAtiva) return;
       const { data: perfil } = await supabaseAdmin
         .from('profiles')
         .select('creditos_ia')
@@ -119,7 +118,43 @@ Deno.serve(async (req) => {
       });
     }
 
-    await enviarPush(userId, curso.id, 'Transcrição pronta', 'A transcrição da aula já está disponível.', supabaseAdmin);
+    if (statusRecebido === 'error') {
+      await marcarErro('Toque para tentar novamente.');
+      return json({ ok: true });
+    }
+
+    const transcriptResp = await fetch(`${ASSEMBLYAI_TRANSCRIPT_URL}/${transcriptId}`, {
+      headers: { Authorization: ASSEMBLYAI_API_KEY },
+    });
+    if (!transcriptResp.ok) {
+      await marcarErro(`Não foi possível buscar o texto (${transcriptResp.status}).`);
+      return json({ error: `Erro ao buscar transcrição na AssemblyAI (${transcriptResp.status}).` }, 502);
+    }
+    const transcript = await transcriptResp.json();
+
+    if (transcript.status === 'error') {
+      await marcarErro(String(transcript.error || ''));
+      return json({ ok: true });
+    }
+
+    const textoFormatado = formatarTranscricao(transcript);
+    await cobrar(Number(transcript.audio_duration) || 0);
+
+    // Caminho antigo (sem blocos): o texto que chegou já é a aula inteira.
+    let textoCompleto: string | null = textoFormatado;
+    if (bloco) {
+      textoCompleto = await salvarBlocoEMontarTexto(supabaseAdmin, bloco, textoFormatado);
+      // Ainda falta bloco: a aula continua "processando" e ninguém é
+      // notificado — o aviso só faz sentido com o texto inteiro pronto.
+      if (textoCompleto === null) return json({ ok: true, aguardandoOutrosBlocos: true });
+    }
+
+    await supabaseAdmin
+      .from('cursos')
+      .update({ transcript: textoCompleto, transcricao_status: 'concluida' })
+      .eq('id', cursoId);
+
+    await enviarPush(userId, cursoId, 'Transcrição pronta', 'A transcrição da aula já está disponível.', supabaseAdmin);
 
     return json({ ok: true });
   } catch (err) {

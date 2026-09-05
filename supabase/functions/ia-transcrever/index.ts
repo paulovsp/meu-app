@@ -183,7 +183,13 @@ Deno.serve(async (req) => {
     // `sessions.assemblyai_transcript_id` guarda o id do PRIMEIRO bloco —
     // mantém compatibilidade com o que já existia (e com o app antigo, que
     // não conhece blocos).
-    const patch: Record<string, unknown> = { transcricao_status: 'processando' };
+    const patch: Record<string, unknown> = {
+      transcricao_status: 'processando',
+      // Marca a procedência: 'microfone' consome crédito de IA (AssemblyAI),
+      // 'meet' não (quem transcreve é o Google). Sem isso não dá pra saber
+      // depois o que foi cobrado nem o que mostrar na tela da sessão.
+      transcricao_origem: 'microfone',
+    };
     if (indice === 0) patch.assemblyai_transcript_id = transcript.id;
     await supabaseAdmin.from('sessions').update(patch).eq('id', sessionId);
 

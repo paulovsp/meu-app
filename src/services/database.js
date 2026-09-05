@@ -142,15 +142,23 @@ export async function addSession(patientId, type, platform, category, appointmen
   return data.id;
 }
 
-export async function updateSession(id, { transcript, audio_uri, category, duration_seconds }) {
+export async function updateSession(
+  id,
+  { transcript, audio_uri, category, duration_seconds, transcricao_status, transcricao_origem },
+) {
   const { supabase } = require('./supabase');
-  const { error } = await supabase
-    .from('sessions')
-    .update({
-      transcript: transcript || '', audio_uri: audio_uri || null,
-      category: category || null, duration_seconds: duration_seconds || null,
-    })
-    .eq('id', id);
+  const patch = {
+    transcript: transcript || '', audio_uri: audio_uri || null,
+    category: category || null, duration_seconds: duration_seconds || null,
+  };
+  // Só entram quando o chamador realmente passa — `undefined` significa "não
+  // mexe", diferente de `null`, que é o valor usado pra LIMPAR o status.
+  // Sem essa distinção não dava pra desmarcar uma transcrição travada em
+  // "processando" (ver salvarSessaoConfirmado em NovaSessaoScreen).
+  if (transcricao_status !== undefined) patch.transcricao_status = transcricao_status;
+  if (transcricao_origem !== undefined) patch.transcricao_origem = transcricao_origem;
+
+  const { error } = await supabase.from('sessions').update(patch).eq('id', id);
   if (error) throw error;
 }
 

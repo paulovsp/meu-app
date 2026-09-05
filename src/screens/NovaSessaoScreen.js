@@ -615,6 +615,14 @@ Você pode fazer a sessão normalmente e gravar pelo aparelho — de preferênci
         audio_uri: null,
         category: null,
         duration_seconds: duracaoFinal || null,
+        // Limpar o status aqui é obrigatório. Numa gravação longa, os blocos
+        // de 1h já sobem DURANTE a sessão e deixam a sessão em
+        // "processando"; se o envio final falha e a pessoa opta por digitar,
+        // sem isto a sessão ficaria em "Transcrevendo..." para sempre, com o
+        // texto que ela escreveu escondido atrás desse estado — exatamente o
+        // sintoma que originou toda a investigação da transcrição.
+        transcricao_status: null,
+        transcricao_origem: 'manual',
       });
 
       // Parse e salva os turnos

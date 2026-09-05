@@ -265,10 +265,27 @@ export default function DetalheSessaoScreen() {
 
   // ─── Estado: transcrição assíncrona em andamento ───────
   function renderTranscricaoProcessando() {
+    // Numa sessão pelo Meet não há gravação nossa acontecendo: o texto só
+    // existe depois que a chamada termina e o Google o gera. Dizer
+    // "transcrevendo" antes disso seria mentira — e a pessoa ainda pode
+    // precisar do link para entrar ou reenviar ao analisante.
+    const peloMeet = sessao.transcricao_origem === 'meet';
     return (
       <View style={styles.statusBox}>
-        <Ionicons name="mic-outline" size={30} color="#497363" style={styles.statusIcon} />
-        <Text style={styles.statusText}>Transcrevendo... você será avisada quando terminar.</Text>
+        <Ionicons
+          name={peloMeet ? 'videocam-outline' : 'mic-outline'}
+          size={30}
+          color="#497363"
+          style={styles.statusIcon}
+        />
+        <Text style={styles.statusText}>
+          {peloMeet
+            ? 'A transcrição chega sozinha depois que a chamada terminar. Você será avisada.'
+            : 'Transcrevendo... você será avisada quando terminar.'}
+        </Text>
+        {peloMeet && !!sessao.meet_meeting_uri && (
+          <Text style={styles.statusLink} selectable>{sessao.meet_meeting_uri}</Text>
+        )}
         <TouchableOpacity style={styles.btnAtualizar} onPress={atualizarSessao} disabled={atualizando}>
           {atualizando
             ? <ActivityIndicator color="#4D6B88" />
@@ -491,6 +508,7 @@ const styles = StyleSheet.create({
   statusBox:          { alignItems: 'center', paddingVertical: 24, gap: 10 },
   statusIcon:         {},
   statusText: { fontSize: 14, color: '#756E66', textAlign: 'center', paddingHorizontal: 12, lineHeight: 20 },
+  statusLink: { fontSize: 13.5, color: '#44745B', fontWeight: '600', textAlign: 'center', marginTop: 8, paddingHorizontal: 12, lineHeight: 20 },
   btnAtualizar:       { backgroundColor: '#E3EAF1', borderRadius: 12, paddingHorizontal: 20, paddingVertical: 10, marginTop: 4 },
   btnAtualizarText: { color: '#4D6B88', fontWeight: '500', fontSize: 14, lineHeight: 20 },
   textAreaManual: { minHeight: 160, borderWidth: 1, borderColor: '#EAE5DC', borderRadius: 12, padding: 12, fontSize: 15, color: '#302C28', textAlignVertical: 'top', lineHeight: 22 },

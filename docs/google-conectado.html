@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Conectar Google Meet</title>
+<style>
+  body { font-family: -apple-system, Arial, sans-serif; background: #F5F7FA; margin: 0; padding: 24px; color: #1A1A2E; }
+  .card { max-width: 420px; margin: 0 auto; background: #fff; border-radius: 16px; padding: 28px; box-shadow: 0 2px 10px rgba(0,0,0,0.06); }
+  h2 { margin-top: 0; }
+  p { line-height: 1.55; }
+  .carregando { text-align: center; color: #6B6860; padding: 40px 0; }
+  .erro { background: #FCEBEA; color: #C0392B; padding: 12px; border-radius: 10px; font-size: 13.5px; line-height: 1.5; }
+  .aviso { background: #FFF4E5; color: #B36B00; padding: 12px 14px; border-radius: 10px; font-size: 13.5px; line-height: 1.55; margin-top: 14px; }
+  .ok { color: #2E6B4F; font-weight: 700; }
+  .conta { background: #F5F7FA; border-left: 3px solid #3D5A80; padding: 10px 14px; border-radius: 4px; font-size: 13px; color: #33333d; margin-top: 14px; }
+  .voltar { color: #6B6860; font-size: 13px; margin-top: 22px; }
+</style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="carregando">Conectando sua conta do Google…</div>
+  </div>
+
+  <script>
+    // Esta página existe porque o Supabase reescreve respostas text/html das
+    // Edge Functions pra text/plain (proteção antiphishing deles) — então o
+    // Google redireciona pra cá, e daqui a gente chama a function.
+    const SUPABASE_URL = 'https://iahtyvqjgukdgrftpyxm.supabase.co';
+    const API_URL = SUPABASE_URL + '/functions/v1/google-oauth-callback';
+    const card = document.getElementById('card');
+
+    function mostrarErro(msg) {
+      card.innerHTML = '<h2>Não deu para conectar</h2>'
+        + '<div class="erro">' + msg + '</div>'
+        + '<p class="voltar">Feche esta janela e tente de novo pelo app.</p>';
+    }
+
+    (async function () {
+      const p = new URLSearchParams(location.search);
+      if (p.get('error')) {
+        mostrarErro('Você recusou a permissão no Google, ou ela foi cancelada.');
+        return;
+      }
+      const code = p.get('code');
+      const state = p.get('state');
+      if (!code || !state) {
+        mostrarErro('Este endereço foi aberto sem os dados da conexão. Comece pelo app.');
+        return;
+      }
+      try {
+        const resp = await fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: code, state: state }),
+        });
+        const corpo = await resp.json();
+        if (!resp.ok || corpo.error) { mostrarErro(corpo.error || ('Erro ' + resp.status + '.')); return; }
+
+        var html = '<h2><span class="ok">Conta conectada</span></h2>'
+          + '<p>Agora o Dr.Sig pode criar as salas das suas sessões online e trazer a transcrição automaticamente.</p>';
+        if (corpo.contaEmail) {
+          html += '<div class="conta">Conectado como <strong>' + corpo.contaEmail + '</strong></div>';
+        }
+        if (!corpo.transcricaoAutomaticaDisponivel) {
+          // Avisar aqui, e não depois da sessão: descobrir tarde significa a
+          // sessão perdida.
+          html += '<div class="aviso"><strong>Atenção:</strong> esta conta do Google não gera '
+            + 'transcrição automática. Isso exige um plano Google Workspace '
+            + 'Business Plus, Enterprise Standard/Plus, Education Plus ou '
+            + 'Enterprise Essentials. Suas sessões online continuam funcionando '
+            + 'normalmente, mas com a gravação pelo aparelho.</div>';
+        }
+        html += '<p class="voltar">Pode fechar esta janela e voltar ao app.</p>';
+        card.innerHTML = html;
+      } catch (e) {
+        mostrarErro('Falha de conexão. Verifique a internet e tente de novo.');
+      }
+    })();
+  </script>
+</body>
+</html>

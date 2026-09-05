@@ -923,6 +923,13 @@ export default function PerfilScreen({ navigation }) {
               <Text style={st.mensagensLinkText}>Mensagens personalizadas</Text>
             </TouchableOpacity>
 
+            <TouchableOpacity
+              style={st.mensagensLink}
+              onPress={() => navigation.navigate('IntegracaoMeet')}
+            >
+              <Text style={st.mensagensLinkText}>Sessões online pelo Google Meet</Text>
+            </TouchableOpacity>
+
             <Text style={st.sectionTitle}>Assinatura</Text>
             <View style={st.assinaturaBox}>
               {user.assinatura ? (

@@ -114,11 +114,25 @@ Deno.serve(async (req) => {
     // que nem era da pessoa.
     const { data: sessaoDona, error: sessaoDonaError } = await supabaseUser
       .from('sessions')
-      .select('id')
+      .select('id, patient_id')
       .eq('id', sessionId)
       .maybeSingle();
     if (sessaoDonaError || !sessaoDona) {
       return json({ error: 'Sessão não encontrada ou sem permissão.' }, 404);
+    }
+
+    // Gravar/transcrever exige autorização do analisante — até a migration
+    // 0055 essa exigência só existia na tela (NovaSessaoScreen desabilita o
+    // botão), e esta função nunca consultava `autorizacoes_transcricao`:
+    // quem chamasse direto transcrevia sem autorização nenhuma. O
+    // curso-transcrever já conferia o consentimento no banco; aqui faltava.
+    const { data: autorizada } = await supabaseAdmin
+      .rpc('gravacao_autorizada', { p_patient_id: sessaoDona.patient_id });
+    if (!autorizada) {
+      return json({
+        error: 'Este analisante ainda não autorizou a gravação e transcrição das sessões.',
+        semAutorizacao: true,
+      }, 403);
     }
 
     // Repassa o áudio adiante. No caminho binário, `corpoAudio` é o próprio

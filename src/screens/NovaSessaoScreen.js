@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
   Alert, ActivityIndicator, FlatList, TextInput, Linking,
-  Platform, KeyboardAvoidingView,
+  Platform, KeyboardAvoidingView, Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -29,6 +29,9 @@ import {
   criarGravadorEmBlocos, enviarBlocoParaTranscricao, enviarGravacaoCompleta,
   apagarBlocos, escolherArquivoDeAudio, MENSAGEM_SILENCIO,
 } from '../services/gravacaoEmBlocos';
+import {
+  getIntegracaoMeet, integracaoUtilizavel, criarSalaMeet,
+} from '../services/videochamada';
 
 // ─── Steps ─────────────────────────────────────────────────────
 const STEPS = {
@@ -37,6 +40,9 @@ const STEPS = {
   SELECT_PLATFORM: 2,
   RECORDING: 3,
   REVIEW: 4,
+  // Sessão pelo Meet: sem gravação nenhuma no aparelho — o app cria a sala e
+  // o texto vem pronto do Google depois. Ver src/services/videochamada.js.
+  MEET: 5,
 };
 
 const PLATFORMS = [
@@ -134,6 +140,13 @@ export default function NovaSessaoScreen() {
   // true quando sobrou bloco de áudio sem enviar: habilita "tentar de novo"
   // em vez de a gravação virar perda total.
   const [podeReenviar, setPodeReenviar] = useState(false);
+  // Conexão com o Google Meet. `null` = ainda carregando; o resto da tela usa
+  // `meetDisponivel` pra decidir entre a sessão pelo Meet (sem gravação) e o
+  // caminho antigo, por microfone.
+  const [integracaoMeet, setIntegracaoMeet] = useState(null);
+  const [salaMeet, setSalaMeet] = useState(null);
+  const [criandoSala, setCriandoSala] = useState(false);
+  const meetDisponivel = integracaoUtilizavel(integracaoMeet);
 
   // ─── Refs ─────────────────────────────────────────────────
   const gravadorRef = useRef(null);
@@ -159,6 +172,10 @@ export default function NovaSessaoScreen() {
       }
     }
     carregar();
+    // Lido uma vez, na abertura: decide o fluxo da sessão online antes de a
+    // pessoa escolher a plataforma, pra ela nunca descobrir que não dá
+    // depois da sessão feita.
+    getIntegracaoMeet().then(setIntegracaoMeet).catch(() => setIntegracaoMeet(null));
   }, []);
 
   // Trava QUALQUER forma de sair da tela (seta do cabeçalho — que muda
@@ -484,6 +501,68 @@ export default function NovaSessaoScreen() {
     }
   }
 
+  // ─── Sessão pelo Google Meet ──────────────────────────────
+  // Nada é gravado no aparelho: o app cria a sala, o Google transcreve, e o
+  // texto chega depois (cron meet-buscar-transcricao). É o caminho que
+  // resolve de vez o áudio mudo — sem microfone, não há disputa com a
+  // chamada rodando no mesmo celular.
+  async function iniciarSessaoMeet() {
+    if (!gravacaoAutorizada) {
+      Alert.alert(
+        'Autorização necessária',
+        `${paciente?.nome} ainda não autorizou a gravação e transcrição das sessões. `
+        + 'O aviso do próprio Meet não substitui essa autorização.'
+      );
+      return;
+    }
+    setCriandoSala(true);
+    try {
+      const sid = await garantirSessao();
+      const introducao = gerarIntroducaoSessao({
+        tipo, plataforma, pacienteNome: paciente?.nome,
+        data: new Date(), duracaoFormatada: null,
+      });
+      await updateSession(sid, {
+        transcript: introducao, audio_uri: null, category: null, duration_seconds: null,
+      });
+      const sala = await criarSalaMeet(sid);
+      setSalaMeet(sala);
+    } catch (err) {
+      // O servidor confere autorização, assinatura e plano — cada motivo tem
+      // uma saída diferente, então não vale mostrar tudo como "deu erro".
+      if (err.semAutorizacao) {
+        Alert.alert('Autorização necessária', err.message);
+      } else if (err.precisaConectar) {
+        Alert.alert('Conta do Google desconectada', `${err.message}
+
+Perfil → Sessões online pelo Google Meet.`);
+        setIntegracaoMeet(null);
+      } else if (err.semTranscricaoAutomatica) {
+        Alert.alert(
+          'Plano sem transcrição automática',
+          `${err.message}
+
+Você pode fazer a sessão normalmente e gravar pelo aparelho — de preferência com a chamada em outro dispositivo.`
+        );
+        setIntegracaoMeet(null);
+        setStep(STEPS.RECORDING);
+      } else {
+        Alert.alert('Erro ao criar a sala', mensagemDeErro(err));
+      }
+    } finally {
+      setCriandoSala(false);
+    }
+  }
+
+  async function compartilharLinkMeet() {
+    if (!salaMeet?.meetingUri) return;
+    try {
+      await Share.share({
+        message: `Link da nossa sessão: ${salaMeet.meetingUri}`,
+      });
+    } catch (_) {}
+  }
+
   /** "Tentar novamente" da tela de revisão: reenvia só o que ainda não foi
    *  aceito (cada bloco guarda se já passou). */
   async function tentarEnviarDeNovo() {
@@ -645,16 +724,110 @@ export default function NovaSessaoScreen() {
           <TouchableOpacity
             key={p.id}
             style={[s.typeBtn, { backgroundColor: p.color }]}
-            onPress={() => { setPlataforma(p); setStep(STEPS.RECORDING); }}
+            onPress={() => {
+              setPlataforma(p);
+              // Meet com conta conectada e plano que transcreve: caminho sem
+              // gravação nenhuma. Qualquer outro caso segue por microfone.
+              setStep(p.id === 'meet' && meetDisponivel ? STEPS.MEET : STEPS.RECORDING);
+            }}
           >
             <Ionicons name={p.icon} size={24} color="#FFFFFF" style={s.typeBtnIcon} />
             <Text style={s.typeBtnText}>{p.label}</Text>
+            {p.id === 'meet' && meetDisponivel && (
+              <Text style={s.typeBtnSub}>Transcrição automática, sem gravar pelo aparelho</Text>
+            )}
           </TouchableOpacity>
         ))}
         <TouchableOpacity style={s.btnVoltar} onPress={() => setStep(STEPS.SELECT_TYPE)}>
           <Text style={s.btnVoltarText}>← Voltar</Text>
         </TouchableOpacity>
         </View>
+      </SafeAreaView>
+    );
+  }
+
+  // ── STEP 5: Sessão pelo Google Meet ───────────────────────
+  if (step === STEPS.MEET) {
+    return (
+      <SafeAreaView style={s.safeArea} edges={['bottom']}>
+        <CabecalhoTela titulo="Sessão pelo Meet" onVoltar={() => setStep(STEPS.SELECT_PLATFORM)} />
+        <ScrollView style={s.container} contentContainerStyle={{ paddingBottom: 40 }}>
+          <Text style={s.sub}>
+            Analisante: <Text style={s.bold}>{paciente?.nome}</Text>
+          </Text>
+
+          {!gravacaoAutorizada ? (
+            <View style={s.bloqueioAutorizacao}>
+              <Ionicons name="shield-checkmark-outline" size={40} color="#A9A299" />
+              <Text style={s.bloqueioAutorizacaoTitulo}>Autorização necessária</Text>
+              <Text style={s.bloqueioAutorizacaoTexto}>
+                {`${paciente?.nome} precisa autorizar a gravação e transcrição das sessões pelo app antes de você iniciar. O aviso do próprio Meet não substitui essa autorização.`}
+              </Text>
+              <TouchableOpacity
+                style={s.btnIrParaAutorizacao}
+                onPress={() => navigation.navigate('PatientDetail', { paciente })}
+              >
+                <Text style={s.btnIrParaAutorizacaoTexto}>Ir para autorização</Text>
+              </TouchableOpacity>
+            </View>
+          ) : !salaMeet ? (
+            <>
+              <View style={s.infoBox}>
+                <Text style={s.infoStep}>O app cria a sala e a transcrição já vem ligada.</Text>
+                <Text style={s.infoStep}>Você envia o link para {paciente?.nome} e faz a chamada normalmente.</Text>
+                <Text style={s.infoStep}>Ao terminar, é só encerrar a chamada no Meet.</Text>
+                <Text style={s.infoStep}>A transcrição chega sozinha, com aviso — sem gastar créditos de IA.</Text>
+                <View style={s.infoBoxFooter}>
+                  <Text style={s.infoBoxFooterText}>
+Nada é gravado por este aparelho, então não há risco de áudio mudo por disputa de microfone.
+</Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={[s.btnIniciar, criandoSala && { opacity: 0.7 }]}
+                onPress={iniciarSessaoMeet}
+                disabled={criandoSala}
+              >
+                {criandoSala
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={s.btnIniciarText}>Criar sala e iniciar sessão</Text>}
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <View style={s.salaBox}>
+                <Text style={s.salaTitulo}>Sala criada</Text>
+                <Text style={s.salaLink} selectable>{salaMeet.meetingUri}</Text>
+                <Text style={s.salaAviso}>
+                  Envie este link para {paciente?.nome}. A transcrição começa
+                  automaticamente quando a chamada iniciar.
+                </Text>
+              </View>
+
+              <TouchableOpacity style={s.btnIniciar} onPress={compartilharLinkMeet}>
+                <Text style={s.btnIniciarText}>Enviar link ao analisante</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={s.btnImportar}
+                onPress={() => Linking.openURL(salaMeet.meetingUri).catch(() => {})}
+              >
+                <Ionicons name="videocam-outline" size={17} color="#497363" />
+                <Text style={s.btnImportarTexto}>Entrar na chamada</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={s.btnSalvar} onPress={() => navigation.goBack()}>
+                <Text style={s.btnSalvarText}>Concluir</Text>
+              </TouchableOpacity>
+              <Text style={s.salaRodape}>
+                Você pode fechar o app. Assim que a chamada terminar e o Google
+                gerar o texto, a transcrição aparece na sessão e você recebe um
+                aviso.
+              </Text>
+            </>
+          )}
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -711,6 +884,19 @@ export default function NovaSessaoScreen() {
 Você pode bloquear a tela ou usar outros apps — a gravação continua.
 </Text>
             </View>
+            {/* O Android entrega o microfone pro app que está em chamada e
+                silencia o nosso: a gravação sai com a duração certa e sem
+                fala nenhuma. Não tem conserto pelo app — só avisar antes. */}
+            {isOnline && (
+              <View style={s.avisoMesmoAparelho}>
+                <Text style={s.avisoMesmoAparelhoTexto}>
+                  Faça a chamada em OUTRO aparelho. Se ela acontecer neste
+                  mesmo celular, o Android dá o microfone para o app da
+                  chamada e a gravação sai muda.
+                  {plataforma?.id === 'meet' ? ' Conectando sua conta do Google (Perfil → Sessões online pelo Google Meet), o Meet transcreve sozinho e esse problema deixa de existir.' : ''}
+                </Text>
+              </View>
+            )}
           </View>
 
           {transcrevendo ? (
@@ -951,6 +1137,15 @@ const s = StyleSheet.create({
   infoStep:        { fontSize: 14, color: '#302C28', marginBottom: 8, lineHeight: 22 },
   infoBoxFooter:   { marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#E3EAF1' },
   infoBoxFooterText: { fontSize: 12, color: '#756E66', textAlign: 'center', fontStyle: 'italic', lineHeight: 17 },
+
+  avisoMesmoAparelho: { backgroundColor: '#F7E7E6', borderRadius: 10, padding: 12, marginTop: 10, borderWidth: 1, borderColor: '#E5CBC9' },
+  avisoMesmoAparelhoTexto: { fontSize: 12.5, color: '#7A5250', lineHeight: 19 },
+
+  salaBox: { backgroundColor: '#E2EFE8', borderRadius: 14, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#C3DFCF' },
+  salaTitulo: { fontSize: 14, fontWeight: '700', color: '#44745B', marginBottom: 8, lineHeight: 20 },
+  salaLink: { fontSize: 15, color: '#2F5B47', fontWeight: '600', lineHeight: 22, marginBottom: 8 },
+  salaAviso: { fontSize: 13, color: '#4E6B5C', lineHeight: 19 },
+  salaRodape: { fontSize: 12.5, color: '#8C857B', lineHeight: 19, textAlign: 'center', marginTop: 12 },
 
   btnImportar: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,

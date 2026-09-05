@@ -56,6 +56,7 @@ import DetalheCompromissoScreen from '../screens/DetalheCompromissoScreen';
 import AfazeresScreen from '../screens/AfazeresScreen';
 import RelatoriosScreen from '../screens/RelatoriosScreen';
 import DetalheRelatorioScreen from '../screens/DetalheRelatorioScreen';
+import IntegracaoMeetScreen from '../screens/IntegracaoMeetScreen';
 import SessoesStatusScreen from '../screens/SessoesStatusScreen';
 
 const Stack = createNativeStackNavigator();
@@ -255,6 +256,7 @@ function AppStackNavigator() {
       />
 
       <Stack.Screen name="SessoesStatus" component={SessoesStatusScreen} />
+      <Stack.Screen name="IntegracaoMeet" component={IntegracaoMeetScreen} />
     </Stack.Navigator>
   );
 }

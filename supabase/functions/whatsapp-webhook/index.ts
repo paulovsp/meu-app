@@ -19,7 +19,19 @@
 // requisição, igual à autorização de gravação. Nunca marca pagamento como
 // recebido sozinha: isso é sempre uma confirmação manual da profissional,
 // no app.
+//
+// ── Autenticidade (corrigido em 05/09/2026) ──────────────────────────────
+// Antes, esta função aceitava qualquer POST. A justificativa no código era
+// que o endereço "só nós conhecemos" — mas ele é EXIBIDO na tela de Apps
+// conectados para toda profissional que configura o WhatsApp. Ou seja:
+// qualquer pessoa que conhecesse a URL e um phone_number_id podia injetar
+// comprovantes falsos na fila de alguém, e comprovante confirmado vira
+// pagamento marcado como recebido. Agora cada requisição precisa trazer o
+// X-Hub-Signature-256 que a Meta calcula com o App Secret — e o App Secret
+// é de cada profissional, guardado em `integracoes_whatsapp` numa coluna
+// que o app nem consegue ler.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { assinaturaMetaConfere } from '../_shared/assinaturaMeta.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -129,7 +141,11 @@ Deno.serve(async (req) => {
   // — qualquer falha no processamento fica só no log, não vira erro pro
   // remetente (mesmo espírito do catch-up fiscal automático).
   try {
-    const body = await req.json().catch(() => null);
+    // Lido como TEXTO: a assinatura da Meta é calculada sobre o corpo bruto,
+    // então re-serializar o JSON invalidaria a conferência.
+    const corpoBruto = await req.text();
+    const body = JSON.parse(corpoBruto || 'null');
+    const assinaturaRecebida = req.headers.get('x-hub-signature-256');
     const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
     const entradas = body?.entry || [];
@@ -140,17 +156,26 @@ Deno.serve(async (req) => {
         const mensagens = valor?.messages || [];
         if (!phoneNumberId || mensagens.length === 0) continue;
 
-        const { data: perfil } = await supabaseAdmin
-          .from('profiles')
-          .select('id, whatsapp_access_token')
-          .eq('whatsapp_phone_number_id', phoneNumberId)
+        const { data: integracao } = await supabaseAdmin
+          .from('integracoes_whatsapp')
+          .select('user_id, access_token, app_secret')
+          .eq('phone_number_id', phoneNumberId)
           .maybeSingle();
-        if (!perfil?.whatsapp_access_token) continue; // ninguém configurou esse número
+        if (!integracao?.access_token) continue; // ninguém configurou esse número
+
+        // O phone_number_id vem do corpo, que é justamente o que se quer
+        // provar — por isso a ordem é: descobrir de quem seria, e só então
+        // exigir a assinatura feita com o segredo DESSA conta. Quem não tem
+        // o segredo não consegue forjar, escolha o número que escolher.
+        if (!(await assinaturaMetaConfere(assinaturaRecebida, corpoBruto, integracao.app_secret))) {
+          console.error('[whatsapp-webhook] Assinatura inválida ou App Secret ausente para', phoneNumberId);
+          continue;
+        }
 
         for (const mensagem of mensagens) {
           if (mensagem?.type !== 'image' || !mensagem?.image?.id) continue;
 
-          const imagem = await baixarImagemBase64(mensagem.image.id, perfil.whatsapp_access_token);
+          const imagem = await baixarImagemBase64(mensagem.image.id, integracao.access_token);
           if (!imagem) continue;
 
           let texto = '';
@@ -166,12 +191,12 @@ Deno.serve(async (req) => {
           const { data: pacientes } = await supabaseAdmin
             .from('patients')
             .select('id, telefone')
-            .eq('user_id', perfil.id)
+            .eq('user_id', integracao.user_id)
             .not('telefone', 'is', null);
           const pacienteEncontrado = (pacientes || []).find((p) => telefonesCorrespondem(p.telefone, remetente));
 
           await supabaseAdmin.from('whatsapp_comprovantes').insert({
-            user_id: perfil.id,
+            user_id: integracao.user_id,
             patient_id: pacienteEncontrado?.id ?? null,
             telefone_remetente: remetente,
             texto_extraido: texto.trim().slice(0, 2000),

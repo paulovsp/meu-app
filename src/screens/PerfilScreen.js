@@ -12,9 +12,8 @@ import {
   getPlanoFinanceiro, getRecebimentosDoMes, getPrecoMedioSessao,
   getContagemAnalisantesESupervisionandos, getContagemSessoesSemRelato, getResumoHorariosSemanais,
   filtrarRecebimentosMensais, calcularStatusGeralRecebimentos,
-  listarComprovantesWhatsappPendentes, confirmarComprovanteWhatsapp, ignorarComprovanteWhatsapp,
 } from '../services/database';
-import { supabase, SUPABASE_URL } from '../services/supabase';
+import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { validarCPF, dataBRParaISO, dataISOParaBR } from '../services/validacao';
 import TelefoneInput from '../components/TelefoneInput';
@@ -89,15 +88,6 @@ export default function PerfilScreen({ navigation }) {
   const [contadorEmail, setContadorEmail] = useState('');
   const [contadorTelefone, setContadorTelefone] = useState('');
 
-  // ── WhatsApp Business (item 13, v13 — opcional, só quem já tem conta
-  // comercial verificada na Meta) ──
-  const [whatsappPhoneNumberId, setWhatsappPhoneNumberId] = useState('');
-  const [whatsappAccessToken, setWhatsappAccessToken] = useState('');
-  const [whatsappEditando, setWhatsappEditando] = useState(false);
-  const [whatsappSalvando, setWhatsappSalvando] = useState(false);
-  const [comprovantesWhatsapp, setComprovantesWhatsapp] = useState([]);
-  const [comprovanteProcessandoId, setComprovanteProcessandoId] = useState(null);
-
   const carregar = useCallback(async () => {
     setCarregando(true);
     const hoje = new Date();
@@ -140,13 +130,6 @@ export default function PerfilScreen({ navigation }) {
       setContadorNome(u.contador_nome || '');
       setContadorEmail(u.contador_email || '');
       setContadorTelefone(u.contador_telefone || '');
-      setWhatsappPhoneNumberId(u.whatsapp_phone_number_id || '');
-      setWhatsappAccessToken(u.whatsapp_access_token || '');
-      if (u.whatsapp_phone_number_id) {
-        listarComprovantesWhatsappPendentes()
-          .then(setComprovantesWhatsapp)
-          .catch((e) => console.error('Erro ao buscar comprovantes do WhatsApp:', e?.message || e));
-      }
       setNotifTranscricaoPush(u.notif_transcricao_push !== false);
       setNotifTranscricaoEmail(u.notif_transcricao_email === true);
       setNotifAtrasoEmail(u.notif_atraso_email !== false);
@@ -310,65 +293,7 @@ export default function PerfilScreen({ navigation }) {
     }
   }
 
-  async function salvarWhatsapp() {
-    if (!whatsappPhoneNumberId.trim() || !whatsappAccessToken.trim()) {
-      Alert.alert('Campos obrigatórios', 'Preencha o Phone Number ID e o token de acesso.');
-      return;
-    }
-    setWhatsappSalvando(true);
-    try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          whatsapp_phone_number_id: whatsappPhoneNumberId.trim(),
-          whatsapp_access_token: whatsappAccessToken.trim(),
-        })
-        .eq('id', session.user.id);
-      if (error) throw error;
-      setUser((atual) => (atual ? {
-        ...atual,
-        whatsapp_phone_number_id: whatsappPhoneNumberId.trim(),
-        whatsapp_access_token: whatsappAccessToken.trim(),
-      } : atual));
-      setWhatsappEditando(false);
-      Alert.alert('Salvo', 'Credenciais do WhatsApp Business salvas.');
-    } catch (e) {
-      Alert.alert('Erro ao salvar', mensagemDeErro(e));
-    } finally {
-      setWhatsappSalvando(false);
-    }
-  }
 
-  async function confirmarComprovanteHandler(comprovante) {
-    if (!comprovante.patient_id) return;
-    setComprovanteProcessandoId(comprovante.id);
-    try {
-      const hoje = new Date();
-      await confirmarComprovanteWhatsapp(comprovante.id, {
-        patientId: comprovante.patient_id,
-        ano: hoje.getFullYear(),
-        mes: hoje.getMonth(),
-        valor: comprovante.valor_detectado,
-      });
-      setComprovantesWhatsapp((atual) => atual.filter((c) => c.id !== comprovante.id));
-    } catch (e) {
-      Alert.alert('Erro ao confirmar', mensagemDeErro(e));
-    } finally {
-      setComprovanteProcessandoId(null);
-    }
-  }
-
-  async function ignorarComprovanteHandler(comprovante) {
-    setComprovanteProcessandoId(comprovante.id);
-    try {
-      await ignorarComprovanteWhatsapp(comprovante.id);
-      setComprovantesWhatsapp((atual) => atual.filter((c) => c.id !== comprovante.id));
-    } catch (e) {
-      Alert.alert('Erro ao ignorar', mensagemDeErro(e));
-    } finally {
-      setComprovanteProcessandoId(null);
-    }
-  }
 
   async function alternarNotif(campo, valor, setter) {
     setNotifSalvando(campo);
@@ -940,20 +865,6 @@ export default function PerfilScreen({ navigation }) {
               <Text style={st.mensagensLinkText}>Mensagens personalizadas</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={st.mensagensLink}
-              onPress={() => navigation.navigate('IntegracaoVideochamada', { provedor: 'google_meet' })}
-            >
-              <Text style={st.mensagensLinkText}>Sessões online pelo Google Meet</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={st.mensagensLink}
-              onPress={() => navigation.navigate('IntegracaoVideochamada', { provedor: 'zoom' })}
-            >
-              <Text style={st.mensagensLinkText}>Sessões online pelo Zoom</Text>
-            </TouchableOpacity>
-
             <Text style={st.sectionTitle}>Assinatura</Text>
             <View style={st.assinaturaBox}>
               {user.assinatura ? (
@@ -1036,116 +947,17 @@ export default function PerfilScreen({ navigation }) {
               <Text style={st.trocarSenhaBtnText}>Meu currículo de cursos</Text>
             </TouchableOpacity>
 
-            <Text style={st.sectionTitle}>WhatsApp Business</Text>
-            {user.whatsapp_phone_number_id && !whatsappEditando ? (
-              <>
-                <View style={st.infoRow}>
-                  <Text style={st.infoLabel}>Status</Text>
-                  <Text style={[st.infoValue, { color: '#44745B' }]}>Configurado</Text>
-                </View>
-
-                {comprovantesWhatsapp.length > 0 && (
-                  <View style={{ marginTop: 8 }}>
-                    <Text style={st.bioSub}>
-                      {comprovantesWhatsapp.length === 1
-                        ? '1 comprovante recebido por WhatsApp aguardando sua confirmação:'
-                        : `${comprovantesWhatsapp.length} comprovantes recebidos por WhatsApp aguardando sua confirmação:`}
-                    </Text>
-                    {comprovantesWhatsapp.map((c) => (
-                      <View key={c.id} style={st.whatsappComprovanteCard}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={st.whatsappComprovanteNome}>
-                            {c.patient_nome || `Número não identificado (${c.telefone_remetente})`}
-                          </Text>
-                          <Text style={st.bioSub} numberOfLines={2}>
-                            {c.valor_detectado
-                              ? c.valor_detectado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-                              : c.texto_extraido?.slice(0, 80) || 'Sem texto reconhecido'}
-                          </Text>
-                        </View>
-                        {comprovanteProcessandoId === c.id ? (
-                          <ActivityIndicator color="#497363" />
-                        ) : (
-                          <View style={{ flexDirection: 'row', gap: 8 }}>
-                            {c.patient_id && (
-                              <TouchableOpacity
-                                style={st.whatsappComprovanteBtnOk}
-                                onPress={() => confirmarComprovanteHandler(c)}
-                              >
-                                <Text style={st.whatsappComprovanteBtnOkTexto}>Confirmar</Text>
-                              </TouchableOpacity>
-                            )}
-                            <TouchableOpacity
-                              style={st.whatsappComprovanteBtnIgnorar}
-                              onPress={() => ignorarComprovanteHandler(c)}
-                            >
-                              <Text style={st.whatsappComprovanteBtnIgnorarTexto}>Ignorar</Text>
-                            </TouchableOpacity>
-                          </View>
-                        )}
-                      </View>
-                    ))}
-                  </View>
-                )}
-
-                <TouchableOpacity style={st.trocarSenhaBtn} onPress={() => setWhatsappEditando(true)}>
-                  <Text style={st.trocarSenhaBtnText}>Alterar credenciais</Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              <>
-                <Text style={st.bioSub}>
-                  Recurso opcional — só funciona se você já tiver uma conta comercial verificada no
-                  WhatsApp Business (Meta). Com ela conectada, comprovantes de pagamento enviados por
-                  WhatsApp são lidos automaticamente e aparecem aqui pra você confirmar — nunca marca
-                  como recebido sozinho.
-                </Text>
-                <Text style={[st.bioSub, { marginTop: 8 }]}>
-                  Passo a passo: 1) crie um app em developers.facebook.com e adicione o produto
-                  WhatsApp; 2) vincule uma conta comercial (WABA) verificada; 3) gere um token de
-                  acesso permanente do sistema; 4) configure o webhook com a URL{' '}
-                  <Text style={{ fontWeight: '500' }}>{SUPABASE_URL}/functions/v1/whatsapp-webhook</Text>
-                  {' '}e o Verify Token combinado com o suporte do Dr.Sig; 5) cole o Phone Number ID e
-                  o token abaixo.
-                </Text>
-
-                <Text style={st.label}>Phone Number ID</Text>
-                <TextInput
-                  style={st.input}
-                  value={whatsappPhoneNumberId}
-                  onChangeText={setWhatsappPhoneNumberId}
-                  autoCapitalize="none"
-                  placeholder="Ex: 123456789012345"
-                />
-
-                <Text style={st.label}>Token de acesso permanente</Text>
-                <TextInput
-                  style={st.input}
-                  value={whatsappAccessToken}
-                  onChangeText={setWhatsappAccessToken}
-                  autoCapitalize="none"
-                  secureTextEntry
-                  placeholder="EAAxxxxxxxxxxxxx..."
-                />
-
-                <TouchableOpacity
-                  style={[st.trocarSenhaBtn, whatsappSalvando && { opacity: 0.6 }]}
-                  onPress={salvarWhatsapp}
-                  disabled={whatsappSalvando}
-                >
-                  {whatsappSalvando ? (
-                    <ActivityIndicator color="#497363" />
-                  ) : (
-                    <Text style={st.trocarSenhaBtnText}>Salvar credenciais</Text>
-                  )}
-                </TouchableOpacity>
-                {user.whatsapp_phone_number_id && (
-                  <TouchableOpacity onPress={() => setWhatsappEditando(false)}>
-                    <Text style={[st.bioSub, { textAlign: 'center', marginTop: 8 }]}>Cancelar</Text>
-                  </TouchableOpacity>
-                )}
-              </>
-            )}
+            <Text style={st.sectionTitle}>Apps conectados</Text>
+            <Text style={st.bioSub}>
+              WhatsApp Business, Google Meet e Zoom — as ligações que algumas
+              ferramentas do app usam. Todas opcionais.
+            </Text>
+            <TouchableOpacity
+              style={st.trocarSenhaBtn}
+              onPress={() => navigation.navigate('AppsConectados')}
+            >
+              <Text style={st.trocarSenhaBtnText}>Gerenciar apps conectados</Text>
+            </TouchableOpacity>
 
             <Text style={st.sectionTitle}>Segurança</Text>
             <View style={st.bioRow}>
@@ -1395,20 +1207,6 @@ const st = StyleSheet.create({
     borderWidth: 1, borderColor: '#EAE5DC',
   },
   trocarSenhaBtnText: { fontSize: 15, fontWeight: '500', color: '#497363', lineHeight: 22 },
-  whatsappComprovanteCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: '#F7F5F0', borderRadius: 12, padding: 12, marginTop: 8,
-    borderWidth: 1, borderColor: '#EAE5DC',
-  },
-  whatsappComprovanteNome: { fontSize: 14, fontWeight: '500', color: '#302C28', lineHeight: 20 },
-  whatsappComprovanteBtnOk: {
-    backgroundColor: '#44745B', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8,
-  },
-  whatsappComprovanteBtnOkTexto: { color: '#fff', fontSize: 12, fontWeight: '500', lineHeight: 17 },
-  whatsappComprovanteBtnIgnorar: {
-    backgroundColor: '#F1EDE5', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8,
-  },
-  whatsappComprovanteBtnIgnorarTexto: { color: '#756E66', fontSize: 12, fontWeight: '500', lineHeight: 17 },
   notifMatrizCard: {
     backgroundColor: '#FDFCFA', borderRadius: 14, marginBottom: 20,
     borderWidth: 1, borderColor: '#EAE5DC', overflow: 'hidden',

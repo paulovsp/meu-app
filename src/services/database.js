@@ -1,3 +1,7 @@
+import {
+  mesDeCompetencia, diaDeVencimento, sessaoEhCobravel, STATUS_PREVISTOS,
+} from './competencia';
+
 // ── PACIENTES (Supabase — tabela `patients`) ───────────
 
 async function getUserId() {
@@ -2081,6 +2085,66 @@ export async function getPagamentosSessaoPorPeriodo(patientId, inicioISO, fimISO
  * de sempre; analisantes "por sessão" (sem dia_pagamento) entram à parte,
  * com o total já confirmado no mês via pagamentos por sessão.
  */
+/**
+ * Quantas sessões cada analisante teve num mês, separando o que já é
+ * cobrança do que ainda é previsão, e quando foi a última.
+ *
+ * Cobrança mensal VARIÁVEL soma o que foi atendido, não o que estava na
+ * grade — antes o app multiplicava preço pelas ocorrências AGENDADAS do
+ * horário recorrente, então cancelamento não descontava e falta não
+ * aparecia. As regras estão em services/competencia.js:
+ *   realizado e nao_realizado -> cobra (falta não desobriga)
+ *   cancelado                 -> não cobra
+ *   agendado                  -> ainda previsto (de pé até alguém decidir)
+ *
+ * Cobre os dois caminhos, igual ao drill-down por sessão: compromisso
+ * individual (appointments.patient_id) e em grupo (appointment_participantes).
+ */
+export async function contarSessoesDoMesPorPaciente(patientIds, ano, mesIndex) {
+  const { supabase } = require('./supabase');
+  const contagem = {};
+  (patientIds || []).forEach((id) => {
+    contagem[id] = { cobraveis: 0, previstas: 0, ultimaSessao: null };
+  });
+  if (!patientIds || patientIds.length === 0) return contagem;
+
+  const inicio = `${ano}-${String(mesIndex + 1).padStart(2, '0')}-01`;
+  const ultimoDia = new Date(ano, mesIndex + 1, 0).getDate();
+  const fim = `${ano}-${String(mesIndex + 1).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
+
+  const [{ data: individuais, error: errI }, { data: grupos, error: errG }] = await Promise.all([
+    supabase
+      .from('appointments')
+      .select('patient_id, date, status')
+      .in('patient_id', patientIds)
+      .in('status', STATUS_PREVISTOS)
+      .gte('date', inicio).lte('date', fim),
+    supabase
+      .from('appointment_participantes')
+      .select('patient_id, appointments!inner(date, status)')
+      .in('patient_id', patientIds)
+      .in('appointments.status', STATUS_PREVISTOS)
+      .gte('appointments.date', inicio).lte('appointments.date', fim),
+  ]);
+  if (errI) throw errI;
+  if (errG) throw errG;
+
+  const registrar = (patientId, date, status) => {
+    const alvo = contagem[patientId];
+    if (!alvo) return;
+    alvo.previstas += 1;
+    if (sessaoEhCobravel(status)) {
+      alvo.cobraveis += 1;
+      if (!alvo.ultimaSessao || date > alvo.ultimaSessao) alvo.ultimaSessao = date;
+    }
+  };
+
+  (individuais || []).forEach((a) => registrar(a.patient_id, a.date, a.status));
+  (grupos || []).forEach((ap) => registrar(ap.patient_id, ap.appointments.date, ap.appointments.status));
+
+  return contagem;
+}
+
 export async function getRecebimentosDoMes(ano, mesIndex) {
   const { supabase } = require('./supabase');
   // Independentes entre si — rodar em sequência somava o tempo das duas.
@@ -2094,24 +2158,65 @@ export async function getRecebimentosDoMes(ano, mesIndex) {
   if (patientIds.length > 0) {
     const { data: rows, error } = await supabase
       .from('patients')
-      .select('id, telefone, email, cpf, tipo_emissao_fiscal, fiscal_frequencia_automatica, tipo_cobranca, valor_mensal_fixo')
+      .select('id, telefone, email, cpf, tipo_emissao_fiscal, fiscal_frequencia_automatica, tipo_cobranca, valor_mensal_fixo, dia_pagamento_modo')
       .in('id', patientIds);
     if (error) throw error;
     rows.forEach((r) => { contatos[r.id] = r; });
   }
 
-  const recebimentosMensal = plano.cronogramaRecebimentos.map((item) => {
+  // Cada analisante pode cobrir um mês de competência diferente (quem
+  // recebe no começo do mês cobra o mês anterior; quem recebe no fim, o
+  // corrente), então as contagens são buscadas por mês, não uma vez só.
+  const mensais = plano.cronogramaRecebimentos.filter((i) => contatos[i.patient_id]);
+  const mesesNecessarios = new Map();
+  mensais.forEach((item) => {
+    const modo = contatos[item.patient_id]?.dia_pagamento_modo || 'dia_fixo';
+    const { ano: a, mes: m } = mesDeCompetencia(ano, mesIndex, modo);
+    const chave = `${a}-${m}`;
+    if (!mesesNecessarios.has(chave)) mesesNecessarios.set(chave, { ano: a, mes: m, ids: [] });
+    mesesNecessarios.get(chave).ids.push(item.patient_id);
+  });
+
+  const contagensPorMes = {};
+  await Promise.all([...mesesNecessarios.values()].map(async ({ ano: a, mes: m, ids }) => {
+    contagensPorMes[`${a}-${m}`] = await contarSessoesDoMesPorPaciente(ids, a, m);
+  }));
+
+  const recebimentosMensal = mensais.map((item) => {
     const status = statusMap[item.patient_id];
     const contato = contatos[item.patient_id] || {};
     const ehMensalFixo = contato.tipo_cobranca === 'mensal_fixo';
+    const modo = contato.dia_pagamento_modo || 'dia_fixo';
+    const competencia = mesDeCompetencia(ano, mesIndex, modo);
+    const contagem = contagensPorMes[`${competencia.ano}-${competencia.mes}`]?.[item.patient_id]
+      || { cobraveis: 0, previstas: 0, ultimaSessao: null };
+
+    // Preço unitário vindo do cronograma (preço da ficha já convertido pra
+    // BRL). Antes o subtotal era preço x ocorrências AGENDADAS do mês
+    // exibido; agora é preço x sessões que de fato entram na conta do mês
+    // de competência — cancelada não conta, falta conta.
+    const precoUnitario = item.sessoesMes > 0 ? item.subtotal / item.sessoesMes : 0;
+
     return {
       patient_id: item.patient_id,
       nome: item.nome,
       tipo_cobranca: ehMensalFixo ? 'mensal_fixo' : 'mensal',
       tipo_emissao_fiscal: contato.tipo_emissao_fiscal || 'recibo',
       fiscal_frequencia_automatica: contato.fiscal_frequencia_automatica || null,
-      dia_pagamento: item.dia_pagamento,
-      valorPrevisto: ehMensalFixo ? Number(contato.valor_mensal_fixo) || 0 : item.subtotal,
+      dia_pagamento_modo: modo,
+      dia_pagamento: diaDeVencimento(ano, mesIndex, {
+        diaPagamento: item.dia_pagamento,
+        diaPagamentoModo: modo,
+        dataUltimaSessao: contagem.ultimaSessao,
+      }),
+      // Mês cujas sessões estão sendo cobradas — a tela mostra isso, pra
+      // ninguém precisar deduzir de cabeça.
+      competenciaAno: competencia.ano,
+      competenciaMes: competencia.mes,
+      sessoesMes: ehMensalFixo ? contagem.cobraveis : contagem.previstas,
+      valorPrevisto: ehMensalFixo
+        ? Number(contato.valor_mensal_fixo) || 0
+        : precoUnitario * contagem.previstas,
       telefone: contato.telefone || null,
       email: contato.email || null,
       cpf: contato.cpf || null,

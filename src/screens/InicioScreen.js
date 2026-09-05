@@ -60,7 +60,7 @@ const COLORS = {
 // Ordem das 3 abas no deslize — Início é a primeira/padrão. Usado tanto
 // pelo deslize quanto pelo toggle de cima.
 const ORDEM_MODOS = ['inicio', 'clinica', 'administrativa'];
-const MODO_LABEL = { inicio: 'Início', clinica: 'Clínica', administrativa: 'Administrativo' };
+const MODO_LABEL = { inicio: 'Início', clinica: 'Clínica', administrativa: 'Financeiro' };
 
 // ⚠️ Reduzidos para caber tudo na tela sem precisar rolar na maioria dos aparelhos
 const HEADER_H       = 172;
@@ -77,7 +77,7 @@ const TOGGLE_OVERLAP = 34;
 // A altura também é calculada (não é mais aspectRatio fixo) — com só 4
 // botões em 2 linhas, uma altura fixa deixava uma faixa vazia embaixo da
 // tela em aparelhos mais altos. TOGGLE_H é uma medida aproximada da barra
-// Início/Clínica/Administrativo (padding + texto), não um valor exato do
+// Início/Clínica/Financeiro (padding + texto), não um valor exato do
 // layout — se o toggle mudar de tamanho, reconferir aqui.
 const GRID_PADDING = 20;
 const GRID_COL_GAP = 14;

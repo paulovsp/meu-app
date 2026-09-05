@@ -19,6 +19,9 @@ import { mensagemDeErro } from '../services/erros';
 import { dataBRParaISO, dataISOParaBR } from '../services/validacao';
 import TelefoneInput from '../components/TelefoneInput';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
+import {
+  MODOS_DIA_PAGAMENTO, DIAS_FIXOS_SUGERIDOS, rotuloCompetencia,
+} from '../services/competencia';
 import { mascararHorario, normalizarHorario, horarioValido, terminoPadrao } from '../services/horarios';
 
 const DIAS_SEMANA = [
@@ -80,6 +83,12 @@ export default function FormularioAnalisanteScreen() {
 
   const [diaPagamento, setDiaPagamento] = useState(
     pacienteExistente?.dia_pagamento ? String(pacienteExistente.dia_pagamento) : ''
+  );
+  // O MODO define a que mês a cobrança se refere: dia fixo e quinto dia
+  // útil cobram o mês anterior (já fechado); último dia e dia da última
+  // sessão cobram o mês corrente, que acabou de terminar.
+  const [diaPagamentoModo, setDiaPagamentoModo] = useState(
+    pacienteExistente?.dia_pagamento_modo || 'dia_fixo'
   );
   const [tipoCobranca, setTipoCobranca] = useState(pacienteExistente?.tipo_cobranca || 'mensal');
   const [valorMensalFixo, setValorMensalFixo] = useState(
@@ -440,6 +449,7 @@ export default function FormularioAnalisanteScreen() {
           como_chegou: comoChegou.trim() || null,
           info_relevantes: infoRelevantes.trim() || null,
           dia_pagamento: tipoCobranca !== 'por_sessao' ? diaPagamentoNum : null,
+          dia_pagamento_modo: tipoCobranca !== 'por_sessao' ? diaPagamentoModo : 'dia_fixo',
           tipo_cobranca: tipoCobranca,
           valor_mensal_fixo: valorMensalFixo ? Number(valorMensalFixo.replace(',', '.')) : null,
         });
@@ -462,6 +472,7 @@ export default function FormularioAnalisanteScreen() {
           como_chegou: comoChegou.trim() || null,
           info_relevantes: infoRelevantes.trim() || null,
           dia_pagamento: tipoCobranca !== 'por_sessao' ? diaPagamentoNum : null,
+          dia_pagamento_modo: tipoCobranca !== 'por_sessao' ? diaPagamentoModo : 'dia_fixo',
           tipo_cobranca: tipoCobranca,
           valor_mensal_fixo: valorMensalFixo ? Number(valorMensalFixo.replace(',', '.')) : null,
         });
@@ -922,19 +933,60 @@ export default function FormularioAnalisanteScreen() {
           <View style={styles.fieldGroup}>
             <Text style={styles.label}>Dia de pagamento</Text>
             <Text style={styles.hint}>
-              Dia do mês em que o analisante costuma pagar — usado para marcar a
-              data prevista de recebimento no planejamento financeiro.
+              Quando o analisante costuma pagar. Isso decide a que mês a
+              cobrança se refere: quem paga no começo do mês está pagando as
+              sessões do mês anterior; quem paga no fim, as do mês que está
+              terminando.
             </Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ex: 10"
-              placeholderTextColor="#A9A299"
-              value={diaPagamento}
-              onChangeText={formatarDiaPagamento}
-              keyboardType="numeric"
-              maxLength={2}
-              returnKeyType="next"
-            />
+
+            <View style={styles.diaPagamentoOpcoes}>
+              {DIAS_FIXOS_SUGERIDOS.map((dia) => {
+                const ativo = diaPagamentoModo === 'dia_fixo' && Number(diaPagamento) === dia;
+                return (
+                  <TouchableOpacity
+                    key={dia}
+                    style={[styles.diaPagamentoChip, ativo && styles.diaPagamentoChipAtivo]}
+                    onPress={() => { setDiaPagamentoModo('dia_fixo'); setDiaPagamento(String(dia)); }}
+                  >
+                    <Text style={[styles.diaPagamentoChipTexto, ativo && styles.diaPagamentoChipTextoAtivo]}>
+                      Dia {dia}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+
+              {MODOS_DIA_PAGAMENTO.filter((m) => m.id !== 'dia_fixo').map((m) => {
+                const ativo = diaPagamentoModo === m.id;
+                return (
+                  <TouchableOpacity
+                    key={m.id}
+                    style={[styles.diaPagamentoChip, ativo && styles.diaPagamentoChipAtivo]}
+                    onPress={() => { setDiaPagamentoModo(m.id); setDiaPagamento(''); }}
+                  >
+                    <Text style={[styles.diaPagamentoChipTexto, ativo && styles.diaPagamentoChipTextoAtivo]}>
+                      {m.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {diaPagamentoModo === 'dia_fixo' && (
+              <TextInput
+                style={styles.input}
+                placeholder="Ou digite outro dia (ex: 10)"
+                placeholderTextColor="#A9A299"
+                value={diaPagamento}
+                onChangeText={(t) => { setDiaPagamentoModo('dia_fixo'); formatarDiaPagamento(t); }}
+                keyboardType="numeric"
+                maxLength={2}
+                returnKeyType="next"
+              />
+            )}
+
+            <Text style={styles.diaPagamentoResumo}>
+              Cobra as sessões do <Text style={styles.bold}>{rotuloCompetencia(diaPagamentoModo)}</Text>.
+            </Text>
           </View>
         )}
 
@@ -1010,6 +1062,16 @@ const styles = StyleSheet.create({
     fontSize: 11, fontWeight: '600', color: '#8C857B',
     textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 4, marginTop: 6,
   },
+  diaPagamentoOpcoes: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10, marginBottom: 10 },
+  diaPagamentoChip: {
+    paddingVertical: 9, paddingHorizontal: 13, borderRadius: 20,
+    borderWidth: 1, borderColor: '#DDD6CA', backgroundColor: '#FDFCFA',
+  },
+  diaPagamentoChipAtivo: { backgroundColor: '#E2EFE8', borderColor: '#44745B' },
+  diaPagamentoChipTexto: { fontSize: 13, color: '#756E66', fontWeight: '600' },
+  diaPagamentoChipTextoAtivo: { color: '#44745B' },
+  diaPagamentoResumo: { fontSize: 12.5, color: '#756E66', lineHeight: 18, marginTop: 8 },
+  bold: { fontWeight: '700', color: '#302C28' },
   hint: { fontSize: 12, color: '#8C857B', marginTop: 4, fontStyle: 'italic', lineHeight: 17 },
   input: {
     backgroundColor: '#FDFCFA', borderRadius: 12, paddingHorizontal: 16,

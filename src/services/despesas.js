@@ -1,5 +1,5 @@
 // Despesas do consultório (aluguel, contas, assinaturas, análise pessoal,
-// supervisão, cursos, outros) — tela Pagamentos (Administrativo). Não
+// supervisão, cursos, outros) — tela Saídas (aba Financeiro). Não
 // confundir com a tabela `pagamentos` (recebimento de analisante, base do
 // Recebíveis) — conceito totalmente diferente, daqui pra frente sempre
 // "despesa" no código pra não colidir os dois nomes.

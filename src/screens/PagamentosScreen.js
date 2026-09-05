@@ -139,7 +139,7 @@ export default function PagamentosScreen() {
   return (
     <SafeAreaView style={s.safe} edges={['bottom']}>
       <CabecalhoTela
-        titulo="Pagamentos"
+        titulo="Saídas"
         onVoltar={() => navigation.goBack()}
         acoes={(
           <TouchableOpacity onPress={() => setMenuAberto(true)} style={{ padding: 6 }}>

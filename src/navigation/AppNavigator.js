@@ -40,7 +40,7 @@ import MensagensPersonalizadasScreen from '../screens/MensagensPersonalizadasScr
 import CursosScreen from '../screens/CursosScreen';
 import FormularioCursoScreen from '../screens/FormularioCursoScreen';
 
-// Administrativo
+// Financeiro (Entradas, Saídas, Cobrança, Fiscal)
 import AgendaScreen from '../screens/AgendaScreen';
 import FinanceiroScreen from '../screens/FinanceiroScreen';
 import CobrancaScreen from '../screens/CobrancaScreen';
@@ -196,7 +196,7 @@ function AppStackNavigator() {
         options={{ title: 'Relatório' }}
       />
 
-      {/* Administrativo */}
+      {/* Financeiro */}
       <Stack.Screen
         name="Agenda"
         component={AgendaScreen}

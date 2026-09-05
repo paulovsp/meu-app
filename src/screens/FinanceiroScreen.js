@@ -124,9 +124,16 @@ function Vazio({ texto }) {
   );
 }
 
+const MESES_CURTO = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+
 export default function FinanceiroScreen() {
   const navigation = useNavigation();
   const [periodo, setPeriodo] = useState('mensal');
+  // Recebimentos do mês, já com a regra de competência aplicada (quem paga
+  // no começo do mês está pagando o mês anterior). É a MESMA fonte da tela
+  // de Cobrança — antes esta tela somava a grade do mês exibido por conta
+  // própria e dava um número diferente.
+  const [recebimentosMes, setRecebimentosMes] = useState([]);
   const [plano, setPlano] = useState(null);
   // "Recebido" (item 8) — só faz sentido no período mensal, cruzado com a
   // tabela `pagamentos` (o previsto sozinho já vem do plano financeiro).
@@ -159,6 +166,7 @@ export default function FinanceiroScreen() {
           // "Recebido" mensal só considera cobrança mensal/mensal-fixo — por
           // sessão tem sua própria dinâmica (diário/semanal), separada aqui.
           const recebimentosMensais = filtrarRecebimentosMensais(recebimentos);
+          setRecebimentosMes(recebimentosMensais.filter((r) => r.tipo_cobranca !== 'por_sessao'));
           setTotalRecebido(
             recebimentosMensais.filter((r) => r.recebido).reduce((acc, r) => acc + (r.valorPrevisto || 0), 0)
           );
@@ -195,7 +203,7 @@ export default function FinanceiroScreen() {
   if (!plano) {
     return (
       <SafeAreaView style={s.container} edges={['bottom']}>
-        <CabecalhoTela titulo="Financeiro" onVoltar={() => navigation.goBack()} acoes={acoesHeader} />
+        <CabecalhoTela titulo="Entradas" onVoltar={() => navigation.goBack()} acoes={acoesHeader} />
         <View style={s.carregandoWrap}>
           <ActivityIndicator size="large" color="#497363" />
         </View>
@@ -207,7 +215,7 @@ export default function FinanceiroScreen() {
 
   return (
     <SafeAreaView style={s.container} edges={['bottom']}>
-      <CabecalhoTela titulo="Financeiro" onVoltar={() => navigation.goBack()} acoes={acoesHeader} />
+      <CabecalhoTela titulo="Entradas" onVoltar={() => navigation.goBack()} acoes={acoesHeader} />
       <View style={s.toggleWrap}>
         {PERIODOS.map((p) => (
           <TouchableOpacity
@@ -309,10 +317,11 @@ export default function FinanceiroScreen() {
             })()}
 
             {periodo === 'mensal' && (() => {
-              // Só cobrança mensal/mensal-fixo aqui — por sessão tem sua
-              // própria previsão (diário/semanal), sem cronograma mensal.
-              const itensMensalFiltrados = plano.itensMensal.filter((item) => item.tipo_cobranca !== 'por_sessao');
-              const totalMensalFiltrado = itensMensalFiltrados.reduce((acc, item) => acc + item.subtotal, 0);
+              // "Neste mês" = o que ENTRA neste mês, não o que foi atendido
+              // nele. Para quem paga no começo do mês, são as sessões do mês
+              // anterior — por isso a fonte é a mesma da Cobrança, e não a
+              // grade do mês exibido.
+              const totalMensalFiltrado = recebimentosMes.reduce((acc, item) => acc + (item.valorPrevisto || 0), 0);
 
               return (
                 <>
@@ -322,16 +331,18 @@ export default function FinanceiroScreen() {
                   </View>
                   <View style={s.secao}>
                     <Text style={s.secaoTitulo}>Por analisante</Text>
-                    {itensMensalFiltrados.length === 0 ? (
+                    {recebimentosMes.length === 0 ? (
                       <Vazio texto="Nenhum analisante com cobrança mensal cadastrado ainda." />
                     ) : (
-                      itensMensalFiltrados.map((item) => (
+                      recebimentosMes.map((item) => (
                         <LinhaItem
                           key={item.patient_id}
                           icon="person-outline"
                           titulo={item.nome}
-                          subtitulo={`${item.sessoesMes} ${item.sessoesMes === 1 ? 'sessão' : 'sessões'} no mês${item.dia_pagamento ? ` · paga todo dia ${item.dia_pagamento}` : ''}`}
-                          valor={item.subtotal}
+                          subtitulo={`${item.sessoesMes} ${item.sessoesMes === 1 ? 'sessão' : 'sessões'}${
+                            item.competenciaMes != null ? ` de ${MESES_CURTO[item.competenciaMes]}` : ''
+                          }${item.dia_pagamento ? ` · recebe dia ${item.dia_pagamento}` : ''}`}
+                          valor={item.valorPrevisto}
                           cor={statusPorPaciente[item.patient_id]}
                         />
                       ))

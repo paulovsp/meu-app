@@ -100,7 +100,7 @@ export default function MenuLateral({ visible, onClose, navigation, clinicaButto
 
             <View style={s.divisoria} />
 
-            <Text style={s.secaoLabel}>Administrativo</Text>
+            <Text style={s.secaoLabel}>Financeiro</Text>
             {adminButtons.map((btn) => (
               <TouchableOpacity key={btn.id} style={s.item} onPress={() => irPara(btn.screen)}>
                 <Ionicons name={btn.icon} size={20} color="#497363" />

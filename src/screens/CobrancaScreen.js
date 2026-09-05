@@ -110,7 +110,13 @@ function Vazio({ texto }) {
 // Uma linha só para as duas modalidades — o que muda é o que ela conta.
 function descricaoLinha(item, diaEfetivo) {
   if (item.tipo_cobranca !== 'por_sessao') {
-    return `${item.recebido ? 'Recebido' : `Previsto dia ${diaEfetivo}`} · ${formatarMoeda(item.valorPrevisto)}`;
+    // Dizer QUAL mês está sendo cobrado: quem recebe no começo do mês está
+    // cobrando o mês anterior, e sem isso o valor parece do mês errado.
+    const competencia = item.competenciaMes != null
+      ? ` · sessões de ${MESES_LABEL[item.competenciaMes]}`
+      : '';
+    const base = item.recebido ? 'Recebido' : `Previsto dia ${diaEfetivo}`;
+    return `${base} · ${formatarMoeda(item.valorPrevisto)}${competencia}`;
   }
   if (!item.sessoesCobraveis) return 'Nenhuma sessão cobrável neste mês';
   if (!item.sessoesEmAberto) {
@@ -354,7 +360,7 @@ export default function CobrancaScreen() {
   return (
     <SafeAreaView style={s.container} edges={['bottom']}>
       <CabecalhoTela
-        titulo="Recebíveis"
+        titulo="Cobrança"
         onVoltar={() => navigation.goBack()}
         acoes={(
           <TouchableOpacity onPress={() => setMenuAberto(true)} style={{ padding: 6 }}>

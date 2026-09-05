@@ -469,19 +469,17 @@ export default function DisponibilidadeScreen() {
       Alert.alert('Título obrigatório', 'Dê um título pro evento.');
       return;
     }
-    // Sessão/supervisão individual sem paciente vinculado sempre quebrava
-    // ao abrir na Agenda ("null value in column patient_id") — o campo
-    // dizia "(opcional)" mas o compromisso materializado exige um
-    // paciente. Passa a ser obrigatório pra estes dois tipos.
-    if (tipoTemPacienteUnico(tipoEvento) && !analisanteId) {
-      Alert.alert(
-        'Obrigatório',
-        tipoEvento === 'supervisao_individual'
-          ? 'Selecione o supervisionando deste horário.'
-          : 'Selecione o analisante deste horário.'
-      );
-      return;
-    }
+    // Analisante/supervisionando é OPCIONAL aqui: horário sem ninguém
+    // vinculado é um horário LIVRE na agenda, que é o uso normal de quem
+    // monta a grade antes de ter quem atender.
+    //
+    // Isto já foi obrigatório, por um motivo que não existe mais: naquela
+    // época `appointments.patient_id` era `not null`, e abrir o horário na
+    // Agenda quebrava com "null value in column patient_id". A migration
+    // 0047 removeu essa restrição, e a Agenda hoje trata horário sem
+    // paciente como livre (verde) sem materializar compromisso nenhum —
+    // ver `abrirCompromissoOuEdicao` em AgendaScreen.js, que só cria
+    // compromisso quando há paciente, título ou grupo.
 
     // ── Recorrência: avulso precisa de uma data válida; quinzenal e
     // personalizada precisam da data da 1ª sessão (âncora do ciclo de 4
@@ -922,7 +920,9 @@ export default function DisponibilidadeScreen() {
           {tipoTemPacienteUnico(tipoEvento) && (
             <>
               <Text style={styles.label}>
-                {tipoEvento === 'supervisao_individual' ? 'Supervisionando *' : 'Analisante *'}
+                {tipoEvento === 'supervisao_individual'
+                  ? 'Supervisionando (opcional)'
+                  : 'Analisante (opcional)'}
               </Text>
 
               {analisanteNome ? (

@@ -62,6 +62,35 @@ export async function ativarLoginBiometrico(email) {
   await SecureStore.setItemAsync(CHAVE_EMAIL, email);
 }
 
+/**
+ * Mantém o token guardado igual ao da sessão viva.
+ *
+ * O Supabase roda com `autoRefreshToken: true` e ROTACIONA o refresh token
+ * (a cada renovação e ao voltar do segundo plano). O que a biometria salvou
+ * no momento em que foi ligada vira inválido pouco depois — e aí a próxima
+ * entrada por digital falha e o próprio código se desativa, fazendo o botão
+ * "voltar sozinho pra desligado". Sincronizar a cada evento de sessão é o
+ * que fecha esse furo.
+ *
+ * Nunca ATIVA nada: se a biometria não estiver ligada, não faz coisa
+ * alguma. E não pede confirmação — o SecureStore é gravado em modo simples
+ * de propósito (ver comentário no topo do arquivo).
+ */
+export async function sincronizarTokenBiometrico(session) {
+  try {
+    const refreshToken = session?.refresh_token;
+    if (!refreshToken) return;
+    const jaAtiva = await SecureStore.getItemAsync(CHAVE_EMAIL);
+    if (!jaAtiva) return;
+    const atual = await SecureStore.getItemAsync(CHAVE_TOKEN);
+    if (atual === refreshToken) return;
+    await SecureStore.setItemAsync(CHAVE_TOKEN, refreshToken);
+  } catch (_) {
+    // Falhar aqui não pode derrubar o fluxo de auth: na pior das hipóteses
+    // o token guardado fica velho e a pessoa entra com e-mail e senha.
+  }
+}
+
 export async function desativarLoginBiometrico() {
   await SecureStore.deleteItemAsync(CHAVE_TOKEN);
   await SecureStore.deleteItemAsync(CHAVE_EMAIL);
@@ -87,10 +116,16 @@ export async function entrarComBiometria() {
 
   const { data, error } = await supabase.auth.refreshSession({ refresh_token: refreshToken });
   if (error || !data?.session) {
-    // Token guardado não serve mais (ex: expirou, ou senha foi trocada) —
-    // desativa pra não ficar mostrando um atalho que não funciona.
-    await desativarLoginBiometrico();
-    return { error: error || new Error('Sessão salva expirou. Entre com e-mail e senha.') };
+    // Desativar só quando o token foi mesmo RECUSADO (expirou, senha
+    // trocada, sessão revogada). Antes qualquer erro desativava, então uma
+    // simples falha de rede apagava a configuração e a pessoa precisava
+    // ligar de novo — parte do "o botão não segura ligado".
+    const semRede = !!error && error.status === undefined && !/refresh|token|grant|jwt/i.test(error.message || '');
+    if (!semRede) {
+      await desativarLoginBiometrico();
+      return { error: error || new Error('Sessão salva expirou. Entre com e-mail e senha.') };
+    }
+    return { error: new Error('Não foi possível conectar. Verifique a internet e tente de novo.') };
   }
 
   // Supabase roda rotação de refresh token: o valor antigo já foi

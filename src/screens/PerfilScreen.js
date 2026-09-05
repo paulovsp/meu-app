@@ -243,12 +243,23 @@ export default function PerfilScreen({ navigation }) {
     );
   }
 
-  useEffect(() => {
-    (async () => {
-      setBioSuportada(await biometriaDisponivelNoAparelho());
-      setBioAtiva(await loginBiometricoEstaAtivo());
-    })();
-  }, []);
+  // useFocusEffect (e não useEffect de montagem): a biometria pode ser
+  // desativada fora desta tela — o login por digital se desativa sozinho se
+  // o token guardado não servir mais. Relendo a cada foco, o botão sempre
+  // mostra o estado real, em vez de um valor congelado da primeira abertura.
+  useFocusEffect(
+    useCallback(() => {
+      let ativo = true;
+      (async () => {
+        const suportada = await biometriaDisponivelNoAparelho();
+        const ligada = await loginBiometricoEstaAtivo();
+        if (!ativo) return;
+        setBioSuportada(suportada);
+        setBioAtiva(ligada);
+      })();
+      return () => { ativo = false; };
+    }, [])
+  );
 
   async function alternarBiometria(valor) {
     setBioProcessando(true);

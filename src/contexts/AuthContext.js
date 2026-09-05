@@ -4,6 +4,7 @@
 // LoginScreen checar getUser() uma vez só e navegar manualmente.
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../services/supabase';
+import { sincronizarTokenBiometrico } from '../services/biometria';
 
 const AuthContext = createContext({ session: null, loading: true, sairLocalmente: () => {} });
 
@@ -22,11 +23,17 @@ export function AuthProvider({ children }) {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setLoading(false);
+      sincronizarTokenBiometrico(data.session);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, novaSessao) => {
       setSession(novaSessao);
       setOcultarSessao(false);
+      // O Supabase rotaciona o refresh token a cada renovação. Sem
+      // reescrever o valor guardado, o atalho de digital passa a apontar
+      // pra um token já invalidado, falha no login seguinte e se desativa
+      // sozinho — era por isso que o botão "não segurava" ligado.
+      sincronizarTokenBiometrico(novaSessao);
     });
 
     return () => subscription.unsubscribe();

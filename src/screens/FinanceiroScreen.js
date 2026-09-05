@@ -330,7 +330,7 @@ export default function FinanceiroScreen() {
                           key={item.patient_id}
                           icon="person-outline"
                           titulo={item.nome}
-                          subtitulo={`${item.sessoesMes} sessão${item.sessoesMes === 1 ? '' : 'ões'} no mês${item.dia_pagamento ? ` · paga todo dia ${item.dia_pagamento}` : ''}`}
+                          subtitulo={`${item.sessoesMes} ${item.sessoesMes === 1 ? 'sessão' : 'sessões'} no mês${item.dia_pagamento ? ` · paga todo dia ${item.dia_pagamento}` : ''}`}
                           valor={item.subtotal}
                           cor={statusPorPaciente[item.patient_id]}
                         />

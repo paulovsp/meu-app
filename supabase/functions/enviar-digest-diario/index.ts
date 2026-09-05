@@ -26,9 +26,16 @@ function diasNoMes(ano: number, mesIndex: number) {
   return new Date(ano, mesIndex + 1, 0).getDate();
 }
 
+type Preferencias = {
+  atraso: boolean;
+  registro: boolean;
+  sessao: boolean;
+};
+
 async function montarDigestDoProfissional(
   supabaseAdmin: ReturnType<typeof createClient>,
-  userId: string
+  userId: string,
+  prefs: Preferencias,
 ) {
   const hoje = new Date();
   const ano = hoje.getFullYear();
@@ -49,7 +56,7 @@ async function montarDigestDoProfissional(
     (p) => p.tipo_cobranca !== 'por_sessao' && p.dia_pagamento && !p.data_paralizacao
   );
   let atrasados: { nome: string; diasAtraso: number }[] = [];
-  if (mensais.length > 0) {
+  if (prefs.atraso && mensais.length > 0) {
     const { data: pagamentosDoMes } = await supabaseAdmin
       .from('pagamentos')
       .select('patient_id, recebido')
@@ -72,7 +79,7 @@ async function montarDigestDoProfissional(
   // paciente aqui (service_role não passa pela RLS que faz isso sozinha
   // pro cliente autenticado).
   let sessoesSemRelato = 0;
-  if (todosIds.length > 0) {
+  if (prefs.registro && todosIds.length > 0) {
     const { count } = await supabaseAdmin
       .from('sessions')
       .select('*', { count: 'exact', head: true })
@@ -81,11 +88,41 @@ async function montarDigestDoProfissional(
     sessoesSemRelato = count || 0;
   }
 
-  return { atrasados, sessoesSemRelato };
+  // Sessões passadas que ninguém confirmou se aconteceram — os mesmos
+  // compromissos que o popup de check-in da Início pergunta um a um
+  // (listarCompromissosAguardandoCheckin): status ainda 'agendado', data
+  // entre 90 dias atrás e hoje. Enquanto não forem respondidos, cobrança
+  // por sessão, financeiro e fiscal ficam sem base.
+  let aguardandoConfirmacao = 0;
+  if (prefs.sessao && todosIds.length > 0) {
+    const desde = new Date();
+    desde.setDate(desde.getDate() - 90);
+    const { count } = await supabaseAdmin
+      .from('appointments')
+      .select('*', { count: 'exact', head: true })
+      .in('patient_id', todosIds)
+      .eq('status', 'agendado')
+      .gte('date', desde.toISOString().slice(0, 10))
+      .lte('date', new Date().toISOString().slice(0, 10));
+    aguardandoConfirmacao = count || 0;
+  }
+
+  return { atrasados, sessoesSemRelato, aguardandoConfirmacao };
 }
 
-function montarHtml(atrasados: { nome: string; diasAtraso: number }[], sessoesSemRelato: number) {
+function montarHtml(
+  atrasados: { nome: string; diasAtraso: number }[],
+  sessoesSemRelato: number,
+  aguardandoConfirmacao: number,
+) {
   const partes: string[] = [];
+  if (aguardandoConfirmacao > 0) {
+    partes.push(
+      `<h3>${aguardandoConfirmacao} sessão${aguardandoConfirmacao === 1 ? '' : 'ões'} aguardando confirmação</h3>` +
+      `<p>Abra o app e responda se ${aguardandoConfirmacao === 1 ? 'ela aconteceu' : 'elas aconteceram'} — ` +
+      `é isso que atualiza cobrança, financeiro e fiscal.</p>`
+    );
+  }
   if (atrasados.length > 0) {
     partes.push(
       `<h3>${atrasados.length} pagamento${atrasados.length === 1 ? '' : 's'} em atraso</h3><p>` +
@@ -118,17 +155,31 @@ Deno.serve(async (req) => {
   const resultado = { enviados: 0, semNadaAvisar: 0, erros: [] as string[] };
 
   try {
+    // Cada seção do resumo tem seu próprio interruptor (migration 0057).
+    // Antes o e-mail inteiro dependia só de `notif_atraso_email`, então
+    // quem desligava aviso de atraso perdia junto o de sessões sem relato,
+    // que é outro assunto.
     const { data: perfis, error } = await supabaseAdmin
       .from('profiles')
-      .select('id, email, nome')
-      .in('assinatura_status', ['ativa', 'cortesia'])
-      .neq('notif_atraso_email', false);
+      .select('id, email, nome, notif_atraso_email, notif_registro_email, notif_sessao_email')
+      .in('assinatura_status', ['ativa', 'cortesia']);
     if (error) throw error;
 
     for (const perfil of perfis || []) {
       try {
-        const { atrasados, sessoesSemRelato } = await montarDigestDoProfissional(supabaseAdmin, perfil.id);
-        if (atrasados.length === 0 && sessoesSemRelato === 0) {
+        const prefs = {
+          atraso: perfil.notif_atraso_email !== false,
+          registro: perfil.notif_registro_email !== false,
+          sessao: perfil.notif_sessao_email === true,
+        };
+        if (!prefs.atraso && !prefs.registro && !prefs.sessao) {
+          resultado.semNadaAvisar++;
+          continue;
+        }
+
+        const { atrasados, sessoesSemRelato, aguardandoConfirmacao } =
+          await montarDigestDoProfissional(supabaseAdmin, perfil.id, prefs);
+        if (atrasados.length === 0 && sessoesSemRelato === 0 && aguardandoConfirmacao === 0) {
           resultado.semNadaAvisar++;
           continue;
         }
@@ -140,7 +191,7 @@ Deno.serve(async (req) => {
             from: 'Dr.Sig <naoresponda@drsig.com.br>',
             to: [perfil.email],
             subject: 'Seu resumo diário',
-            html: montarHtml(atrasados, sessoesSemRelato),
+            html: montarHtml(atrasados, sessoesSemRelato, aguardandoConfirmacao),
           }),
         });
         if (!resp.ok) {

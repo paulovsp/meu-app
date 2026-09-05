@@ -261,6 +261,11 @@ export default function InicioScreen({ navigation }) {
   // disparar os dois populars ao mesmo tempo (Alert.alert é um modal
   // nativo único: um segundo Alert enquanto o primeiro ainda está na tela
   // substitui o de baixo, que nunca mais volta a aparecer).
+  // Preferência "Incluir registro" (Perfil → Notificações). Desligada, o
+  // app para de PERGUNTAR pelo relato, mas continua contando as sessões
+  // sem relato no card da Início — o controle não depende do popup.
+  const perguntarRelatoRef = useRef(true);
+
   function processarFilaCheckin(fila, indice) {
     return new Promise((resolveFila) => {
       if (indice >= fila.length) {
@@ -279,7 +284,7 @@ export default function InicioScreen({ navigation }) {
         // Duas formas de relato contam igualmente (ver estaSemRelato em
         // database.js): gravar áudio (transcrito depois) ou escrever
         // diretamente em Novo Registro, com a data da sessão já preenchida.
-        aoRealizada: eventoIndividual
+        aoRealizada: eventoIndividual && perguntarRelatoRef.current
           ? () => new Promise((resolve) => {
               Alert.alert(
                 'Adicionar relato?',
@@ -333,6 +338,15 @@ export default function InicioScreen({ navigation }) {
   async function perguntarCheckinsPendentes() {
     if (processandoCheckinRef.current) return;
     try {
+      // Lido aqui (e não do state `user`, que carrega em paralelo neste
+      // mesmo efeito e ainda pode estar nulo na primeira passagem).
+      const { data: prefs } = await supabase
+        .from('profiles')
+        .select('notif_registro_push')
+        .eq('id', session.user.id)
+        .maybeSingle();
+      perguntarRelatoRef.current = prefs?.notif_registro_push !== false;
+
       const candidatos = await listarCompromissosAguardandoCheckin();
       const pendentes = candidatos.filter((c) => horarioJaPassou(c.date, c.end_time));
       if (pendentes.length === 0) return;

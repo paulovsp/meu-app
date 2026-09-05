@@ -62,6 +62,9 @@ export default function PerfilScreen({ navigation }) {
   const [notifTranscricaoEmail, setNotifTranscricaoEmail] = useState(false);
   const [notifAtrasoEmail, setNotifAtrasoEmail] = useState(true);
   const [notifAtrasoPush, setNotifAtrasoPush] = useState(false);
+  const [notifSessaoEmail, setNotifSessaoEmail] = useState(false);
+  const [notifRegistroPush, setNotifRegistroPush] = useState(true);
+  const [notifRegistroEmail, setNotifRegistroEmail] = useState(true);
   const [notifSalvando, setNotifSalvando] = useState(null);
   const [exportando, setExportando] = useState(false);
   const [excluindoConta, setExcluindoConta] = useState(false);
@@ -148,6 +151,9 @@ export default function PerfilScreen({ navigation }) {
       setNotifTranscricaoEmail(u.notif_transcricao_email === true);
       setNotifAtrasoEmail(u.notif_atraso_email !== false);
       setNotifAtrasoPush(u.notif_atraso_push === true);
+      setNotifSessaoEmail(u.notif_sessao_email === true);
+      setNotifRegistroPush(u.notif_registro_push !== false);
+      setNotifRegistroEmail(u.notif_registro_email !== false);
 
       // Checagem silenciosa de renovação mensal de créditos — se houver
       // renovação pendente, já reflete o saldo/data novos sem recarregar tudo.
@@ -1183,7 +1189,7 @@ export default function PerfilScreen({ navigation }) {
                 </View>
               </View>
 
-              <View style={[st.notifMatrizLinha, st.notifMatrizLinhaUltima]}>
+              <View style={st.notifMatrizLinha}>
                 <View style={st.notifMatrizTipo}>
                   <Text style={st.bioLabel}>Recebimento em atraso</Text>
                   <Text style={st.bioSub}>Quando um pagamento mensal passar do vencimento.</Text>
@@ -1205,6 +1211,69 @@ export default function PerfilScreen({ navigation }) {
                     <Switch
                       value={notifAtrasoEmail}
                       onValueChange={(v) => alternarNotif('notif_atraso_email', v, setNotifAtrasoEmail)}
+                    />
+                  )}
+                </View>
+              </View>
+
+              <View style={st.notifMatrizLinha}>
+                <View style={st.notifMatrizTipo}>
+                  <Text style={st.bioLabel}>Sessão feita / paga</Text>
+                  <Text style={st.bioSub}>
+                    Pergunta, ao abrir o app, se as sessões que já passaram
+                    aconteceram — e se foram pagas, na cobrança por sessão.
+                  </Text>
+                </View>
+                <View style={st.notifMatrizCanalCol}>
+                  {/* Sem interruptor de propósito: este é o único ponto do app
+                      onde um compromisso passado deixa de ser "agendado".
+                      Desligar pararia cobrança, financeiro, fiscal e a
+                      contagem de sessões sem relato. */}
+                  <Switch
+                    value
+                    disabled
+                    onValueChange={() => {}}
+                  />
+                  <Text style={st.notifFixo}>sempre</Text>
+                </View>
+                <View style={st.notifMatrizCanalCol}>
+                  {notifSalvando === 'notif_sessao_email' ? (
+                    <ActivityIndicator color="#497363" />
+                  ) : (
+                    <Switch
+                      value={notifSessaoEmail}
+                      onValueChange={(v) => alternarNotif('notif_sessao_email', v, setNotifSessaoEmail)}
+                    />
+                  )}
+                </View>
+              </View>
+
+              <View style={[st.notifMatrizLinha, st.notifMatrizLinhaUltima]}>
+                <View style={st.notifMatrizTipo}>
+                  <Text style={st.bioLabel}>Incluir registro</Text>
+                  <Text style={st.bioSub}>
+                    Oferece adicionar o relato logo depois de confirmar a
+                    sessão. Desligado, o app só deixa de perguntar — as
+                    sessões sem relato continuam sendo contadas na Início.
+                  </Text>
+                </View>
+                <View style={st.notifMatrizCanalCol}>
+                  {notifSalvando === 'notif_registro_push' ? (
+                    <ActivityIndicator color="#497363" />
+                  ) : (
+                    <Switch
+                      value={notifRegistroPush}
+                      onValueChange={(v) => alternarNotif('notif_registro_push', v, setNotifRegistroPush)}
+                    />
+                  )}
+                </View>
+                <View style={st.notifMatrizCanalCol}>
+                  {notifSalvando === 'notif_registro_email' ? (
+                    <ActivityIndicator color="#497363" />
+                  ) : (
+                    <Switch
+                      value={notifRegistroEmail}
+                      onValueChange={(v) => alternarNotif('notif_registro_email', v, setNotifRegistroEmail)}
                     />
                   )}
                 </View>
@@ -1341,6 +1410,7 @@ const st = StyleSheet.create({
   notifMatrizLinhaUltima: { borderBottomWidth: 0 },
   notifMatrizTipo: { flex: 1, paddingRight: 8 },
   notifMatrizCanalCol: { width: 64, alignItems: 'center' },
+  notifFixo: { fontSize: 10.5, color: '#8C857B', marginTop: 3, lineHeight: 14 },
   modalOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'center', alignItems: 'center', padding: 24,

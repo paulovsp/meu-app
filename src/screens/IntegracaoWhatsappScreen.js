@@ -18,10 +18,7 @@ import { mensagemDeErro } from '../services/erros';
 import {
   getIntegracaoWhatsapp, conectarWhatsapp, desconectarWhatsapp, URL_WEBHOOK,
 } from '../services/whatsappBusiness';
-import {
-  listarComprovantesWhatsappPendentes, confirmarComprovanteWhatsapp,
-  ignorarComprovanteWhatsapp,
-} from '../services/database';
+import { listarComprovantesWhatsappPendentes } from '../services/database';
 
 const COLORS = {
   bg: '#F7F5F0',
@@ -40,7 +37,6 @@ export default function IntegracaoWhatsappScreen() {
   const [carregando, setCarregando] = useState(true);
   const [editando, setEditando] = useState(false);
   const [salvando, setSalvando] = useState(false);
-  const [processandoId, setProcessandoId] = useState(null);
 
   const [phoneNumberId, setPhoneNumberId] = useState('');
   const [accessToken, setAccessToken] = useState('');
@@ -103,36 +99,6 @@ export default function IntegracaoWhatsappScreen() {
     );
   }
 
-  async function confirmar(c) {
-    if (!c.patient_id) return;
-    setProcessandoId(c.id);
-    try {
-      const agora = new Date();
-      await confirmarComprovanteWhatsapp(c.id, {
-        patientId: c.patient_id,
-        ano: agora.getFullYear(),
-        mes: agora.getMonth(),
-        valor: c.valor_detectado,
-      });
-      setComprovantes((atual) => atual.filter((x) => x.id !== c.id));
-    } catch (err) {
-      Alert.alert('Erro ao confirmar', mensagemDeErro(err));
-    } finally {
-      setProcessandoId(null);
-    }
-  }
-
-  async function ignorar(c) {
-    setProcessandoId(c.id);
-    try {
-      await ignorarComprovanteWhatsapp(c.id);
-      setComprovantes((atual) => atual.filter((x) => x.id !== c.id));
-    } catch (err) {
-      Alert.alert('Erro', mensagemDeErro(err));
-    } finally {
-      setProcessandoId(null);
-    }
-  }
 
   const conectado = !!integracao;
 
@@ -167,39 +133,20 @@ export default function IntegracaoWhatsappScreen() {
                     : `${comprovantes.length} comprovantes aguardando sua confirmação`}
                 </Text>
 
-                {comprovantes.map((c) => (
-                  <View key={c.id} style={s.comprovante}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={s.comprovanteNome}>
-                        {c.patient_nome || `Número não identificado (${c.telefone_remetente})`}
-                      </Text>
-                      <Text style={s.comprovanteDetalhe} numberOfLines={2}>
-                        {c.valor_detectado
-                          ? c.valor_detectado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-                          : c.texto_extraido?.slice(0, 80) || 'Sem texto reconhecido'}
-                      </Text>
-                      {!c.patient_id && (
-                        <Text style={s.comprovanteAviso}>
-                          Não deu para identificar de qual analisante veio — confira o telefone no cadastro.
-                        </Text>
-                      )}
-                    </View>
-                    {processandoId === c.id ? (
-                      <ActivityIndicator color={COLORS.verde} />
-                    ) : (
-                      <View style={{ gap: 6 }}>
-                        {!!c.patient_id && (
-                          <TouchableOpacity style={s.btnOk} onPress={() => confirmar(c)}>
-                            <Text style={s.btnOkTexto}>Confirmar</Text>
-                          </TouchableOpacity>
-                        )}
-                        <TouchableOpacity style={s.btnIgnorar} onPress={() => ignorar(c)}>
-                          <Text style={s.btnIgnorarTexto}>Ignorar</Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                  </View>
-                ))}
+                {comprovantes.length > 0 && (
+                  <TouchableOpacity
+                    style={s.irRecebiveis}
+                    onPress={() => navigation.navigate('Cobranca')}
+                  >
+                    <Text style={s.irRecebiveisTexto}>Conferir em Recebíveis</Text>
+                    <Text style={s.irRecebiveisSub}>
+                      A conferência acontece lá porque confirmar um comprovante
+                      marca um MÊS como recebido — e o mês é escolhido naquela
+                      tela. Lá também aparece o valor previsto ao lado do que
+                      foi lido.
+                    </Text>
+                  </TouchableOpacity>
+                )}
 
                 <TouchableOpacity style={s.btnSecundario} onPress={() => setEditando(true)}>
                   <Text style={s.btnSecundarioTexto}>Substituir credenciais</Text>
@@ -322,6 +269,9 @@ const s = StyleSheet.create({
   btnOkTexto: { color: '#FFFFFF', fontSize: 12.5, fontWeight: '600' },
   btnIgnorar: { backgroundColor: COLORS.bg, borderRadius: 8, paddingVertical: 7, paddingHorizontal: 12, borderWidth: 1, borderColor: COLORS.border },
   btnIgnorarTexto: { color: COLORS.textMid, fontSize: 12.5, fontWeight: '600' },
+  irRecebiveis: { backgroundColor: '#E2EFE8', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#C3DFCF' },
+  irRecebiveisTexto: { fontSize: 14.5, fontWeight: '700', color: '#44745B', lineHeight: 21 },
+  irRecebiveisSub: { fontSize: 12.5, color: '#4E6B5C', lineHeight: 18, marginTop: 4 },
   label: { fontSize: 13, fontWeight: '600', color: COLORS.textDark, marginTop: 16, marginBottom: 6 },
   input: { backgroundColor: COLORS.surface, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14.5, color: COLORS.textDark, borderWidth: 1, borderColor: COLORS.border },
   ajuda: { fontSize: 12.5, color: COLORS.textMid, lineHeight: 18, marginTop: 8 },

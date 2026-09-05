@@ -4,7 +4,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Calendar } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
+import ComprovantesWhatsapp from '../components/ComprovantesWhatsapp';
+import { cruzarComprovantesComRecebimentos } from '../services/comprovantes';
 import {
+  listarComprovantesWhatsappPendentes,
+  confirmarComprovanteWhatsapp,
+  ignorarComprovanteWhatsapp,
   getRecebimentosDoMes,
   marcarPagamentoRecebido,
   desmarcarPagamentoRecebido,
@@ -164,6 +169,9 @@ export default function CobrancaScreen() {
   const [profissional, setProfissional] = useState(null);
   const [carregando, setCarregando] = useState(true);
   const [menuAberto, setMenuAberto] = useState(false);
+  // Comprovantes lidos por OCR do WhatsApp, aguardando conferência.
+  const [comprovantes, setComprovantes] = useState([]);
+  const [comprovanteProcessandoId, setComprovanteProcessandoId] = useState(null);
 
   const ano = refDate.getFullYear();
   const mesIndex = refDate.getMonth();
@@ -171,7 +179,14 @@ export default function CobrancaScreen() {
   const carregar = useCallback(async () => {
     setCarregando(true);
     try {
-      setRecebimentos(await getRecebimentosDoMes(ano, mesIndex));
+      const [lista, pendentes] = await Promise.all([
+        getRecebimentosDoMes(ano, mesIndex),
+        // Falhar aqui não pode derrubar o Recebíveis: quem não configurou
+        // o WhatsApp simplesmente não tem fila nenhuma.
+        listarComprovantesWhatsappPendentes().catch(() => []),
+      ]);
+      setRecebimentos(lista);
+      setComprovantes(pendentes);
     } catch (e) {
       Alert.alert('Erro ao carregar', mensagemDeErro(e));
     } finally {
@@ -212,6 +227,40 @@ export default function CobrancaScreen() {
       Alert.alert('Erro ao atualizar', mensagemDeErro(e));
     } finally {
       setAtualizandoId(null);
+    }
+  }
+
+  // Confirmar aqui — e não na tela do WhatsApp — é o que garante que o mês
+  // marcado é o mês que está na tela. Antes usava sempre o mês corrente, e
+  // comprovante de pagamento atrasado quitava o mês errado, sem avisar.
+  async function confirmarComprovante(item) {
+    setComprovanteProcessandoId(item.id);
+    try {
+      await confirmarComprovanteWhatsapp(item.id, {
+        patientId: item.patient_id,
+        ano,
+        mes: mesIndex,
+        // O valor que vale é o previsto do mês, não o que o OCR leu: o
+        // comprovante serve de indício, a cobrança é a do cadastro.
+        valor: item.valorPrevisto,
+      });
+      await carregar();
+    } catch (e) {
+      Alert.alert('Erro ao confirmar', mensagemDeErro(e));
+    } finally {
+      setComprovanteProcessandoId(null);
+    }
+  }
+
+  async function ignorarComprovante(item) {
+    setComprovanteProcessandoId(item.id);
+    try {
+      await ignorarComprovanteWhatsapp(item.id);
+      setComprovantes((atual) => atual.filter((c) => c.id !== item.id));
+    } catch (e) {
+      Alert.alert('Erro', mensagemDeErro(e));
+    } finally {
+      setComprovanteProcessandoId(null);
     }
   }
 
@@ -265,6 +314,10 @@ export default function CobrancaScreen() {
     : [];
   const pendentesHoje = recebimentosHoje.filter((r) => !r.recebido);
 
+  // Cruza cada comprovante com a linha do mês que está sendo visto: quem
+  // é, quanto foi lido, quanto era previsto, e se aquele mês já foi quitado.
+  const comprovantesCruzados = cruzarComprovantesComRecebimentos(comprovantes, recebimentos);
+
   const listaDoDia = diaSelecionado
     ? recebimentosMensal.filter((r) => toISODia(ano, mesIndex, r.dia_pagamento) === diaSelecionado)
     : recebimentosMensal;
@@ -294,6 +347,14 @@ export default function CobrancaScreen() {
             </Text>
           </View>
         )}
+
+        <ComprovantesWhatsapp
+          itens={comprovantesCruzados}
+          nomeDoMes={MESES_LABEL[mesIndex]}
+          processandoId={comprovanteProcessandoId}
+          onConfirmar={confirmarComprovante}
+          onIgnorar={ignorarComprovante}
+        />
 
         <View style={s.calendarioCard}>
           <Calendar

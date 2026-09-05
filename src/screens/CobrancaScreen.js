@@ -11,6 +11,7 @@ import {
   confirmarComprovanteWhatsapp,
   ignorarComprovanteWhatsapp,
   getRecebimentosDoMes,
+  diasDesdeSessaoEmAberto,
   marcarPagamentoRecebido,
   desmarcarPagamentoRecebido,
   formatarMoeda,
@@ -53,6 +54,16 @@ function diasDesdeVencimento(ano, mesIndex, diaPagamento) {
 // de 7 dias). "Recebido" sempre vence os outros estados.
 function statusRecebimento(item, ano, mesIndex) {
   if (item.recebido) return 'recebido';
+  // Cobrança por sessão não tem dia fixo: o vencimento é a data da sessão
+  // mais antiga ainda não paga. Sem sessão em aberto, nada a cobrar.
+  if (item.tipo_cobranca === 'por_sessao') {
+    if (!item.sessoesEmAberto) return 'recebido';
+    const dias = diasDesdeSessaoEmAberto(item);
+    if (dias == null || dias < 0) return 'em_dia';
+    if (dias === 0) return 'no_dia';
+    if (dias <= 7) return 'atrasado';
+    return 'atrasado_grave';
+  }
   const diasAtraso = diasDesdeVencimento(ano, mesIndex, item.dia_pagamento);
   if (diasAtraso < 0) return 'em_dia';
   if (diasAtraso === 0) return 'no_dia';
@@ -95,23 +106,26 @@ function Vazio({ texto }) {
   );
 }
 
-function LinhaSessao({ item, onPress }) {
-  const rotuloSessoes = item.sessoesPagas === 1 ? '1 sessão paga' : `${item.sessoesPagas} sessões pagas`;
-  return (
-    <TouchableOpacity style={s.linha} onPress={() => onPress(item)}>
-      <Ionicons name="receipt-outline" size={22} color={item.recebido ? '#44745B' : '#A9A299'} style={s.checkBtn} />
-      <View style={s.linhaInfo}>
-        <Text style={s.linhaNome} numberOfLines={1}>{item.nome}</Text>
-        <Text style={s.linhaSub}>
-          {rotuloSessoes} este mês · {formatarMoeda(item.valorPrevisto)}
-        </Text>
-      </View>
-      <Ionicons name="chevron-forward" size={18} color="#A9A299" />
-    </TouchableOpacity>
-  );
+
+// Uma linha só para as duas modalidades — o que muda é o que ela conta.
+function descricaoLinha(item, diaEfetivo) {
+  if (item.tipo_cobranca !== 'por_sessao') {
+    return `${item.recebido ? 'Recebido' : `Previsto dia ${diaEfetivo}`} · ${formatarMoeda(item.valorPrevisto)}`;
+  }
+  if (!item.sessoesCobraveis) return 'Nenhuma sessão cobrável neste mês';
+  if (!item.sessoesEmAberto) {
+    const n = item.sessoesPagas;
+    return `${n} ${n === 1 ? 'sessão paga' : 'sessões pagas'} · ${formatarMoeda(item.valorRecebido)}`;
+  }
+  const n = item.sessoesEmAberto;
+  return `${n} ${n === 1 ? 'sessão em aberto' : 'sessões em aberto'} · ${formatarMoeda(item.valorEmAberto)}`;
 }
 
-function LinhaRecebimento({ item, diaEfetivo, status, onToggle, onWhatsapp, onEmail, atualizando }) {
+function LinhaRecebimento({ item, diaEfetivo, status, onToggle, onAbrirSessoes, onWhatsapp, onEmail, atualizando }) {
+  // Por sessão não tem um "recebido" único pra alternar: cada sessão é
+  // quitada uma a uma, na tela de detalhe. Mesma aparência e mesmas cores
+  // dos demais, ação diferente — que é o que a modalidade pede.
+  const porSessao = item.tipo_cobranca === 'por_sessao';
   // Cobrar (WhatsApp/e-mail) só faz sentido enquanto a sessão/mês ainda não
   // foi marcado como recebido — depois disso, insistir seria um lembrete
   // sem propósito.
@@ -119,26 +133,35 @@ function LinhaRecebimento({ item, diaEfetivo, status, onToggle, onWhatsapp, onEm
 
   return (
     <View style={[s.linhaRecebimento, CORES_STATUS[status]]}>
-      <TouchableOpacity onPress={() => onToggle(item)} style={s.checkBtn} disabled={atualizando}>
+      <TouchableOpacity
+        onPress={() => (porSessao ? onAbrirSessoes(item) : onToggle(item))}
+        style={s.checkBtn}
+        disabled={atualizando}
+      >
         {atualizando ? (
           <ActivityIndicator size="small" color="#497363" />
         ) : (
           <Ionicons
-            name={item.recebido ? 'checkmark-circle' : 'ellipse-outline'}
+            name={porSessao ? 'receipt-outline' : item.recebido ? 'checkmark-circle' : 'ellipse-outline'}
             size={26}
             color={item.recebido ? '#44745B' : '#756E66'}
           />
         )}
       </TouchableOpacity>
 
-      <View style={s.linhaInfo}>
+      <TouchableOpacity
+        style={s.linhaInfo}
+        onPress={() => porSessao && onAbrirSessoes(item)}
+        disabled={!porSessao}
+      >
         <Text style={s.linhaNome} numberOfLines={1}>{item.nome}</Text>
-        <Text style={s.linhaSub}>
-          {item.recebido ? 'Recebido' : `Previsto dia ${diaEfetivo}`} · {formatarMoeda(item.valorPrevisto)}
-        </Text>
-      </View>
+        <Text style={s.linhaSub}>{descricaoLinha(item, diaEfetivo)}</Text>
+      </TouchableOpacity>
 
       <View style={s.linhaAcoes}>
+        {porSessao && (
+          <Ionicons name="chevron-forward" size={16} color="#A9A299" style={{ marginRight: 2 }} />
+        )}
         <TouchableOpacity
           style={[s.acaoBtn, !podeCobrar && s.acaoBtnDesabilitado]}
           onPress={() => onWhatsapp(item)}
@@ -287,7 +310,6 @@ export default function CobrancaScreen() {
   // sessão no Detalhe do Compromisso — então entra num resumo à parte,
   // sem toggle manual nem marcação no calendário.
   const recebimentosMensal = recebimentos.filter((r) => r.tipo_cobranca !== 'por_sessao');
-  const recebimentosSessao = recebimentos.filter((r) => r.tipo_cobranca === 'por_sessao');
 
   // ── Marcações do calendário: um ponto por dia com recebimento previsto ──
   const markedDates = {};
@@ -318,9 +340,12 @@ export default function CobrancaScreen() {
   // é, quanto foi lido, quanto era previsto, e se aquele mês já foi quitado.
   const comprovantesCruzados = cruzarComprovantesComRecebimentos(comprovantes, recebimentos);
 
+  // Uma lista só. O filtro por dia continua valendo apenas pra cobrança
+  // mensal (é ela que tem dia no calendário); ver o mês inteiro mostra as
+  // duas modalidades juntas, ordenadas por nome.
   const listaDoDia = diaSelecionado
     ? recebimentosMensal.filter((r) => toISODia(ano, mesIndex, r.dia_pagamento) === diaSelecionado)
-    : recebimentosMensal;
+    : recebimentos;
 
   const tituloLista = diaSelecionado
     ? `Recebimentos em ${diaSelecionado.split('-').reverse().join('/')}`
@@ -404,6 +429,9 @@ export default function CobrancaScreen() {
                 diaEfetivo={Math.min(item.dia_pagamento, diasNoMes(ano, mesIndex))}
                 status={statusRecebimento(item, ano, mesIndex)}
                 onToggle={alternarRecebido}
+                onAbrirSessoes={(i) => navigation.navigate('DetalheCobrancaSessao', {
+                  patientId: i.patient_id, patientNome: i.nome, ano, mesIndex,
+                })}
                 onWhatsapp={enviarWhatsapp}
                 onEmail={enviarEmail}
                 atualizando={atualizandoId === item.patient_id}
@@ -412,20 +440,6 @@ export default function CobrancaScreen() {
           )}
         </View>
 
-        {recebimentosSessao.length > 0 && (
-          <View style={s.secao}>
-            <Text style={s.secaoTitulo}>Cobrança por sessão em {MESES_LABEL[mesIndex]}</Text>
-            {recebimentosSessao.map((item) => (
-              <LinhaSessao
-                key={item.patient_id}
-                item={item}
-                onPress={(i) => navigation.navigate('DetalheCobrancaSessao', {
-                  patientId: i.patient_id, patientNome: i.nome, ano, mesIndex,
-                })}
-              />
-            ))}
-          </View>
-        )}
       </ScrollView>
 
       <MenuLateral

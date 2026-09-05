@@ -2122,7 +2122,7 @@ export async function getRecebimentosDoMes(ano, mesIndex) {
 
   const { data: porSessaoPacientes, error: errPS } = await supabase
     .from('patients')
-    .select('id, nome, telefone, email, cpf, tipo_emissao_fiscal, fiscal_frequencia_automatica')
+    .select('id, nome, telefone, email, cpf, tipo_emissao_fiscal, fiscal_frequencia_automatica, preco_sessao, preco_moeda')
     .eq('tipo_cobranca', 'por_sessao');
   if (errPS) throw errPS;
 
@@ -2133,7 +2133,28 @@ export async function getRecebimentosDoMes(ano, mesIndex) {
   // analisantes nessa modalidade.
   const recebimentosSessao = await Promise.all(
     (porSessaoPacientes || []).map(async (p) => {
-      const { valor, sessoes } = await getPagamentosSessaoDoMes(p.id, ano, mesIndex);
+      const sessoes = await getSessoesCobrancaDoMes(p.id, ano, mesIndex);
+      // Preço da ficha convertido UMA vez por analisante (não por sessão):
+      // é o mesmo valor pra todas as sessões individuais dele.
+      const precoFicha = await converterParaBRL(parsePreco(p.preco_sessao), p.preco_moeda);
+
+      const valorDaSessao = (linha) => (
+        linha.valorSugerido != null ? Number(linha.valorSugerido) : (precoFicha || 0)
+      );
+
+      const pagas = sessoes.filter((x) => x.pago);
+      const emAberto = sessoes.filter((x) => !x.pago);
+      const valorRecebido = pagas.reduce((soma, x) => soma + (x.valorPago || 0), 0);
+      const valorEmAberto = emAberto.reduce((soma, x) => soma + valorDaSessao(x), 0);
+
+      // A data da sessão mais antiga ainda não paga é o "vencimento" desta
+      // modalidade: quem paga por sessão não tem dia fixo, mas uma sessão
+      // feita há duas semanas e não paga está tão atrasada quanto uma
+      // mensalidade vencida.
+      const primeiraEmAberto = emAberto
+        .map((x) => x.date)
+        .sort()[0] || null;
+
       return {
         patient_id: p.id,
         nome: p.nome,
@@ -2141,12 +2162,22 @@ export async function getRecebimentosDoMes(ano, mesIndex) {
         tipo_emissao_fiscal: p.tipo_emissao_fiscal || 'recibo',
         fiscal_frequencia_automatica: p.fiscal_frequencia_automatica || null,
         dia_pagamento: null,
-        valorPrevisto: valor,
-        sessoesPagas: sessoes,
+        // Previsto do mês é TUDO que era cobrável, não só o que já entrou —
+        // era esse o erro que impedia esta modalidade de mostrar pendência.
+        valorPrevisto: valorRecebido + valorEmAberto,
+        valorRecebido,
+        valorEmAberto,
+        sessoesCobraveis: sessoes.length,
+        sessoesPagas: pagas.length,
+        sessoesEmAberto: emAberto.length,
+        primeiraSessaoEmAberto: primeiraEmAberto,
         telefone: p.telefone || null,
         email: p.email || null,
         cpf: p.cpf || null,
-        recebido: valor > 0,
+        // Antes era `valor > 0`, ou seja: "recebi ALGUMA coisa" — um
+        // analisante com 4 sessões e 1 paga aparecia como quitado. Agora só
+        // é recebido quando não sobra nada em aberto.
+        recebido: sessoes.length > 0 && emAberto.length === 0,
         data_recebimento: null,
       };
     })
@@ -2155,11 +2186,19 @@ export async function getRecebimentosDoMes(ano, mesIndex) {
   return [...recebimentosMensal, ...recebimentosSessao].sort((a, b) => a.nome.localeCompare(b.nome));
 }
 
-/** Só a parte de cobrança mensal/mensal-fixo de `getRecebimentosDoMes` — sem
- * cobrança "por sessão", que não tem dia de vencimento fixo e não deve
- * contar como pendência em aberto (itens 8 e 9). */
+/** Recebimentos que contam como pendência em aberto.
+ *
+ * Antes isto excluía a cobrança "por sessão", com a justificativa de que
+ * ela não tem dia de vencimento fixo. A consequência era pior que o
+ * problema: quem paga por sessão nunca aparecia como devendo, em nenhum
+ * card ou resumo, por mais sessões acumuladas que houvesse. Agora entra
+ * junto — o "vencimento" dela é a data da sessão não paga (ver
+ * diasDesdeSessaoEmAberto). Analisante por sessão sem sessão cobrável no
+ * mês simplesmente não gera pendência. */
 export function filtrarRecebimentosMensais(recebimentos) {
-  return (recebimentos || []).filter((r) => r.tipo_cobranca !== 'por_sessao');
+  return (recebimentos || []).filter((r) => (
+    r.tipo_cobranca !== 'por_sessao' || r.sessoesCobraveis > 0
+  ));
 }
 
 // Dia 31 configurado num mês de 30 (ou 28/29) dias precisa "cair" pro
@@ -2190,6 +2229,15 @@ export function calcularStatusGeralRecebimentos(recebimentos) {
   let temAtraso = false;
   for (const item of lista) {
     if (item.recebido) continue;
+    if (item.tipo_cobranca === 'por_sessao') {
+      // Sem sessão cobrável no mês não há pendência nenhuma — não é o mesmo
+      // que "deve e ainda não pagou".
+      if (!item.sessoesEmAberto) continue;
+      temPendente = true;
+      const dias = diasDesdeSessaoEmAberto(item);
+      if (dias != null && dias > 0) temAtraso = true;
+      continue;
+    }
     temPendente = true;
     if (item.dia_pagamento && diaPagamentoEfetivoNoMesAtual(item.dia_pagamento) < hojeDia) temAtraso = true;
   }
@@ -2202,8 +2250,28 @@ export function calcularStatusGeralRecebimentos(recebimentos) {
  * (já recebido), amarelo (ainda não recebido, mas não vencido) ou vermelho
  * (não recebido e já vencido) — usada pra colorir o valor de cada
  * analisante na lista do Financeiro (item mensal), não só o card-resumo. */
+/** Dias corridos desde a sessão mais antiga ainda não paga. Quem paga por
+ *  sessão não tem dia fixo de vencimento — o "vencimento" de fato é a data
+ *  da sessão: uma feita há duas semanas e não paga está tão atrasada quanto
+ *  uma mensalidade vencida. Devolve null quando não há nada em aberto. */
+export function diasDesdeSessaoEmAberto(item) {
+  if (!item?.primeiraSessaoEmAberto) return null;
+  const [a, m, d] = item.primeiraSessaoEmAberto.split('-').map(Number);
+  const data = new Date(a, m - 1, d);
+  const hoje = new Date();
+  const zerar = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  return Math.round((zerar(hoje) - zerar(data)) / 86400000);
+}
+
 export function calcularStatusItemRecebimento(item) {
   if (item.recebido) return 'verde';
+  // Cobrança por sessão entra aqui desde que ela passou a conhecer o que
+  // está em aberto: antes ficava sempre fora da conta de pendências.
+  if (item.tipo_cobranca === 'por_sessao') {
+    if (!item.sessoesEmAberto) return 'verde';
+    const dias = diasDesdeSessaoEmAberto(item);
+    return dias != null && dias > 0 ? 'vermelho' : 'amarelo';
+  }
   const hojeDia = new Date().getDate();
   return item.dia_pagamento && diaPagamentoEfetivoNoMesAtual(item.dia_pagamento) < hojeDia ? 'vermelho' : 'amarelo';
 }
@@ -2312,7 +2380,11 @@ export async function confirmarPagamentoSessao(appointmentId, patientId, dataISO
       ano, mes: mes - 1, recebido: true,
       data_recebimento: new Date().toISOString(), valor: valor || null,
     });
-  if (error) throw error;
+  // 23505 = violação de unicidade. O índice `pagamentos_sessao_unique` já
+  // impede cobrar a mesma sessão duas vezes; aqui isso deixa de virar erro
+  // bruto na cara da pessoa. Um toque repetido (ou dois aparelhos abertos)
+  // significa "já está pago" — que é justamente o resultado desejado.
+  if (error && error.code !== '23505') throw error;
 }
 
 /** Presença de UM integrante numa ocorrência de sessão/supervisão em

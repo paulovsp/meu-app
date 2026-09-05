@@ -942,9 +942,16 @@ export default function PerfilScreen({ navigation }) {
 
             <TouchableOpacity
               style={st.mensagensLink}
-              onPress={() => navigation.navigate('IntegracaoMeet')}
+              onPress={() => navigation.navigate('IntegracaoVideochamada', { provedor: 'google_meet' })}
             >
               <Text style={st.mensagensLinkText}>Sessões online pelo Google Meet</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={st.mensagensLink}
+              onPress={() => navigation.navigate('IntegracaoVideochamada', { provedor: 'zoom' })}
+            >
+              <Text style={st.mensagensLinkText}>Sessões online pelo Zoom</Text>
             </TouchableOpacity>
 
             <Text style={st.sectionTitle}>Assinatura</Text>

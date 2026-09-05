@@ -1,27 +1,51 @@
-// Sessões online transcritas pelo próprio provedor da chamada (hoje, Google
-// Meet; Zoom depois, com a mesma forma).
+// Sessões online transcritas pelo próprio provedor da chamada — Google Meet
+// e Zoom.
 //
 // Por que existe: a causa raiz das gravações que voltavam mudas é que o
 // Android entrega o microfone pro app que está em chamada e SILENCIA o
-// nosso. Não tem conserto pelo lado do app. Puxando o texto direto do Meet
-// não existe gravação nossa, então o conflito some — e a transcrição sai sem
-// custo de IA, porque quem transcreve é o Google.
+// nosso. Não tem conserto pelo lado do app. Puxando o texto direto do
+// provedor não existe gravação nossa, então o conflito some — e a
+// transcrição sai sem custo de IA, porque quem transcreve é o Google/Zoom.
 //
-// Só funciona em sala criada pelo Dr.Sig: o escopo do Google só dá acesso
-// aos artefatos de salas criadas pelo próprio app. Por isso a sessão online
-// passa a nascer aqui, e o app é quem gera o link.
+// Nos dois casos a sessão nasce aqui e o app gera o link: no Meet porque o
+// escopo só dá acesso a salas criadas pelo próprio app; no Zoom porque é o
+// que permite ligar a gravação em nuvem automaticamente, sem depender de
+// alguém lembrar de apertar "gravar".
+//
+// Como o texto chega, e é a diferença entre os dois: o Meet não avisa
+// ninguém (por isso lá existe um cron de varredura), enquanto o Zoom manda
+// webhook quando a gravação/transcrição fica pronta.
 import { Linking } from 'react-native';
 import { supabase } from './supabase';
 
-/** O que a conta do Google precisa ter pra transcrição automática existir.
- *  Mostrado ANTES de a pessoa tentar conectar — descobrir depois da sessão
- *  significa a sessão perdida. */
-export const PLANOS_COM_TRANSCRICAO = [
-  'Google Workspace Business Plus',
-  'Enterprise Standard ou Enterprise Plus',
-  'Education Plus',
-  'Enterprise Essentials ou Essentials Plus',
-];
+/** O que a conta precisa ter pra transcrição automática existir, por
+ *  provedor. Mostrado ANTES de a pessoa tentar conectar — descobrir depois
+ *  da sessão significa a sessão perdida. */
+export const PROVEDORES = {
+  google_meet: {
+    id: 'google_meet',
+    label: 'Google Meet',
+    plataformaApp: 'meet',
+    requisitos: [
+      'Google Workspace Business Plus',
+      'Enterprise Standard ou Enterprise Plus',
+      'Education Plus',
+      'Enterprise Essentials ou Essentials Plus',
+    ],
+    ressalva: 'Conta pessoal @gmail.com e planos Business Starter/Standard não geram transcrição automática.',
+  },
+  zoom: {
+    id: 'zoom',
+    label: 'Zoom',
+    plataformaApp: 'zoom',
+    requisitos: [
+      'Zoom Pro, Business, Education ou Enterprise',
+      'Gravação em nuvem ativada na conta',
+      'Transcrição de áudio ativada na conta',
+    ],
+    ressalva: 'O plano gratuito do Zoom não grava em nuvem, e sem gravação em nuvem não existe transcrição.',
+  },
+};
 
 async function invocar(funcao, body) {
   const { data, error } = await supabase.functions.invoke(funcao, { body });
@@ -52,51 +76,79 @@ async function invocar(funcao, body) {
  * coluna (GRANT por coluna, migration 0055), então nem por engano ele
  * trafega até o aparelho.
  */
-export async function getIntegracaoMeet() {
+export async function getIntegracao(provedor) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
   const { data, error } = await supabase
     .from('integracoes_videochamada')
-    .select('conta_email, transcricao_automatica_disponivel, capacidade_verificada_em, conectado_em, invalidado_em, invalidado_motivo')
+    .select('provedor, conta_email, conta_nome, transcricao_automatica_disponivel, capacidade_verificada_em, conectado_em, invalidado_em, invalidado_motivo')
     .eq('user_id', user.id)
-    .eq('provedor', 'google_meet')
+    .eq('provedor', provedor)
     .maybeSingle();
   if (error) return null;
   return data;
 }
 
-/** true quando dá pra fazer sessão pelo Meet agora: conectada, válida e com
- *  plano que gera transcrição. */
+/** Todas as contas conectadas, pra tela de sessão saber quais plataformas
+ *  já podem transcrever sem gravar pelo aparelho. */
+export async function getIntegracoes() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+  const { data, error } = await supabase
+    .from('integracoes_videochamada')
+    .select('provedor, conta_email, transcricao_automatica_disponivel, invalidado_em')
+    .eq('user_id', user.id);
+  if (error) return [];
+  return data || [];
+}
+
+export const getIntegracaoMeet = () => getIntegracao('google_meet');
+
+/** true quando dá pra fazer sessão por aquele provedor agora: conectada,
+ *  válida e com plano que gera transcrição. */
 export function integracaoUtilizavel(integracao) {
   return !!integracao
     && !integracao.invalidado_em
     && integracao.transcricao_automatica_disponivel === true;
 }
 
-/** Abre a tela de consentimento do Google no navegador. A volta acontece na
- *  página app.drsig.com.br/google-conectado.html, que finaliza a conexão. */
-export async function conectarGoogle() {
-  const data = await invocar('google-oauth-iniciar', {});
-  if (!data?.url) throw new Error('Não foi possível iniciar a conexão com o Google.');
+/** Abre a tela de consentimento do provedor no navegador. A volta acontece
+ *  na página app.drsig.com.br/<provedor>-conectado.html, que finaliza a
+ *  conexão (o app não tem deep link configurado). */
+export async function conectar(provedor) {
+  const funcao = provedor === 'zoom' ? 'zoom-oauth-iniciar' : 'google-oauth-iniciar';
+  const data = await invocar(funcao, {});
+  if (!data?.url) throw new Error('Não foi possível iniciar a conexão.');
   await Linking.openURL(data.url);
 }
 
-export async function desconectarGoogle() {
+export async function desconectar(provedor) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return;
   const { error } = await supabase
     .from('integracoes_videochamada')
     .delete()
     .eq('user_id', user.id)
-    .eq('provedor', 'google_meet');
+    .eq('provedor', provedor);
   if (error) throw error;
 }
 
-/** Cria a sala da sessão e devolve o link. O servidor confere autorização do
+/** Cria a sala do Meet e devolve o link. O servidor confere autorização do
  *  analisante, assinatura e plano antes de criar — a tela não é a única
  *  trava. */
 export async function criarSalaMeet(sessionId) {
   return invocar('meet-criar-sala', { sessionId });
+}
+
+/** Cria a reunião do Zoom da sessão. Mesmas travas do Meet, conferidas no
+ *  servidor: autorização do analisante, assinatura e plano. */
+export async function criarReuniaoZoom(sessionId) {
+  return invocar('zoom-criar-reuniao', { sessionId });
+}
+
+/** Cria a sala/reunião conforme a plataforma escolhida na tela. */
+export function criarSalaDaPlataforma(plataformaId, sessionId) {
+  return plataformaId === 'zoom' ? criarReuniaoZoom(sessionId) : criarSalaMeet(sessionId);
 }
 
 /** Força a busca da transcrição de uma sessão, sem esperar o ciclo de 5

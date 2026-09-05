@@ -1,22 +1,24 @@
-// Conectar a conta do Google para fazer sessões online pelo Meet com
-// transcrição automática.
+// Conectar a conta do provedor de videochamada (Google Meet ou Zoom) para
+// fazer sessões online com transcrição automática.
 //
 // A tela existe pra que os requisitos apareçam ANTES de a pessoa tentar usar:
-// o plano do Google precisa gerar transcrição automática, e descobrir isso
-// depois da sessão significa a sessão perdida. Por isso a conexão testa a
-// capacidade da conta na hora e guarda o resultado.
+// o plano precisa gerar transcrição automática, e descobrir isso depois da
+// sessão significa a sessão perdida. Por isso a conexão testa a capacidade
+// da conta na hora e guarda o resultado.
+//
+// Serve os dois provedores pelo mesmo código — o que muda entre eles são os
+// requisitos de plano, listados em PROVEDORES (services/videochamada.js).
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import CabecalhoTela from '../components/CabecalhoTela';
 import { mensagemDeErro } from '../services/erros';
 import {
-  getIntegracaoMeet, conectarGoogle, desconectarGoogle,
-  integracaoUtilizavel, PLANOS_COM_TRANSCRICAO,
+  getIntegracao, conectar, desconectar, integracaoUtilizavel, PROVEDORES,
 } from '../services/videochamada';
 
 const COLORS = {
@@ -30,8 +32,10 @@ const COLORS = {
   ambar: '#B36B00',
 };
 
-export default function IntegracaoMeetScreen() {
+export default function IntegracaoVideochamadaScreen() {
   const navigation = useNavigation();
+  const route = useRoute();
+  const provedor = PROVEDORES[route?.params?.provedor] || PROVEDORES.google_meet;
   const [integracao, setIntegracao] = useState(null);
   const [carregando, setCarregando] = useState(true);
   const [conectando, setConectando] = useState(false);
@@ -42,19 +46,19 @@ export default function IntegracaoMeetScreen() {
   useFocusEffect(useCallback(() => {
     let ativo = true;
     setCarregando(true);
-    getIntegracaoMeet()
+    getIntegracao(provedor.id)
       .then((dados) => { if (ativo) setIntegracao(dados); })
       .finally(() => { if (ativo) setCarregando(false); });
     return () => { ativo = false; };
-  }, []));
+  }, [provedor.id]));
 
   async function aoConectar() {
     setConectando(true);
     try {
-      await conectarGoogle();
+      await conectar(provedor.id);
       Alert.alert(
         'Continue no navegador',
-        'Autorize o Dr.Sig na tela do Google e depois volte para o app — a conexão aparece aqui.'
+        `Autorize o Dr.Sig na tela do ${provedor.label} e depois volte para o app — a conexão aparece aqui.`
       );
     } catch (err) {
       Alert.alert('Não deu para conectar', mensagemDeErro(err));
@@ -65,7 +69,7 @@ export default function IntegracaoMeetScreen() {
 
   function aoDesconectar() {
     Alert.alert(
-      'Desconectar o Google',
+      `Desconectar o ${provedor.label}`,
       'Suas sessões online voltam a ser gravadas pelo microfone do aparelho. As transcrições já salvas não são afetadas.',
       [
         { text: 'Cancelar', style: 'cancel' },
@@ -74,7 +78,7 @@ export default function IntegracaoMeetScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await desconectarGoogle();
+              await desconectar(provedor.id);
               setIntegracao(null);
             } catch (err) {
               Alert.alert('Erro', mensagemDeErro(err));
@@ -91,18 +95,18 @@ export default function IntegracaoMeetScreen() {
 
   return (
     <SafeAreaView style={s.safe} edges={['bottom']}>
-      <CabecalhoTela titulo="Sessões pelo Meet" onVoltar={() => navigation.goBack()} />
+      <CabecalhoTela titulo={`Sessões pelo ${provedor.label}`} onVoltar={() => navigation.goBack()} />
       <ScrollView style={s.container} contentContainerStyle={{ paddingBottom: 40 }}>
 
         <Text style={s.intro}>
-          Conectando sua conta do Google, o Dr.Sig cria a sala de cada sessão
-          online e traz a transcrição pronta, sem gravar pelo microfone do
-          aparelho.
+          Conectando sua conta do {provedor.label}, o Dr.Sig cria a sala de
+          cada sessão online e traz a transcrição pronta, sem gravar pelo
+          microfone do aparelho.
         </Text>
 
         <View style={s.vantagens}>
           <Vantagem icone="mic-off-outline" texto="Não usa o microfone — acaba o problema de áudio mudo quando a chamada está no mesmo celular." />
-          <Vantagem icone="cash-outline" texto="Não consome créditos de IA: quem transcreve é o Google." />
+          <Vantagem icone="cash-outline" texto={`Não consome créditos de IA: quem transcreve é o ${provedor.label}.`} />
           <Vantagem icone="people-outline" texto="Já separa as falas por participante." />
         </View>
 
@@ -114,20 +118,17 @@ export default function IntegracaoMeetScreen() {
             <Text style={s.secao}>O que sua conta precisa ter</Text>
             <View style={s.card}>
               <Text style={s.requisito}>
-                <Text style={s.bold}>1.</Text> Uma conta Google Workspace com um destes planos:
+                <Text style={s.bold}>1.</Text> Uma conta com:
               </Text>
-              {PLANOS_COM_TRANSCRICAO.map((plano) => (
-                <Text key={plano} style={s.plano}>• {plano}</Text>
+              {provedor.requisitos.map((item) => (
+                <Text key={item} style={s.plano}>• {item}</Text>
               ))}
-              <Text style={s.requisitoNota}>
-                Conta pessoal @gmail.com e planos Business Starter/Standard não
-                geram transcrição automática.
-              </Text>
+              <Text style={s.requisitoNota}>{provedor.ressalva}</Text>
               <Text style={s.requisito}>
                 <Text style={s.bold}>2.</Text> Você precisa ser quem abre a chamada — a sala é criada por aqui.
               </Text>
               <Text style={s.requisito}>
-                <Text style={s.bold}>3.</Text> O analisante precisa ter autorizado a gravação e transcrição no app, como em qualquer sessão. O aviso do próprio Meet não substitui essa autorização.
+                <Text style={s.bold}>3.</Text> O analisante precisa ter autorizado a gravação e transcrição no app, como em qualquer sessão. O aviso do próprio provedor não substitui essa autorização.
               </Text>
             </View>
 
@@ -152,7 +153,7 @@ export default function IntegracaoMeetScreen() {
                   </Text>
                 ) : !utilizavel ? (
                   <Text style={s.statusTexto}>
-                    Esta conta do Google não gera transcrição automática. Suas
+                    Esta conta não gera transcrição automática. Suas
                     sessões online continuam funcionando com a gravação pelo
                     aparelho — nesse caso, faça a chamada em outro dispositivo,
                     para o microfone não ser disputado.
@@ -170,7 +171,7 @@ export default function IntegracaoMeetScreen() {
                 <>
                   <Ionicons name="logo-google" size={17} color="#FFFFFF" />
                   <Text style={s.btnPrincipalTexto}>
-                    {conectada ? 'Reconectar conta do Google' : 'Conectar conta do Google'}
+                    {conectada ? `Reconectar conta do ${provedor.label}` : `Conectar conta do ${provedor.label}`}
                   </Text>
                 </>
               )}

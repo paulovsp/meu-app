@@ -30,7 +30,7 @@ import {
   apagarBlocos, escolherArquivoDeAudio, MENSAGEM_SILENCIO,
 } from '../services/gravacaoEmBlocos';
 import {
-  getIntegracaoMeet, integracaoUtilizavel, criarSalaMeet,
+  getIntegracoes, integracaoUtilizavel, criarSalaDaPlataforma, PROVEDORES,
 } from '../services/videochamada';
 
 // ─── Steps ─────────────────────────────────────────────────────
@@ -40,9 +40,10 @@ const STEPS = {
   SELECT_PLATFORM: 2,
   RECORDING: 3,
   REVIEW: 4,
-  // Sessão pelo Meet: sem gravação nenhuma no aparelho — o app cria a sala e
-  // o texto vem pronto do Google depois. Ver src/services/videochamada.js.
-  MEET: 5,
+  // Sessão transcrita pelo próprio provedor da chamada (Meet ou Zoom): sem
+  // gravação nenhuma no aparelho — o app cria a sala e o texto vem pronto
+  // depois. Ver src/services/videochamada.js.
+  SALA_PROVEDOR: 5,
 };
 
 const PLATFORMS = [
@@ -140,13 +141,21 @@ export default function NovaSessaoScreen() {
   // true quando sobrou bloco de áudio sem enviar: habilita "tentar de novo"
   // em vez de a gravação virar perda total.
   const [podeReenviar, setPodeReenviar] = useState(false);
-  // Conexão com o Google Meet. `null` = ainda carregando; o resto da tela usa
-  // `meetDisponivel` pra decidir entre a sessão pelo Meet (sem gravação) e o
-  // caminho antigo, por microfone.
-  const [integracaoMeet, setIntegracaoMeet] = useState(null);
+  // Contas de videochamada conectadas (Meet, Zoom). Decidem, por
+  // plataforma, entre a sessão transcrita pelo provedor (sem gravação
+  // nenhuma no aparelho) e o caminho antigo, por microfone.
+  const [integracoes, setIntegracoes] = useState([]);
   const [salaMeet, setSalaMeet] = useState(null);
   const [criandoSala, setCriandoSala] = useState(false);
-  const meetDisponivel = integracaoUtilizavel(integracaoMeet);
+
+  function provedorDaPlataforma(plataformaId) {
+    return Object.values(PROVEDORES).find((p) => p.plataformaApp === plataformaId) || null;
+  }
+  function transcreveSozinho(plataformaId) {
+    const prov = provedorDaPlataforma(plataformaId);
+    if (!prov) return false;
+    return integracaoUtilizavel(integracoes.find((i) => i.provedor === prov.id));
+  }
 
   // ─── Refs ─────────────────────────────────────────────────
   const gravadorRef = useRef(null);
@@ -175,7 +184,7 @@ export default function NovaSessaoScreen() {
     // Lido uma vez, na abertura: decide o fluxo da sessão online antes de a
     // pessoa escolher a plataforma, pra ela nunca descobrir que não dá
     // depois da sessão feita.
-    getIntegracaoMeet().then(setIntegracaoMeet).catch(() => setIntegracaoMeet(null));
+    getIntegracoes().then(setIntegracoes).catch(() => setIntegracoes([]));
   }, []);
 
   // Trava QUALQUER forma de sair da tela (seta do cabeçalho — que muda
@@ -511,7 +520,7 @@ export default function NovaSessaoScreen() {
       Alert.alert(
         'Autorização necessária',
         `${paciente?.nome} ainda não autorizou a gravação e transcrição das sessões. `
-        + 'O aviso do próprio Meet não substitui essa autorização.'
+        + 'O aviso do próprio aplicativo de chamada não substitui essa autorização.'
       );
       return;
     }
@@ -525,18 +534,18 @@ export default function NovaSessaoScreen() {
       await updateSession(sid, {
         transcript: introducao, audio_uri: null, category: null, duration_seconds: null,
       });
-      const sala = await criarSalaMeet(sid);
-      setSalaMeet(sala);
+      const sala = await criarSalaDaPlataforma(plataforma?.id, sid);
+      setSalaMeet({ ...sala, meetingUri: sala.meetingUri || sala.joinUrl });
     } catch (err) {
       // O servidor confere autorização, assinatura e plano — cada motivo tem
       // uma saída diferente, então não vale mostrar tudo como "deu erro".
       if (err.semAutorizacao) {
         Alert.alert('Autorização necessária', err.message);
       } else if (err.precisaConectar) {
-        Alert.alert('Conta do Google desconectada', `${err.message}
+        Alert.alert('Conta desconectada', `${err.message}
 
-Perfil → Sessões online pelo Google Meet.`);
-        setIntegracaoMeet(null);
+Perfil → Sessões online pelo ${plataforma?.label}.`);
+        setIntegracoes([]);
       } else if (err.semTranscricaoAutomatica) {
         Alert.alert(
           'Plano sem transcrição automática',
@@ -544,7 +553,7 @@ Perfil → Sessões online pelo Google Meet.`);
 
 Você pode fazer a sessão normalmente e gravar pelo aparelho — de preferência com a chamada em outro dispositivo.`
         );
-        setIntegracaoMeet(null);
+        setIntegracoes([]);
         setStep(STEPS.RECORDING);
       } else {
         Alert.alert('Erro ao criar a sala', mensagemDeErro(err));
@@ -736,12 +745,12 @@ Você pode fazer a sessão normalmente e gravar pelo aparelho — de preferênci
               setPlataforma(p);
               // Meet com conta conectada e plano que transcreve: caminho sem
               // gravação nenhuma. Qualquer outro caso segue por microfone.
-              setStep(p.id === 'meet' && meetDisponivel ? STEPS.MEET : STEPS.RECORDING);
+              setStep(transcreveSozinho(p.id) ? STEPS.SALA_PROVEDOR : STEPS.RECORDING);
             }}
           >
             <Ionicons name={p.icon} size={24} color="#FFFFFF" style={s.typeBtnIcon} />
             <Text style={s.typeBtnText}>{p.label}</Text>
-            {p.id === 'meet' && meetDisponivel && (
+            {transcreveSozinho(p.id) && (
               <Text style={s.typeBtnSub}>Transcrição automática, sem gravar pelo aparelho</Text>
             )}
           </TouchableOpacity>
@@ -754,11 +763,11 @@ Você pode fazer a sessão normalmente e gravar pelo aparelho — de preferênci
     );
   }
 
-  // ── STEP 5: Sessão pelo Google Meet ───────────────────────
-  if (step === STEPS.MEET) {
+  // ── STEP 5: Sessão transcrita pelo provedor (Meet / Zoom) ─
+  if (step === STEPS.SALA_PROVEDOR) {
     return (
       <SafeAreaView style={s.safeArea} edges={['bottom']}>
-        <CabecalhoTela titulo="Sessão pelo Meet" onVoltar={() => setStep(STEPS.SELECT_PLATFORM)} />
+        <CabecalhoTela titulo={`Sessão pelo ${plataforma?.label || "provedor"}`} onVoltar={() => setStep(STEPS.SELECT_PLATFORM)} />
         <ScrollView style={s.container} contentContainerStyle={{ paddingBottom: 40 }}>
           <Text style={s.sub}>
             Analisante: <Text style={s.bold}>{paciente?.nome}</Text>
@@ -783,7 +792,7 @@ Você pode fazer a sessão normalmente e gravar pelo aparelho — de preferênci
               <View style={s.infoBox}>
                 <Text style={s.infoStep}>O app cria a sala e a transcrição já vem ligada.</Text>
                 <Text style={s.infoStep}>Você envia o link para {paciente?.nome} e faz a chamada normalmente.</Text>
-                <Text style={s.infoStep}>Ao terminar, é só encerrar a chamada no Meet.</Text>
+                <Text style={s.infoStep}>Ao terminar, é só encerrar a chamada no {plataforma?.label}.</Text>
                 <Text style={s.infoStep}>A transcrição chega sozinha, com aviso — sem gastar créditos de IA.</Text>
                 <View style={s.infoBoxFooter}>
                   <Text style={s.infoBoxFooterText}>

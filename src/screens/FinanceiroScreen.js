@@ -167,9 +167,14 @@ export default function FinanceiroScreen() {
           // sessão tem sua própria dinâmica (diário/semanal), separada aqui.
           const recebimentosMensais = filtrarRecebimentosMensais(recebimentos);
           setRecebimentosMes(recebimentosMensais.filter((r) => r.tipo_cobranca !== 'por_sessao'));
-          setTotalRecebido(
-            recebimentosMensais.filter((r) => r.recebido).reduce((acc, r) => acc + (r.valorPrevisto || 0), 0)
-          );
+          // "Recebido" soma o que de fato entrou. Na cobrança por sessão isso
+          // é o valor das sessões já pagas — contar só quem está 100% quitado
+          // (r.recebido) escondia todo pagamento parcial, que é o caso comum
+          // de quem paga sessão a sessão.
+          setTotalRecebido(recebimentosMensais.reduce((acc, r) => {
+            if (r.tipo_cobranca === 'por_sessao') return acc + (r.valorRecebido || 0);
+            return r.recebido ? acc + (r.valorPrevisto || 0) : acc;
+          }, 0));
           setCorRecebimento(calcularStatusGeralRecebimentos(recebimentosMensais));
           const mapa = {};
           recebimentosMensais.forEach((r) => { mapa[r.patient_id] = calcularStatusItemRecebimento(r); });

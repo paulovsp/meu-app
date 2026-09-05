@@ -111,3 +111,26 @@ describe('rotuloCompetencia', () => {
     });
   });
 });
+
+describe('modoParaDiaDigitado', () => {
+  const { modoParaDiaDigitado } = require('../competencia');
+
+  // Quem digita 30 ou 31 está dizendo "no fim do mês" — e aí a cobrança é
+  // do mês vigente. Tratar como dia fixo faria a cobrança cair no mês
+  // errado, e sumir em fevereiro.
+  it('30 e 31 viram último dia do mês', () => {
+    expect(modoParaDiaDigitado(30)).toBe('ultimo_dia');
+    expect(modoParaDiaDigitado('31')).toBe('ultimo_dia');
+  });
+
+  it('os demais continuam dia fixo', () => {
+    expect(modoParaDiaDigitado(1)).toBe('dia_fixo');
+    expect(modoParaDiaDigitado(29)).toBe('dia_fixo');
+  });
+
+  // E a consequência que importa: muda o mês cobrado.
+  it('a mudança de modo muda o mês de competência', () => {
+    expect(mesDeCompetencia(2026, 9, modoParaDiaDigitado(10))).toEqual({ ano: 2026, mes: 8 });
+    expect(mesDeCompetencia(2026, 9, modoParaDiaDigitado(31))).toEqual({ ano: 2026, mes: 9 });
+  });
+});

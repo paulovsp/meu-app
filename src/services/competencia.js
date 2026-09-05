@@ -22,6 +22,19 @@ export const MODOS_DIA_PAGAMENTO = [
 /** Atalhos oferecidos no formulário para o modo de dia fixo. */
 export const DIAS_FIXOS_SUGERIDOS = [1, 5, 10];
 
+/**
+ * Dia digitado que, na prática, significa "último dia do mês".
+ *
+ * 30 e 31 não são um dia fixo qualquer: quem cobra aí está fechando o mês,
+ * não abrindo o seguinte — e mês nenhum tem 31 dias sempre (fevereiro não
+ * tem nem 30). Tratar como dia fixo faria a cobrança sumir ou cair no mês
+ * errado. Digitar 30 ou 31 passa a selecionar o modo "último dia do mês",
+ * que já cobra o mês vigente.
+ */
+export function modoParaDiaDigitado(dia) {
+  return Number(dia) >= 30 ? 'ultimo_dia' : 'dia_fixo';
+}
+
 function modo(id) {
   return MODOS_DIA_PAGAMENTO.find((m) => m.id === id) || MODOS_DIA_PAGAMENTO[0];
 }

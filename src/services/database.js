@@ -2158,7 +2158,7 @@ export async function getRecebimentosDoMes(ano, mesIndex) {
   if (patientIds.length > 0) {
     const { data: rows, error } = await supabase
       .from('patients')
-      .select('id, telefone, email, cpf, tipo_emissao_fiscal, fiscal_frequencia_automatica, tipo_cobranca, valor_mensal_fixo, dia_pagamento_modo')
+      .select('id, telefone, email, cpf, tipo_emissao_fiscal, fiscal_frequencia_automatica, tipo_cobranca, valor_mensal_fixo, dia_pagamento_modo, preco_sessao, preco_moeda')
       .in('id', patientIds);
     if (error) throw error;
     rows.forEach((r) => { contatos[r.id] = r; });
@@ -2177,6 +2177,14 @@ export async function getRecebimentosDoMes(ano, mesIndex) {
     mesesNecessarios.get(chave).ids.push(item.patient_id);
   });
 
+  // Uma conversão por analisante (não por sessão), em paralelo.
+  const precosUnitarios = Object.fromEntries(await Promise.all(
+    mensais.map(async (item) => {
+      const c = contatos[item.patient_id] || {};
+      return [item.patient_id, await converterParaBRL(parsePreco(c.preco_sessao), c.preco_moeda)];
+    })
+  ));
+
   const contagensPorMes = {};
   await Promise.all([...mesesNecessarios.values()].map(async ({ ano: a, mes: m, ids }) => {
     contagensPorMes[`${a}-${m}`] = await contarSessoesDoMesPorPaciente(ids, a, m);
@@ -2191,11 +2199,11 @@ export async function getRecebimentosDoMes(ano, mesIndex) {
     const contagem = contagensPorMes[`${competencia.ano}-${competencia.mes}`]?.[item.patient_id]
       || { cobraveis: 0, previstas: 0, ultimaSessao: null };
 
-    // Preço unitário vindo do cronograma (preço da ficha já convertido pra
-    // BRL). Antes o subtotal era preço x ocorrências AGENDADAS do mês
-    // exibido; agora é preço x sessões que de fato entram na conta do mês
-    // de competência — cancelada não conta, falta conta.
-    const precoUnitario = item.sessoesMes > 0 ? item.subtotal / item.sessoesMes : 0;
+    // Preço unitário sai da FICHA, não do cronograma do mês exibido.
+    // Derivar de `subtotal / sessoesMes` parecia equivalente, mas zerava a
+    // cobrança inteira quando o horário não tinha ocorrência no mês exibido
+    // (divisor 0) — justamente o caso de quem cobra o mês anterior.
+    const precoUnitario = precosUnitarios[item.patient_id] || 0;
 
     return {
       patient_id: item.patient_id,

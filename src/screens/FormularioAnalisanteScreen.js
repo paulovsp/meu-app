@@ -20,7 +20,7 @@ import { dataBRParaISO, dataISOParaBR } from '../services/validacao';
 import TelefoneInput from '../components/TelefoneInput';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
 import {
-  MODOS_DIA_PAGAMENTO, DIAS_FIXOS_SUGERIDOS, rotuloCompetencia,
+  MODOS_DIA_PAGAMENTO, DIAS_FIXOS_SUGERIDOS, rotuloCompetencia, modoParaDiaDigitado,
 } from '../services/competencia';
 import { mascararHorario, normalizarHorario, horarioValido, terminoPadrao } from '../services/horarios';
 
@@ -295,6 +295,9 @@ export default function FormularioAnalisanteScreen() {
       return;
     }
     setDiaPagamento(numeros);
+    // Digitar 30 ou 31 é dizer "no fim do mês" — e aí a cobrança é do mês
+    // vigente, não do anterior. Também evita o dia sumir em meses curtos.
+    if (numeros.length === 2) setDiaPagamentoModo(modoParaDiaDigitado(numeros));
   }
 
   function gerarResumoHorarios(lista) {
@@ -977,7 +980,7 @@ export default function FormularioAnalisanteScreen() {
                 placeholder="Ou digite outro dia (ex: 10)"
                 placeholderTextColor="#A9A299"
                 value={diaPagamento}
-                onChangeText={(t) => { setDiaPagamentoModo('dia_fixo'); formatarDiaPagamento(t); }}
+                onChangeText={formatarDiaPagamento}
                 keyboardType="numeric"
                 maxLength={2}
                 returnKeyType="next"

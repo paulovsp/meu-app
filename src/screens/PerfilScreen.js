@@ -959,6 +959,18 @@ export default function PerfilScreen({ navigation }) {
               <Text style={st.trocarSenhaBtnText}>Gerenciar apps conectados</Text>
             </TouchableOpacity>
 
+            <Text style={st.sectionTitle}>Proteção da gravação</Text>
+            <Text style={st.bioSub}>
+              O que o Android precisa liberar pra gravação de uma sessão não
+              ser interrompida quando você sai do app.
+            </Text>
+            <TouchableOpacity
+              style={st.trocarSenhaBtn}
+              onPress={() => navigation.navigate('ProtecaoGravacao')}
+            >
+              <Text style={st.trocarSenhaBtnText}>Conferir proteção</Text>
+            </TouchableOpacity>
+
             <Text style={st.sectionTitle}>Segurança</Text>
             <View style={st.bioRow}>
               <View style={{ flex: 1 }}>

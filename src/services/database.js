@@ -503,6 +503,36 @@ export function slotAtivoNaData(slot, dataISO) {
   return slot.recorrencia_semanas_ativas.includes(semanaCiclo);
 }
 
+/**
+ * Duas faixas no MESMO dia da semana só conflitam de verdade se existir
+ * alguma data em que as duas valem. Um horário avulso vale numa data só:
+ * se ela já passou, ele não pode colidir com nada que se crie agora; se não
+ * passou, só colide com quem estiver ativo naquela data.
+ *
+ * Sem isto, `verificarConflitoSlot` olhava apenas `day_of_week`, e um
+ * horário avulso de duas semanas atrás bloqueava aquele dia da semana pra
+ * sempre. Apagar o compromisso na Agenda também não resolvia: "apagar só
+ * este horário" grava em `horarios_liberados` e não toca em
+ * `availability_slots` (ver `marcarHorarioLiberado` logo abaixo).
+ */
+export function recorrenciasPodemColidir(a, b, hojeISO = dataParaISO(new Date())) {
+  const avulsoA = (a.recorrencia_tipo || 'semanal') === 'avulso';
+  const avulsoB = (b.recorrencia_tipo || 'semanal') === 'avulso';
+  if (!avulsoA && !avulsoB) return true;
+
+  if (avulsoA && avulsoB) {
+    // Avulso sem data gravada: não dá pra descartar nada, conflita.
+    if (!a.data_avulsa || !b.data_avulsa) return true;
+    return a.data_avulsa === b.data_avulsa && a.data_avulsa >= hojeISO;
+  }
+
+  const avulso = avulsoA ? a : b;
+  const outro = avulsoA ? b : a;
+  if (!avulso.data_avulsa) return true;
+  if (avulso.data_avulsa < hojeISO) return false;
+  return slotAtivoNaData(outro, avulso.data_avulsa);
+}
+
 /** "Apagar só este horário" (item 1, v16) marca a data+horário como
  * liberado — impede `inserirAppointmentSeNaoExiste` de recriar o mesmo
  * compromisso a partir do horário recorrente, e faz a Agenda mostrar esse
@@ -848,9 +878,12 @@ function horariosSeSobrepoem(inicioA, fimA, inicioB, fimB) {
  *   substituídos se o usuário confirmar).
  * - modalidadeNormalizada: 'hibrido' convertido para 'ambos'.
  */
-export async function verificarConflitoSlot({ id, day_of_week, start_time, end_time, modality }) {
+export async function verificarConflitoSlot({ id, day_of_week, start_time, end_time, modality, recorrencia = {} }) {
   const { supabase } = require('./supabase');
   const modalidadeNormalizada = modality === 'hibrido' ? 'ambos' : (modality || 'ambos');
+  // Mesma forma que vai pro banco, pra comparar com os slots já gravados.
+  // Sem `recorrencia`, cai em 'semanal' — o comportamento de antes.
+  const novo = normalizarRecorrencia(recorrencia);
 
   const { data, error } = await supabase
     .from('availability_slots')
@@ -861,7 +894,8 @@ export async function verificarConflitoSlot({ id, day_of_week, start_time, end_t
 
   const sobrepostosCompativeis = doDia.filter((slot) =>
     horariosSeSobrepoem(start_time, end_time, slot.start_time, slot.end_time) &&
-    modalidadesCompativeis(modalidadeNormalizada, slot.modality)
+    modalidadesCompativeis(modalidadeNormalizada, slot.modality) &&
+    recorrenciasPodemColidir(novo, slot)
   );
 
   const ocupado = sobrepostosCompativeis.find((slot) => !!slot.patient_id) || null;
@@ -903,7 +937,7 @@ export async function resolverConflitoEAdicionarSlot({
   tipo = 'sessao_individual',
 }) {
   const { ocupado, livres, modalidadeNormalizada } = await verificarConflitoSlot({
-    id, day_of_week, start_time, end_time, modality
+    id, day_of_week, start_time, end_time, modality, recorrencia
   });
 
   if (ocupado) {

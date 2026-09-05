@@ -19,39 +19,71 @@
 //    no máximo o bloco corrente. Até 1h continua sendo um arquivo só (é o
 //    caso de um bloco só, pelo mesmo caminho de código).
 //
-// 3. ÁUDIO EM SILÊNCIO. Quando outro app está usando o microfone em modo de
-//    chamada (Google Meet, WhatsApp — `VOICE_COMMUNICATION`, que o Android
-//    trata como privilegiado), o sistema NÃO bloqueia a nossa gravação: ele
-//    a silencia. O arquivo sai com a duração certa e sem uma palavra. Foi
-//    isso que aconteceu nas gravações que voltaram em branco. Não há como
-//    impedir pelo app — mas dá pra MEDIR o nível de entrada e avisar na
-//    hora, em vez da pessoa descobrir depois que perdeu a sessão.
-import { Platform } from 'react-native';
-import { Audio } from 'expo-av';
+// 3. ÁUDIO EM SILÊNCIO. Quando outro app usava o microfone em modo de
+//    chamada, o Android não bloqueava a nossa gravação: ele a SILENCIAVA. O
+//    arquivo saía com a duração certa e sem uma palavra.
+//
+//    Resolvido em 05/09/2026 virando o jogo: a gravação agora usa a fonte
+//    `voice_communication`, que o Android trata como privacy sensitive por
+//    padrão — e uma captura privacy sensitive impede qualquer captura
+//    concorrente. Ou seja, é o outro app que passa a não conseguir gravar
+//    enquanto uma sessão está sendo gravada aqui, e não o contrário. É o
+//    mesmo mecanismo que o Zoom usa.
+//
+//    A medição de nível continua, como rede de segurança: nada disso vale
+//    contra uma ligação telefônica, que toma o microfone de todo mundo.
+//
+// ─── Quem cria o gravador ────────────────────────────────────────────────
+// O objeto `AudioRecorder` do expo-audio vem de fora (hook `useAudioRecorder`
+// na tela) porque é ele que amarra o ciclo de vida do recurso nativo ao da
+// tela. Este módulo cuida só do que fazer com ele: blocos, nível, envio.
 import * as FileSystem from 'expo-file-system/legacy';
 import * as DocumentPicker from 'expo-document-picker';
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase';
 import { MENSAGEM_ASSINATURA_INATIVA } from './assinatura';
 
-// `isMeteringEnabled` é o que faz o status da gravação trazer `metering`
-// (nível de entrada em dBFS) — sem isso não dá pra detectar silêncio.
+/**
+ * Como a sessão é capturada.
+ *
+ * `audioSource: 'voice_communication'` é a decisão central aqui. Além de
+ * garantir exclusividade do microfone (ver item 3 do cabeçalho), ela liga a
+ * cadeia de voz do Android: supressão de ruído e ganho automático. Os dois
+ * ajudam justamente o caso difícil — a voz do analisante, que numa sessão
+ * online chega pelo alto-falante de outro aparelho, do outro lado da mesa.
+ * O cancelamento de eco da mesma cadeia fica praticamente inerte, porque
+ * este celular não está reproduzindo áudio nenhum durante a gravação: sem
+ * sinal de referência, não há o que o eco cancele — e portanto não há o
+ * risco de a voz distante ser confundida com eco e suprimida.
+ *
+ * `sampleRate: 16000` não é perda: a cadeia de voz do Android opera em
+ * 16 kHz, e é essa também a taxa em que os modelos de transcrição
+ * trabalham. Gravar a 22050 obrigava a uma reamostragem para 16 kHz em
+ * algum ponto do caminho, com perda e sem ganho nenhum. Gravando direto na
+ * taxa final, o áudio chega íntegro e o arquivo fica ~27% menor — o que
+ * também torna o envio mais confiável.
+ *
+ * 64 kbps em mono a 16 kHz é bem acima do necessário pra fala: sobra
+ * margem, e o custo em bytes é irrelevante.
+ *
+ * `isMeteringEnabled` é o que faz `getStatus()` trazer `metering` (dBFS) —
+ * sem isso não dá pra detectar silêncio.
+ */
 export const RECORDING_OPTIONS = {
   isMeteringEnabled: true,
+  extension: '.m4a',
+  sampleRate: 16000,
+  numberOfChannels: 1,
+  bitRate: 64000,
   android: {
     extension: '.m4a',
-    outputFormat: Audio.AndroidOutputFormat.MPEG_4,
-    audioEncoder: Audio.AndroidAudioEncoder.AAC,
-    sampleRate: 22050,
-    numberOfChannels: 1,
-    bitRate: 64000,
+    outputFormat: 'mpeg4',
+    audioEncoder: 'aac',
+    audioSource: 'voice_communication',
   },
   ios: {
     extension: '.m4a',
-    outputFormat: Audio.IOSOutputFormat.MPEG4AAC,
-    audioQuality: Audio.IOSAudioQuality.HIGH,
-    sampleRate: 22050,
-    numberOfChannels: 1,
-    bitRate: 64000,
+    outputFormat: 'aac ',
+    audioQuality: 96,
   },
 };
 
@@ -76,19 +108,18 @@ export const LIMIAR_SILENCIO_DBFS = -90;
 export const LEITURAS_ATE_ALERTA_SILENCIO = 20;
 
 /**
- * Põe a leitura de nível na mesma escala nos dois sistemas.
+ * Nível de entrada na escala dBFS, com -160 como "nada".
  *
- * O iOS entrega dBFS de verdade. O Android, não: expo-av calcula
- * `20 * Math.log(amplitude / 32767)` (AVAManager.java) — logaritmo NATURAL,
- * onde a fórmula de dBFS pede log na base 10. O resultado sai ~2,3x mais
- * negativo do que deveria: 10% da escala, que é -20 dBFS, aparece como -46.
- * Sem corrigir isso, qualquer limiar acerta num sistema e erra no outro.
- *
- * -160 é o valor que os dois usam pra "nada", e passa direto.
+ * Aqui existia uma correção só pro Android: o expo-av calculava o nível com
+ * logaritmo NATURAL (`20 * Math.log(x)`, AVAManager.java) onde a fórmula de
+ * dBFS pede log na base 10, e o valor saía ~2,3x mais negativo. O expo-audio
+ * calcula certo — `20 * log10(amplitude / 32767)`, AudioRecorder.kt:70 — e a
+ * correção precisou sair junto com a troca de motor, senão o limiar de
+ * silêncio passaria a errar por esse mesmo fator, agora ao contrário.
  */
 export function normalizarNivel(metering) {
-  if (metering <= -160) return -160;
-  return Platform.OS === 'android' ? metering / Math.LN10 : metering;
+  if (typeof metering !== 'number' || Number.isNaN(metering)) return -160;
+  return metering <= -160 ? -160 : metering;
 }
 
 /**
@@ -102,15 +133,31 @@ export function normalizarNivel(metering) {
  * - `aoMedirNivel(dbfs)`: nível de entrada a cada segundo, pro medidor
  *   visual da tela.
  */
-export function criarGravadorEmBlocos({ aoFecharBloco, aoDetectarSilencio, aoMedirNivel } = {}) {
-  let gravacao = null;
+export function criarGravadorEmBlocos({ recorder, aoFecharBloco, aoDetectarSilencio, aoMedirNivel } = {}) {
+  // `gravando` marca que o recorder está com um bloco aberto. Antes existia
+  // um objeto Recording por bloco (expo-av só permitia um por vez); o
+  // expo-audio reaproveita o mesmo recorder, gerando um arquivo novo a cada
+  // prepareToRecordAsync (AudioRecorder.kt:235, nome com UUID).
+  let gravando = false;
   let indice = 0;
   let timerBloco = null;
+  let timerNivel = null;
   let parando = false;
+  // A troca de bloco fecha um arquivo e abre outro: por algumas centenas de
+  // milissegundos não há captação. Sem esta marca, `estaGravando()` leria
+  // essa janela como "a gravação morreu" e dispararia alarme falso.
+  let trocandoBloco = false;
   let leiturasEmSilencio = 0;
   let silencioJaAvisado = false;
 
-  function observarNivel(status) {
+  function observarNivel() {
+    if (!gravando) return;
+    let status;
+    try {
+      status = recorder.getStatus();
+    } catch (_) {
+      return;
+    }
     if (!status?.isRecording || typeof status.metering !== 'number') return;
     const nivel = normalizarNivel(status.metering);
     if (aoMedirNivel) aoMedirNivel(nivel);
@@ -126,28 +173,63 @@ export function criarGravadorEmBlocos({ aoFecharBloco, aoDetectarSilencio, aoMed
     }
   }
 
+  /**
+   * Com `voice_communication`, o Android passa a preferir o caminho de voz —
+   * e se houver um fone Bluetooth pareado, isso pode rotear a captação pelo
+   * SCO do fone, que é mono e de banda estreita. Péssimo pra uma sala com
+   * duas pessoas. Quando existe o microfone do próprio aparelho na lista, é
+   * ele que a gente escolhe.
+   *
+   * Best-effort de propósito: em aparelho onde a seleção de entrada não
+   * funciona, a gravação segue no caminho padrão em vez de falhar.
+   */
+  function preferirMicrofoneDoAparelho() {
+    try {
+      const entradas = recorder.getAvailableInputs?.() || [];
+      const embutido = entradas.find((e) => /built|embutid|interno/i.test(`${e.type} ${e.name}`));
+      if (embutido) recorder.setInput(embutido.uid);
+    } catch (_) {}
+  }
+
   async function abrirBloco() {
-    gravacao = new Audio.Recording();
-    gravacao.setProgressUpdateInterval(1000);
-    gravacao.setOnRecordingStatusUpdate(observarNivel);
-    await gravacao.prepareToRecordAsync(RECORDING_OPTIONS);
-    await gravacao.startAsync();
+    await recorder.prepareToRecordAsync(RECORDING_OPTIONS);
+    preferirMicrofoneDoAparelho();
+    try {
+      recorder.record();
+    } catch (err) {
+      // Preparado e não iniciado prende o recorder nativo: o próximo preparo
+      // falharia com AlreadyPrepared, e nem recarregar o JS resolveria.
+      try { await recorder.stop(); } catch (_) {}
+      throw err;
+    }
+    gravando = true;
     clearTimeout(timerBloco);
     timerBloco = setTimeout(() => { trocarDeBloco().catch(() => {}); }, DURACAO_BLOCO_MS);
+  }
+
+  /** Fecha o bloco atual e devolve o arquivo dele. O `uri` tem que ser lido
+   *  ANTES do próximo `prepareToRecordAsync`, que gera um arquivo novo. */
+  async function fecharBloco() {
+    await recorder.stop();
+    gravando = false;
+    return recorder.uri || null;
   }
 
   // Fecha o bloco atual e abre o seguinte. Só existe UM MediaRecorder nativo,
   // então não dá pra sobrepor os dois: a lacuna é o tempo de fechar e
   // reabrir (algumas centenas de milissegundos, uma vez por hora).
   async function trocarDeBloco() {
-    if (parando || !gravacao) return;
-    const fechando = gravacao;
+    if (parando || !gravando) return;
     const indiceFechado = indice;
-    gravacao = null;
-    await fechando.stopAndUnloadAsync();
-    const uri = fechando.getURI();
-    indice += 1;
-    await abrirBloco();
+    trocandoBloco = true;
+    let uri;
+    try {
+      uri = await fecharBloco();
+      indice += 1;
+      await abrirBloco();
+    } finally {
+      trocandoBloco = false;
+    }
     if (uri && aoFecharBloco) await aoFecharBloco(uri, indiceFechado);
   }
 
@@ -158,6 +240,11 @@ export function criarGravadorEmBlocos({ aoFecharBloco, aoDetectarSilencio, aoMed
       leiturasEmSilencio = 0;
       silencioJaAvisado = false;
       await abrirBloco();
+      // O nível vem de `getStatus()` a cada segundo. O expo-av empurrava
+      // isso por callback; no expo-audio quem lê é a gente, o que também
+      // deixa a leitura sob nosso controle na troca de bloco.
+      clearInterval(timerNivel);
+      timerNivel = setInterval(observarNivel, 1000);
     },
 
     /** Encerra a gravação e devolve o último bloco. `total` já é o número
@@ -165,22 +252,42 @@ export function criarGravadorEmBlocos({ aoFecharBloco, aoDetectarSilencio, aoMed
     async parar() {
       parando = true;
       clearTimeout(timerBloco);
-      if (!gravacao) return { uri: null, indice, total: indice + 1 };
-      const fechando = gravacao;
-      gravacao = null;
-      await fechando.stopAndUnloadAsync();
-      return { uri: fechando.getURI(), indice, total: indice + 1 };
+      clearInterval(timerNivel);
+      if (!gravando) return { uri: null, indice, total: indice + 1 };
+      const uri = await fecharBloco();
+      return { uri, indice, total: indice + 1 };
+    },
+
+    /** A gravação nativa ainda está de pé?
+     *
+     *  Serve pra conferir quando o app volta do segundo plano: se o Android
+     *  tirou o microfone no meio (foreground service derrubado, outro app
+     *  tomando o microfone), é melhor avisar na hora do que devolver uma
+     *  transcrição vazia no fim da sessão. Devolve `true` durante o
+     *  encerramento e a troca de bloco — nenhum dos dois é falha. */
+    async estaGravando() {
+      if (parando || trocandoBloco) return true;
+      if (!gravando) return false;
+      try {
+        return !!recorder.getStatus()?.isRecording;
+      } catch (_) {
+        return false;
+      }
     },
 
     /** Libera o MediaRecorder nativo sem se importar com o resultado — pra
-     *  desmontagem de tela. Sem isso o expo-av deixa a sessão de áudio presa
-     *  e a PRÓXIMA gravação falha com "Only one Recording object can be
-     *  prepared at a given time", que nem recarregar o JS resolve. */
+     *  desmontagem de tela. Sem isso o recorder fica preparado a nível
+     *  nativo e a PRÓXIMA gravação falha na hora de preparar
+     *  (AudioRecorderAlreadyPreparedException), que nem recarregar o JS
+     *  resolve, porque o estado preso é nativo. */
     async liberar() {
       parando = true;
       clearTimeout(timerBloco);
-      try { await gravacao?.stopAndUnloadAsync(); } catch (_) {}
-      gravacao = null;
+      clearInterval(timerNivel);
+      // Para SEMPRE, mesmo sem `gravando`: um bloco que chegou a ser
+      // preparado e não iniciado também deixa o recorder nativo preso.
+      try { await recorder.stop(); } catch (_) {}
+      gravando = false;
     },
   };
 }

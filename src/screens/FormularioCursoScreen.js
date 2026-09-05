@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import CabecalhoTela from '../components/CabecalhoTela';
 import MedidorDeEntrada from '../components/MedidorDeEntrada';
-import { Audio } from 'expo-av';
+import { useAudioRecorder, setAudioModeAsync, requestRecordingPermissionsAsync } from 'expo-audio';
 // @notifee/react-native foi arquivado pela Invertase em 07/04/2026 — trocado
 // pelo fork mantido react-native-notify-kit (mesmo autor original recomenda
 // no README do projeto arquivado). API 100% compatível — só o caminho do
@@ -23,7 +23,7 @@ import {
 } from '../services/cursos';
 import {
   criarGravadorEmBlocos, enviarBlocoParaTranscricao, enviarGravacaoCompleta,
-  apagarBlocos, escolherArquivoDeAudio, MENSAGEM_SILENCIO,
+  apagarBlocos, escolherArquivoDeAudio, MENSAGEM_SILENCIO, RECORDING_OPTIONS,
 } from '../services/gravacaoEmBlocos';
 import { mensagemDeErro } from '../services/erros';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
@@ -120,6 +120,10 @@ export default function FormularioCursoScreen() {
 
   const [gravando, setGravando] = useState(false);
   const [preparando, setPreparando] = useState(false);
+
+  // Mesmo desenho de NovaSessaoScreen: o recorder nativo é do hook, o
+  // módulo de blocos só o opera.
+  const recorder = useAudioRecorder(RECORDING_OPTIONS);
   const [tempo, setTempo] = useState(0);
   const [enviandoTranscricao, setEnviandoTranscricao] = useState(false);
   const [transcricaoManual, setTranscricaoManual] = useState(curso?.transcript || '');
@@ -250,12 +254,29 @@ export default function FormularioCursoScreen() {
     );
   }
 
+  /** Mesma checagem de NovaSessaoScreen: a notificação na barra é a prova
+   *  de que o foreground service subiu — sem ele o Android tira o microfone
+   *  assim que o app sai da frente. Ver o runner registrado em index.js. */
+  async function servicoEmPrimeiroPlanoAtivo(id) {
+    for (let tentativa = 0; tentativa < 2; tentativa += 1) {
+      try {
+        const exibidas = await notifee.getDisplayedNotifications();
+        if (exibidas.some((n) => n.id === id)) return true;
+      } catch (_) {
+        return false;
+      }
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    return false;
+  }
+
+  /** Devolve se a gravação está protegida em segundo plano. */
   async function mostrarNotificacao() {
     try {
       await notifee.requestPermission();
       const id = await notifee.displayNotification({
         title: 'Gravando aula',
-        body: 'A gravação da aula está em segundo plano.',
+        body: 'A gravação da aula está em andamento. Pode usar o celular à vontade.',
         android: {
           channelId: 'gravacao_curso',
           asForegroundService: true,
@@ -264,18 +285,29 @@ export default function FormularioCursoScreen() {
         },
       });
       notificationIdRef.current = id;
+      return await servicoEmPrimeiroPlanoAtivo(id);
     } catch (err) {
-      // Sem o foreground service de verdade, o Android pode suspender o
-      // microfone quando a tela apaga ou o app é minimizado: a gravação
-      // "continua" (duração certa) mas fica sem fala nenhuma captada.
-      // Avisa na hora, em vez de descobrir só depois que a transcrição
-      // voltou vazia.
       console.warn('Notificação:', err.message);
-      Alert.alert(
-        'Proteção em segundo plano indisponível',
-        'Não foi possível ativar a notificação que mantém a gravação ativa com a tela apagada ou o app minimizado. Mantenha esta tela aberta e a tela do celular ligada até encerrar, para não arriscar perder o áudio.'
-      );
+      return false;
     }
+  }
+
+  /** Sem foreground service, abrir outro app interrompe a gravação. Quem
+   *  decide se grava assim mesmo é a pessoa, antes de começar. */
+  function confirmarGravacaoDesprotegida() {
+    return new Promise((resolve) => {
+      Alert.alert(
+        'Gravação em segundo plano indisponível',
+        'Não foi possível ligar a proteção que mantém a gravação viva quando você sai do app — '
+        + 'provavelmente a notificação do Dr.Sig está bloqueada nas configurações do Android. '
+        + 'Do jeito que está, abrir outro aplicativo interrompe a gravação.',
+        [
+          { text: 'Cancelar', style: 'cancel', onPress: () => resolve(false) },
+          { text: 'Gravar assim mesmo', onPress: () => resolve(true) },
+        ],
+        { cancelable: false }
+      );
+    });
   }
 
   async function removerNotificacao() {
@@ -304,25 +336,38 @@ export default function FormularioCursoScreen() {
     }
     setPreparando(true);
     try {
-      const { granted } = await Audio.requestPermissionsAsync();
+      const { granted } = await requestRecordingPermissionsAsync();
       if (!granted) {
         Alert.alert('Permissão negada', 'Precisamos de acesso ao microfone.');
         return;
       }
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        shouldDuckAndroid: true,
-        staysActiveInBackground: true,
-        interruptionModeIOS: 1,
-        interruptionModeAndroid: 1,
+      // `allowsBackgroundRecording: false` de propósito — ver a mesma
+      // decisão explicada em NovaSessaoScreen.js.
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
+        shouldPlayInBackground: true,
+        allowsBackgroundRecording: false,
+        interruptionMode: 'doNotMix',
       });
       await gravadorRef.current?.liberar();
+
+      // O serviço sobe ANTES do microfone: é ele que segura a permissão de
+      // gravar com o app fora da frente.
+      const protegido = await mostrarNotificacao();
+      if (!protegido) {
+        const seguirAssimMesmo = await confirmarGravacaoDesprotegida();
+        if (!seguirAssimMesmo) {
+          await removerNotificacao();
+          return;
+        }
+      }
 
       blocosRef.current = [];
       setPodeReenviar(false);
       setNivelEntrada(null);
       gravadorRef.current = criarGravadorEmBlocos({
+        recorder,
         aoFecharBloco: enviarBlocoFechado,
         aoMedirNivel: setNivelEntrada,
         aoDetectarSilencio: () => Alert.alert('Sem som no microfone', MENSAGEM_SILENCIO),
@@ -332,7 +377,6 @@ export default function FormularioCursoScreen() {
       setGravando(true);
       setTempo(0);
       timerRef.current = setInterval(() => setTempo((t) => t + 1), 1000);
-      await mostrarNotificacao();
     } catch (err) {
       Alert.alert('Erro', 'Não foi possível iniciar a gravação:\n' + err.message);
     } finally {
@@ -381,9 +425,12 @@ export default function FormularioCursoScreen() {
     setEnviandoTranscricao(true);
     setProgressoEnvio('Finalizando gravação...');
     await removerNotificacao();
-    await Audio.setAudioModeAsync({
-      allowsRecordingIOS: false, playsInSilentModeIOS: false,
-      shouldDuckAndroid: true, staysActiveInBackground: false,
+    await setAudioModeAsync({
+      allowsRecording: false,
+      playsInSilentMode: false,
+      shouldPlayInBackground: false,
+      allowsBackgroundRecording: false,
+      interruptionMode: 'mixWithOthers',
     });
 
     try {

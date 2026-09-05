@@ -2,15 +2,6 @@
 // sessão inteira gravada, então as regras que protegem o áudio estão
 // travadas aqui: só o último bloco anuncia o total, bloco já aceito não é
 // reenviado, e nenhum arquivo é apagado antes da gravação inteira passar.
-jest.mock('expo-av', () => ({
-  Audio: {
-    AndroidOutputFormat: { MPEG_4: 2 },
-    AndroidAudioEncoder: { AAC: 3 },
-    IOSOutputFormat: { MPEG4AAC: 'aac ' },
-    IOSAudioQuality: { HIGH: 96 },
-    Recording: class {},
-  },
-}));
 jest.mock('expo-document-picker', () => ({ getDocumentAsync: jest.fn() }));
 jest.mock('../assinatura', () => ({ MENSAGEM_ASSINATURA_INATIVA: 'assinatura inativa' }));
 jest.mock('../supabase', () => ({
@@ -118,45 +109,46 @@ describe('enviarGravacaoCompleta', () => {
   });
 });
 
-// O Android calcula o nível com logaritmo NATURAL onde dBFS pede base 10
-// (expo-av, AVManager.java) — sem corrigir, o mesmo limiar acerta num
-// sistema e erra no outro. É a diferença entre avisar que o microfone está
-// mudo e deixar a pessoa gravar 50 minutos de silêncio sem saber.
+// Até 05/09/2026 havia aqui uma correção só pro Android: o expo-av calculava
+// o nível com logaritmo NATURAL onde dBFS pede base 10, e o valor saía ~2,3x
+// mais negativo. O expo-audio calcula certo (20*log10, AudioRecorder.kt:70),
+// então a correção saiu junto com a troca de motor — e estes testes travam
+// isso, porque mantê-la agora erraria pelo mesmo fator, ao contrário.
 describe('normalizarNivel', () => {
   const sistemaOriginal = Platform.OS;
   afterEach(() => { Platform.OS = sistemaOriginal; });
 
-  it('no Android, converte a escala de log natural pra dBFS de verdade', () => {
-    Platform.OS = 'android';
-    // 10% da escala: dBFS real -20, mas o expo-av entrega 20*ln(0.1) = -46.
-    expect(normalizarNivel(-46.05)).toBeCloseTo(-20, 1);
-    // 1% da escala: dBFS real -40, entregue como -92.
-    expect(normalizarNivel(-92.1)).toBeCloseTo(-40, 1);
-    expect(normalizarNivel(0)).toBe(0);
-  });
-
-  it('no iOS, deixa passar — já é dBFS de verdade', () => {
-    Platform.OS = 'ios';
-    expect(normalizarNivel(-20)).toBe(-20);
-    expect(normalizarNivel(-40)).toBe(-40);
+  it('não mexe mais na escala em nenhum dos dois sistemas', () => {
+    for (const sistema of ['android', 'ios']) {
+      Platform.OS = sistema;
+      expect(normalizarNivel(-20)).toBe(-20);
+      expect(normalizarNivel(-40)).toBe(-40);
+      expect(normalizarNivel(0)).toBe(0);
+    }
   });
 
   it('trata o fundo da escala (-160) como silêncio nos dois sistemas', () => {
     Platform.OS = 'android';
     expect(normalizarNivel(-160)).toBe(-160);
+    expect(normalizarNivel(-200)).toBe(-160);
     Platform.OS = 'ios';
     expect(normalizarNivel(-160)).toBe(-160);
+  });
+
+  // `getStatus()` omite `metering` quando o recorder ainda não está
+  // captando: sem tratar, o alarme leria `undefined` como nível.
+  it('sem leitura de nível, devolve o fundo da escala', () => {
+    expect(normalizarNivel(undefined)).toBe(-160);
+    expect(normalizarNivel(NaN)).toBe(-160);
   });
 
   // As duas pontas que o alarme precisa separar: microfone tomado por outro
   // app (zeros absolutos) x silêncio real numa sessão de análise, que pode
   // durar minutos e não pode disparar alarme nenhum.
   it('só o microfone mudo cai abaixo do limiar; sala em silêncio não', () => {
-    Platform.OS = 'android';
     expect(normalizarNivel(-160)).toBeLessThan(LIMIAR_SILENCIO_DBFS);
-    // Sala quieta, amplitude ~100/32767: 20*ln(0.00305) = -116 na escala do
-    // Android, -50 dBFS de verdade.
-    expect(normalizarNivel(-116)).toBeGreaterThan(LIMIAR_SILENCIO_DBFS);
+    // Sala quieta, amplitude ~100/32767 = -50 dBFS.
+    expect(normalizarNivel(-50)).toBeGreaterThan(LIMIAR_SILENCIO_DBFS);
   });
 });
 

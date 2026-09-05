@@ -515,6 +515,9 @@ export default function DisponibilidadeScreen() {
         start_time: inicio,
         end_time: fim,
         modality: modalidade,
+        // Sem isto o conflito era decidido só pelo dia da semana: um avulso
+        // de uma data que já passou bloqueava o horário pra sempre.
+        recorrencia,
       }));
     } catch (e) {
       setSalvando(false);

@@ -2,13 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
   Alert, ActivityIndicator, FlatList, TextInput, Linking,
-  Platform, KeyboardAvoidingView, Share,
+  Platform, KeyboardAvoidingView, Share, AppState,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import CabecalhoTela from '../components/CabecalhoTela';
 import MedidorDeEntrada from '../components/MedidorDeEntrada';
-import { Audio } from 'expo-av';
+import { useAudioRecorder, setAudioModeAsync, requestRecordingPermissionsAsync } from 'expo-audio';
 // @notifee/react-native foi arquivado pela Invertase em 07/04/2026 — trocado
 // pelo fork mantido react-native-notify-kit (mesmo autor original recomenda
 // no README do projeto arquivado). API 100% compatível — só o caminho do
@@ -23,11 +23,14 @@ import {
   saveTranscriptTurns,
 } from '../services/database';
 import { getStatusAutorizacao } from '../services/autorizacaoGravacao';
+import {
+  diagnosticarProtecao, impedeGravacaoEmSegundoPlano, CANAL_SESSAO,
+} from '../services/protecaoGravacao';
 import { mensagemDeErro } from '../services/erros';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
 import {
   criarGravadorEmBlocos, enviarBlocoParaTranscricao, enviarGravacaoCompleta,
-  apagarBlocos, escolherArquivoDeAudio, MENSAGEM_SILENCIO,
+  apagarBlocos, escolherArquivoDeAudio, MENSAGEM_SILENCIO, RECORDING_OPTIONS,
 } from '../services/gravacaoEmBlocos';
 import {
   getIntegracoes, integracaoUtilizavel, criarSalaDaPlataforma, PROVEDORES,
@@ -46,38 +49,33 @@ const STEPS = {
   SALA_PROVEDOR: 5,
 };
 
+// Sem `url` de propósito: o app já abriu a chamada neste mesmo celular, e é
+// exatamente isso que faz a gravação sair muda (o Android entrega o microfone
+// pro app em chamada). A chamada tem que acontecer em outro aparelho.
 const PLATFORMS = [
   {
     id: 'whatsapp',
     label: 'WhatsApp',
     icon: 'logo-whatsapp',
     color: '#25D366',
-    url: 'whatsapp://',
-    instrucaoVivavoz: 'Ative o viva-voz assim que a chamada conectar.',
   },
   {
     id: 'meet',
     label: 'Google Meet',
     icon: 'videocam-outline',
     color: '#447362',
-    url: 'https://meet.google.com',
-    instrucaoVivavoz: 'No Meet, toque em ⋮ → Alto-falante para ativar o viva-voz.',
   },
   {
     id: 'zoom',
     label: 'Zoom',
     icon: 'desktop-outline',
     color: '#4D6B88',
-    url: 'zoomus://',
-    instrucaoVivavoz: 'No Zoom, toque em "Alto-falante" na barra inferior.',
   },
   {
     id: 'telefone',
     label: 'Telefone',
     icon: 'call-outline',
     color: '#875B50',
-    url: 'tel:',
-    instrucaoVivavoz: 'Durante a chamada, toque em "Viva-voz" na tela do telefone.',
   },
 ];
 
@@ -124,6 +122,18 @@ export default function NovaSessaoScreen() {
   const [plataforma, setPlataforma] = useState(null);
   const [gravando, setGravando] = useState(false);
   const [preparandoGravacao, setPreparandoGravacao] = useState(false);
+
+  // O recorder nativo vive amarrado ao ciclo de vida da tela (o hook o
+  // libera na desmontagem). `criarGravadorEmBlocos` recebe este mesmo objeto
+  // e reaproveita ele a cada bloco.
+  const recorder = useAudioRecorder(RECORDING_OPTIONS);
+  // O foreground service subiu? Só false quando a pessoa escolheu gravar
+  // mesmo sem ele — e aí a tela precisa dizer isso enquanto grava, senão a
+  // caixa de instruções ("pode usar outros apps") vira mentira.
+  const [protegidoEmSegundoPlano, setProtegidoEmSegundoPlano] = useState(true);
+  // Ajustes do Android que ainda podem derrubar a gravação. Carregado ao
+  // abrir a tela pra a pessoa ver o aviso ANTES de tocar em gravar.
+  const [pendenciasProtecao, setPendenciasProtecao] = useState([]);
   const [transcrevendo, setTranscrevendo] = useState(false);
   const [progressoTranscricao, setProgressoTranscricao] = useState('');
   const [transcricao, setTranscricao] = useState('');
@@ -155,6 +165,22 @@ export default function NovaSessaoScreen() {
     const prov = provedorDaPlataforma(plataformaId);
     if (!prov) return false;
     return integracaoUtilizavel(integracoes.find((i) => i.provedor === prov.id));
+  }
+
+  /** Complemento do aviso da gravação online: a saída depende de POR QUE o
+   *  provedor não está transcrevendo sozinho — plataforma que nunca
+   *  transcreve (WhatsApp, telefone), conta não conectada, ou conta
+   *  conectada num plano sem transcrição automática. */
+  function saidaSemTranscricaoDoProvedor() {
+    const prov = provedorDaPlataforma(plataforma?.id);
+    if (!prov) {
+      return ' Sem um segundo aparelho, grave a conversa por fora e traga o arquivo em "Transcrever um áudio já gravado", aqui embaixo.';
+    }
+    const integracao = integracoes.find((i) => i.provedor === prov.id);
+    if (!integracao || integracao.invalidado_em) {
+      return ` Conectando sua conta do ${plataforma.label} em Perfil → Apps conectados, o próprio ${plataforma.label} transcreve a sessão e nada disso é preciso.`;
+    }
+    return ` Sua conta do ${plataforma.label} está conectada, mas o plano dela não faz transcrição automática — por isso esta sessão vai por microfone.`;
   }
 
   // ─── Refs ─────────────────────────────────────────────────
@@ -228,10 +254,9 @@ export default function NovaSessaoScreen() {
     return () => {
       clearInterval(timerRef.current);
       // Libera a gravação nativa se a tela for fechada no meio de uma
-      // gravação (ex: usuário navega pra trás). Sem isso, o expo-av mantém
-      // a sessão de áudio "presa" a nível nativo, e a PRÓXIMA tentativa de
-      // gravar (mesmo em uma tela nova) falha com "Only one Recording
-      // object can be prepared at a given time" — só um reload de JS não
+      // gravação (ex: usuário navega pra trás). Sem isso o recorder fica
+      // preparado a nível nativo, e a PRÓXIMA tentativa de gravar (mesmo em
+      // uma tela nova) falha na hora de preparar — só um reload de JS não
       // resolve, porque o estado preso é nativo, não do JavaScript.
       gravadorRef.current?.liberar().catch(() => {});
       // Encerra o foreground service se a tela for fechada com a gravação
@@ -239,6 +264,34 @@ export default function NovaSessaoScreen() {
       // sem gravação nenhuma rolando.
       notifee.stopForegroundService().catch(() => {});
     };
+  }, []);
+
+  // Última linha de defesa: se o Android derrubar a gravação com o app em
+  // segundo plano, nenhum Alert aparece na hora — a pessoa só descobriria
+  // no fim, com a transcrição vazia. Aqui a checagem acontece assim que ela
+  // volta pro app, ainda dando tempo de refazer a sessão.
+  useEffect(() => {
+    if (!gravando) return undefined;
+    const sub = AppState.addEventListener('change', async (estado) => {
+      if (estado !== 'active') return;
+      const viva = await gravadorRef.current?.estaGravando();
+      if (viva === false) {
+        Alert.alert(
+          'A gravação foi interrompida',
+          'O Android encerrou a captação enquanto o app estava em segundo plano. '
+          + 'O que foi gravado até aqui está guardado: encerre a sessão para transcrever essa parte.'
+        );
+      }
+    });
+    return () => sub.remove();
+  }, [gravando]);
+
+  useEffect(() => {
+    let ativo = true;
+    diagnosticarProtecao(CANAL_SESSAO)
+      .then((lista) => { if (ativo) setPendenciasProtecao(lista); })
+      .catch(() => {});
+    return () => { ativo = false; };
   }, []);
 
   // ─── Helpers ──────────────────────────────────────────────
@@ -253,12 +306,33 @@ export default function NovaSessaoScreen() {
   // local cosmética — é o que impede o Android de suspender o processo e
   // interromper a gravação quando o app vai pra segundo plano ou a tela
   // desliga.
+  /** O serviço só está de pé se a notificação dele está mesmo na barra:
+   *  quando o foreground service não sobe, o notify-kit não chega a exibir
+   *  nada, e quando ele cai o Android remove a notificação junto
+   *  (STOP_FOREGROUND_REMOVE). Duas tentativas porque o `startForeground`
+   *  do lado nativo é assíncrono. */
+  async function servicoEmPrimeiroPlanoAtivo(id) {
+    for (let tentativa = 0; tentativa < 2; tentativa += 1) {
+      try {
+        const exibidas = await notifee.getDisplayedNotifications();
+        if (exibidas.some((n) => n.id === id)) return true;
+      } catch (_) {
+        return false;
+      }
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    return false;
+  }
+
+  /** Devolve se a gravação está protegida em segundo plano. Antes só
+   *  disparava e torcia: sem runner registrado (ver index.js) o serviço
+   *  morria calado, sem exceção nenhuma pra este try/catch pegar. */
   async function mostrarNotificacaoGravacao() {
     try {
       await notifee.requestPermission();
       const id = await notifee.displayNotification({
         title: 'Gravando sessão',
-        body: 'Sua sessão está sendo gravada em segundo plano.',
+        body: 'Sua sessão está sendo gravada. Pode usar o celular à vontade.',
         android: {
           channelId: 'gravacao',
           asForegroundService: true,
@@ -267,6 +341,7 @@ export default function NovaSessaoScreen() {
         },
       });
       notificationIdRef.current = id;
+      return await servicoEmPrimeiroPlanoAtivo(id);
     } catch (err) {
       // Antes só um console.warn — ninguém vê isso em produção. Sem o
       // foreground service de verdade, o Android pode suspender o
@@ -277,11 +352,56 @@ export default function NovaSessaoScreen() {
       // tela ligada e o app aberto até encerrar, em vez de descobrir só
       // depois que a transcrição voltou vazia.
       console.warn('Notificação:', err.message);
-      Alert.alert(
-        'Proteção em segundo plano indisponível',
-        'Não foi possível ativar a notificação que mantém a gravação ativa com a tela apagada ou o app minimizado. Mantenha esta tela aberta e a tela do celular ligada até encerrar a sessão, para não arriscar perder o áudio.'
-      );
+      return false;
     }
+  }
+
+  /** Quando o diagnóstico aponta ajuste do sistema que IMPEDE a proteção,
+   *  a saída é resolver, não só avisar: o botão do meio leva direto pra tela
+   *  que abre cada ajuste do Android. Seguir assim mesmo continua sendo
+   *  escolha da pessoa. */
+  function confirmarProtecaoBloqueada(lista) {
+    const itens = lista
+      .filter((p) => p.gravidade === 'impede')
+      .map((p) => `• ${p.titulo}`)
+      .join('\n');
+    return new Promise((resolve) => {
+      Alert.alert(
+        'A gravação vai parar se você sair do app',
+        `Estes ajustes do Android estão impedindo a proteção em segundo plano:
+
+${itens}
+
+Dá pra resolver agora, em poucos toques.`,
+        [
+          { text: 'Cancelar', style: 'cancel', onPress: () => resolve('cancelar') },
+          { text: 'Gravar assim mesmo', onPress: () => resolve('seguir') },
+          { text: 'Ajustar agora', onPress: () => resolve('ajustar') },
+        ],
+        { cancelable: false }
+      );
+    });
+  }
+
+  /** Sem foreground service, o Android tira o microfone do app assim que
+   *  ele sai da frente. A pessoa precisa saber ANTES de começar e decidir,
+   *  não descobrir depois que a transcrição voltou vazia. */
+  function confirmarGravacaoDesprotegida() {
+    return new Promise((resolve) => {
+      Alert.alert(
+        'Gravação em segundo plano indisponível',
+        'Não foi possível ligar a proteção que mantém a gravação viva quando você sai do app — '
+        + 'provavelmente a notificação do Dr.Sig está bloqueada nas configurações do Android.'
+        + '\n\nDo jeito que está, abrir outro aplicativo interrompe a gravação. Bloquear a tela com o '
+        + 'Dr.Sig aberto continua funcionando.'
+        + '\n\nGravar assim mesmo?',
+        [
+          { text: 'Cancelar', style: 'cancel', onPress: () => resolve(false) },
+          { text: 'Gravar assim mesmo', onPress: () => resolve(true) },
+        ],
+        { cancelable: false }
+      );
+    });
   }
 
   async function removerNotificacaoGravacao() {
@@ -320,30 +440,65 @@ export default function NovaSessaoScreen() {
     }
     setPreparandoGravacao(true);
     try {
-      const { granted } = await Audio.requestPermissionsAsync();
+      const { granted } = await requestRecordingPermissionsAsync();
       if (!granted) {
         Alert.alert('Permissão negada', 'Precisamos de acesso ao microfone.');
         return;
       }
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        shouldDuckAndroid: true,
-        staysActiveInBackground: true,
-        interruptionModeIOS: 1,
-        interruptionModeAndroid: 1,
+      // `allowsBackgroundRecording: false` de propósito: ligado, o expo-audio
+      // sobe um foreground service PRÓPRIO, com notificação em inglês
+      // ("Recording audio") que não dá pra traduzir. Quem segura o microfone
+      // em segundo plano aqui é o serviço do notifee, em português — ver
+      // mostrarNotificacaoGravacao e o runner registrado em index.js.
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
+        shouldPlayInBackground: true,
+        allowsBackgroundRecording: false,
+        interruptionMode: 'doNotMix',
       });
 
       // Garante que nenhuma gravação anterior ficou "presa" antes de
-      // preparar uma nova — o expo-av só permite uma gravação ativa por
-      // vez a nível nativo; tentar preparar sem liberar a anterior gera
-      // o erro "Only one Recording object can be prepared at a given time".
+      // preparar uma nova — o recorder nativo só aceita um preparo por vez;
+      // preparar sem liberar o anterior lança
+      // AudioRecorderAlreadyPreparedException.
       await gravadorRef.current?.liberar();
+
+      // Primeiro o que o sistema pode fazer contra a gravação: bloqueio de
+      // notificação impede o serviço de subir, e aí não adianta tentar.
+      const pendencias = await diagnosticarProtecao(CANAL_SESSAO);
+      setPendenciasProtecao(pendencias);
+      const bloqueadoPeloSistema = impedeGravacaoEmSegundoPlano(pendencias);
+      if (bloqueadoPeloSistema) {
+        const escolha = await confirmarProtecaoBloqueada(pendencias);
+        if (escolha === 'cancelar') return;
+        if (escolha === 'ajustar') {
+          navigation.navigate('ProtecaoGravacao');
+          return;
+        }
+      }
+
+      // O foreground service tem que subir ANTES do microfone: é ele que
+      // segura a permissão de gravar com o app fora da frente. Se não subir,
+      // quem decide se grava assim mesmo é a pessoa, não o app.
+      const protegido = await mostrarNotificacaoGravacao();
+      setProtegidoEmSegundoPlano(protegido && !bloqueadoPeloSistema);
+      // Segundo aviso SÓ quando o diagnóstico não achou nada e mesmo assim o
+      // serviço não subiu. Com notificação bloqueada a pessoa já foi avisada
+      // e já decidiu — repetir seria o mesmo erro dos dois avisos do Meet.
+      if (!protegido && !bloqueadoPeloSistema) {
+        const seguirAssimMesmo = await confirmarGravacaoDesprotegida();
+        if (!seguirAssimMesmo) {
+          await removerNotificacaoGravacao();
+          return;
+        }
+      }
 
       blocosRef.current = [];
       setPodeReenviar(false);
       setNivelEntrada(null);
       gravadorRef.current = criarGravadorEmBlocos({
+        recorder,
         aoFecharBloco: enviarBlocoFechado,
         aoMedirNivel: setNivelEntrada,
         aoDetectarSilencio: () => Alert.alert('Sem som no microfone', MENSAGEM_SILENCIO),
@@ -353,8 +508,10 @@ export default function NovaSessaoScreen() {
       setGravando(true);
       setTempo(0);
       timerRef.current = setInterval(() => setTempo(t => t + 1), 1000);
-      await mostrarNotificacaoGravacao();
     } catch (err) {
+      // A notificação já pode ter subido antes do erro — não deixar
+      // serviço órfão rodando sem gravação nenhuma por trás.
+      await removerNotificacaoGravacao();
       Alert.alert('Erro', 'Não foi possível iniciar a gravação:\n' + err.message);
     } finally {
       setPreparandoGravacao(false);
@@ -423,11 +580,12 @@ export default function NovaSessaoScreen() {
     setProgressoTranscricao('Finalizando gravação...');
 
     await removerNotificacaoGravacao();
-    await Audio.setAudioModeAsync({
-      allowsRecordingIOS: false,
-      playsInSilentModeIOS: false,
-      shouldDuckAndroid: true,
-      staysActiveInBackground: false,
+    await setAudioModeAsync({
+      allowsRecording: false,
+      playsInSilentMode: false,
+      shouldPlayInBackground: false,
+      allowsBackgroundRecording: false,
+      interruptionMode: 'mixWithOthers',
     });
 
     try {
@@ -544,14 +702,14 @@ export default function NovaSessaoScreen() {
       } else if (err.precisaConectar) {
         Alert.alert('Conta desconectada', `${err.message}
 
-Perfil → Sessões online pelo ${plataforma?.label}.`);
+Perfil → Apps conectados.`);
         setIntegracoes([]);
       } else if (err.semTranscricaoAutomatica) {
         Alert.alert(
           'Plano sem transcrição automática',
           `${err.message}
 
-Você pode fazer a sessão normalmente e gravar pelo aparelho — de preferência com a chamada em outro dispositivo.`
+Você pode fazer a sessão normalmente e gravar pelo aparelho, desde que a chamada aconteça em outro aparelho — a tela seguinte explica.`
         );
         setIntegracoes([]);
         setStep(STEPS.RECORDING);
@@ -882,17 +1040,16 @@ Nada é gravado por este aparelho, então não há risco de áudio mudo por disp
           <View style={s.infoBox}>
             {isOnline ? (
               <>
-                <Text style={s.infoStep}>Toque em<Text style={s.bold}>"Iniciar Gravação"</Text> abaixo.</Text>
-                <Text style={s.infoStep}>O app abrirá o<Text style={s.bold}>{plataforma?.label}</Text> automaticamente.</Text>
-                <Text style={s.infoStep}>Faça a chamada e ative o<Text style={s.bold}>viva-voz</Text></Text>
-                <Text style={s.infoStep}>4.  {plataforma?.instrucaoVivavoz}</Text>
-                <Text style={s.infoStep}>Ao encerrar,<Text style={s.bold}>volte aqui</Text> e toque em <Text style={s.bold}>"Encerrar Sessão"</Text>.</Text>
+                <Text style={s.infoStep}>Toque em <Text style={s.bold}>"Iniciar Gravação"</Text> abaixo.</Text>
+                <Text style={s.infoStep}>Faça a chamada pelo <Text style={s.bold}>{plataforma?.label}</Text> em <Text style={s.bold}>outro aparelho</Text> — computador, tablet ou um segundo celular.</Text>
+                <Text style={s.infoStep}>Deixe o alto-falante desse aparelho ligado e ele perto deste celular: é por ali que a voz de {paciente?.nome} entra na gravação.</Text>
+                <Text style={s.infoStep}>Ao encerrar a chamada, <Text style={s.bold}>volte aqui</Text> e toque em <Text style={s.bold}>"Encerrar Sessão"</Text>.</Text>
               </>
             ) : (
               <>
-                <Text style={s.infoStep}>Toque em<Text style={s.bold}>"Iniciar Gravação"</Text> abaixo.</Text>
+                <Text style={s.infoStep}>Toque em <Text style={s.bold}>"Iniciar Gravação"</Text> abaixo.</Text>
                 <Text style={s.infoStep}>Realize a sessão normalmente.</Text>
-                <Text style={s.infoStep}>Ao terminar, toque em<Text style={s.bold}>"Encerrar Sessão"</Text>.</Text>
+                <Text style={s.infoStep}>Ao terminar, toque em <Text style={s.bold}>"Encerrar Sessão"</Text>.</Text>
                 <Text style={s.infoStep}>O áudio será transcrito automaticamente.</Text>
               </>
             )}
@@ -901,16 +1058,33 @@ Nada é gravado por este aparelho, então não há risco de áudio mudo por disp
 Você pode bloquear a tela ou usar outros apps — a gravação continua.
 </Text>
             </View>
-            {/* O Android entrega o microfone pro app que está em chamada e
-                silencia o nosso: a gravação sai com a duração certa e sem
-                fala nenhuma. Não tem conserto pelo app — só avisar antes. */}
+            {/* Aviso discreto, não caixa de diálogo: as pendências de
+                "arrisca" não impedem gravar, e interromper o fluxo a cada
+                sessão por causa delas seria pior que o problema. */}
+            {pendenciasProtecao.length > 0 && !gravando && (
+              <TouchableOpacity
+                style={s.linkProtecao}
+                onPress={() => navigation.navigate('ProtecaoGravacao')}
+              >
+                <Ionicons name="alert-circle-outline" size={15} color="#B36B00" />
+                <Text style={s.linkProtecaoTexto}>
+                  {pendenciasProtecao.length === 1
+                    ? 'Um ajuste do Android pode interromper a gravação — conferir'
+                    : `${pendenciasProtecao.length} ajustes do Android podem interromper a gravação — conferir`}
+                </Text>
+              </TouchableOpacity>
+            )}
+            {/* Um aviso só, dizendo POR QUE os passos acima mandam a chamada
+                pra outro aparelho: o Android entrega o microfone pro app que
+                está em chamada e silencia o nosso — a gravação sai com a
+                duração certa e sem fala nenhuma. Não tem conserto pelo app. */}
             {isOnline && (
               <View style={s.avisoMesmoAparelho}>
                 <Text style={s.avisoMesmoAparelhoTexto}>
-                  Faça a chamada em OUTRO aparelho. Se ela acontecer neste
-                  mesmo celular, o Android dá o microfone para o app da
-                  chamada e a gravação sai muda.
-                  {plataforma?.id === 'meet' ? ' Conectando sua conta do Google (Perfil → Sessões online pelo Google Meet), o Meet transcreve sozinho e esse problema deixa de existir.' : ''}
+                  Se a chamada acontecer neste mesmo celular, o Android
+                  entrega o microfone ao app da chamada e a gravação sai muda:
+                  com a duração certa e sem fala nenhuma.
+                  {saidaSemTranscricaoDoProvedor()}
                 </Text>
               </View>
             )}
@@ -950,19 +1124,7 @@ Você pode bloquear a tela ou usar outros apps — a gravação continua.
             <TouchableOpacity
               style={[s.btnIniciar, preparandoGravacao && { opacity: 0.7 }]}
               disabled={preparandoGravacao}
-              onPress={async () => {
-                await iniciarGravacao();
-                if (isOnline && plataforma?.url) {
-                  try {
-                    await Linking.openURL(plataforma.url);
-                  } catch {
-                    Alert.alert(
-                      'Atenção',
-                      `Abra o ${plataforma.label} manualmente, ative o viva-voz e realize a chamada.\n\nVolte aqui para encerrar quando terminar.`
-                    );
-                  }
-                }
-              }}
+              onPress={iniciarGravacao}
             >
               {preparandoGravacao
                 ? <ActivityIndicator color="#fff" />
@@ -981,6 +1143,12 @@ Você pode bloquear a tela ou usar outros apps — a gravação continua.
             <View style={s.gravandoBox}>
               <Text style={s.gravandoTimer}>⏱ {formatarTempo(tempo)}</Text>
               <Text style={s.gravandoInfo}>Gravando o ambiente — mantenha o celular próximo.</Text>
+              {!protegidoEmSegundoPlano && (
+                <Text style={s.gravandoSemProtecao}>
+                  Sem proteção em segundo plano: não abra outro aplicativo até
+                  encerrar, ou a gravação para.
+                </Text>
+              )}
               <MedidorDeEntrada nivel={nivelEntrada} />
             </View>
           )}
@@ -1192,6 +1360,9 @@ const s = StyleSheet.create({
 
   btnIniciar:      { backgroundColor: '#497363', borderRadius: 14, padding: 18, alignItems: 'center', marginBottom: 14, elevation: 3 },
   btnIniciarText:  { color: '#fff', fontSize: 17, fontWeight: '500' },
+  linkProtecao: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
+  linkProtecaoTexto: { flex: 1, fontSize: 12.5, color: '#B36B00', lineHeight: 18, fontWeight: '600' },
+  gravandoSemProtecao: { fontSize: 12.5, color: '#7A5250', lineHeight: 19, textAlign: 'center', marginTop: 6, fontWeight: '600' },
   gravandoBox:     { backgroundColor: '#F1E4E3', borderRadius: 12, padding: 16, alignItems: 'center', marginBottom: 14, borderWidth: 1, borderColor: '#E3C9C7' },
   gravandoTimer:   { fontSize: 36, fontWeight: '500', color: '#975451', marginBottom: 6 },
   gravandoInfo: { fontSize: 13, color: '#975451', textAlign: 'center', lineHeight: 19 },

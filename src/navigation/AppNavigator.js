@@ -59,6 +59,7 @@ import DetalheRelatorioScreen from '../screens/DetalheRelatorioScreen';
 import IntegracaoVideochamadaScreen from '../screens/IntegracaoVideochamadaScreen';
 import IntegracaoWhatsappScreen from '../screens/IntegracaoWhatsappScreen';
 import AppsConectadosScreen from '../screens/AppsConectadosScreen';
+import ProtecaoGravacaoScreen from '../screens/ProtecaoGravacaoScreen';
 import SessoesStatusScreen from '../screens/SessoesStatusScreen';
 
 const Stack = createNativeStackNavigator();
@@ -259,6 +260,7 @@ function AppStackNavigator() {
 
       <Stack.Screen name="SessoesStatus" component={SessoesStatusScreen} />
       <Stack.Screen name="AppsConectados" component={AppsConectadosScreen} />
+      <Stack.Screen name="ProtecaoGravacao" component={ProtecaoGravacaoScreen} />
       <Stack.Screen name="IntegracaoVideochamada" component={IntegracaoVideochamadaScreen} />
       <Stack.Screen name="IntegracaoWhatsapp" component={IntegracaoWhatsappScreen} />
     </Stack.Navigator>

@@ -60,7 +60,9 @@ export default function AppsConectadosScreen() {
     return { texto: 'Conectado', cor: COLORS.verde };
   }
 
-  const estadoWhatsapp = !whatsapp
+  // Linha existente sem phone_number_id = configuração começada mas não
+  // concluída (o Verify Token já foi gerado, as credenciais ainda não).
+  const estadoWhatsapp = !whatsapp?.phone_number_id
     ? { texto: 'Não conectado', cor: COLORS.textMid }
     : whatsapp.invalidado_em
     ? { texto: 'Reconectar', cor: COLORS.vermelho }

@@ -16,7 +16,8 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import CabecalhoTela from '../components/CabecalhoTela';
 import { mensagemDeErro } from '../services/erros';
 import {
-  getIntegracaoWhatsapp, conectarWhatsapp, desconectarWhatsapp, URL_WEBHOOK,
+  getIntegracaoWhatsapp, conectarWhatsapp, desconectarWhatsapp,
+  garantirTokenDeVerificacao, URL_WEBHOOK,
 } from '../services/whatsappBusiness';
 import { listarComprovantesWhatsappPendentes } from '../services/database';
 
@@ -41,6 +42,7 @@ export default function IntegracaoWhatsappScreen() {
   const [phoneNumberId, setPhoneNumberId] = useState('');
   const [accessToken, setAccessToken] = useState('');
   const [appSecret, setAppSecret] = useState('');
+  const [verifyToken, setVerifyToken] = useState('');
 
   useFocusEffect(useCallback(() => {
     let ativo = true;
@@ -54,10 +56,22 @@ export default function IntegracaoWhatsappScreen() {
         setIntegracao(i);
         setComprovantes(c || []);
         setPhoneNumberId(i?.phone_number_id || '');
+        setVerifyToken(i?.verify_token || '');
       })
       .finally(() => { if (ativo) setCarregando(false); });
     return () => { ativo = false; };
   }, []));
+
+  // Chamado ao abrir o passo a passo: sem token gerado, a pessoa não tem o
+  // que colar no campo "Verify Token" do painel da Meta.
+  async function prepararToken() {
+    if (verifyToken) return;
+    try {
+      setVerifyToken(await garantirTokenDeVerificacao());
+    } catch (err) {
+      Alert.alert('Erro', mensagemDeErro(err));
+    }
+  }
 
   async function salvar() {
     setSalvando(true);
@@ -100,7 +114,9 @@ export default function IntegracaoWhatsappScreen() {
   }
 
 
-  const conectado = !!integracao;
+  // A linha existe assim que a pessoa abre a configuração (é onde nasce o
+  // Verify Token). Conectado de verdade é ter credencial gravada.
+  const conectado = !!integracao?.phone_number_id;
 
   return (
     <SafeAreaView style={s.safe} edges={['bottom']}>
@@ -171,8 +187,15 @@ export default function IntegracaoWhatsappScreen() {
                   </Text>
                   <Text style={s.url} selectable>{URL_WEBHOOK}</Text>
                   <Text style={s.passo}>
-                    <Text style={s.bold}>2.</Text> No Verify Token, use o valor combinado com o suporte do Dr.Sig.
+                    <Text style={s.bold}>2.</Text> No campo "Verify Token", cole este valor, que é só seu:
                   </Text>
+                  {verifyToken ? (
+                    <Text style={s.url} selectable>{verifyToken}</Text>
+                  ) : (
+                    <TouchableOpacity onPress={prepararToken}>
+                      <Text style={s.gerarToken}>Gerar meu Verify Token</Text>
+                    </TouchableOpacity>
+                  )}
                   <Text style={s.passo}>
                     <Text style={s.bold}>3.</Text> Assine o evento <Text style={s.bold}>messages</Text>.
                   </Text>
@@ -269,6 +292,7 @@ const s = StyleSheet.create({
   btnOkTexto: { color: '#FFFFFF', fontSize: 12.5, fontWeight: '600' },
   btnIgnorar: { backgroundColor: COLORS.bg, borderRadius: 8, paddingVertical: 7, paddingHorizontal: 12, borderWidth: 1, borderColor: COLORS.border },
   btnIgnorarTexto: { color: COLORS.textMid, fontSize: 12.5, fontWeight: '600' },
+  gerarToken: { fontSize: 13.5, color: '#44745B', fontWeight: '700', lineHeight: 20, paddingVertical: 4 },
   irRecebiveis: { backgroundColor: '#E2EFE8', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#C3DFCF' },
   irRecebiveisTexto: { fontSize: 14.5, fontWeight: '700', color: '#44745B', lineHeight: 21 },
   irRecebiveisSub: { fontSize: 12.5, color: '#4E6B5C', lineHeight: 18, marginTop: 4 },

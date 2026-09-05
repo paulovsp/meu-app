@@ -16,12 +16,36 @@ import { SUPABASE_URL } from './supabase';
  *  compartilhada por todas as contas: o payload diz de qual número veio. */
 export const URL_WEBHOOK = `${SUPABASE_URL}/functions/v1/whatsapp-webhook`;
 
+/**
+ * Garante que existe uma linha para esta profissional e devolve o Verify
+ * Token dela.
+ *
+ * A linha nasce ANTES das credenciais de propósito: na Meta, o webhook é
+ * configurado primeiro (e é aí que a Meta chama o handshake conferindo esse
+ * token), e só depois a pessoa copia Phone Number ID, token e App Secret.
+ */
+export async function garantirTokenDeVerificacao() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Sessão expirada. Entre de novo.');
+
+  const existente = await getIntegracaoWhatsapp();
+  if (existente?.verify_token) return existente.verify_token;
+
+  const { data, error } = await supabase
+    .from('integracoes_whatsapp')
+    .insert({ user_id: user.id })
+    .select('verify_token')
+    .single();
+  if (error) throw error;
+  return data.verify_token;
+}
+
 export async function getIntegracaoWhatsapp() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
   const { data, error } = await supabase
     .from('integracoes_whatsapp')
-    .select('phone_number_id, conectado_em, invalidado_em, invalidado_motivo')
+    .select('phone_number_id, verify_token, conectado_em, invalidado_em, invalidado_motivo')
     .eq('user_id', user.id)
     .maybeSingle();
   if (error) return null;

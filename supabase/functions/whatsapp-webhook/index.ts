@@ -36,12 +36,10 @@ import { assinaturaMetaConfere } from '../_shared/assinaturaMeta.ts';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const OCR_SPACE_API_KEY = Deno.env.get('OCR_SPACE_API_KEY')!;
-// Segredo escolhido por nós (não pela Meta) — cada profissional cola esse
-// MESMO valor no campo "Verify Token" ao configurar o webhook na própria
-// conta. Só confirma que quem está configurando a subscription passou pelo
-// Dr.Sig, não autentica requisições de mensagem em si (essas vêm por HTTPS
-// direto da Meta pro endpoint que só nós conhecemos).
-const WHATSAPP_WEBHOOK_VERIFY_TOKEN = Deno.env.get('WHATSAPP_WEBHOOK_VERIFY_TOKEN')!;
+// O Verify Token do handshake é POR PROFISSIONAL, gerado pelo banco e
+// mostrado na tela de conexão (migration 0061). Antes era um só,
+// compartilhado por todas as contas e passado "pelo suporte" — o que
+// impedia qualquer pessoa de concluir a configuração sozinha.
 
 const GRAPH_API_VERSION = 'v21.0';
 
@@ -123,14 +121,25 @@ async function extrairTextoDaImagem(imagemBase64: string, mimeType: string): Pro
 Deno.serve(async (req) => {
   const url = new URL(req.url);
 
+  // Handshake de verificação do webhook. Acontece ANTES de a pessoa ter as
+  // credenciais em mãos: ela configura o webhook na Meta primeiro e só
+  // depois copia Phone Number ID e tokens. Por isso a identificação aqui é
+  // pelo verify_token, que a tela já mostrou pra ela copiar.
   if (req.method === 'GET') {
     const modo = url.searchParams.get('hub.mode');
     const token = url.searchParams.get('hub.verify_token');
     const challenge = url.searchParams.get('hub.challenge');
-    if (modo === 'subscribe' && token === WHATSAPP_WEBHOOK_VERIFY_TOKEN && challenge) {
-      return new Response(challenge, { status: 200 });
+    if (modo !== 'subscribe' || !token || !challenge) {
+      return json({ error: 'Verificação falhou.' }, 403);
     }
-    return json({ error: 'Verificação falhou.' }, 403);
+    const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+    const { data: dono } = await supabaseAdmin
+      .from('integracoes_whatsapp')
+      .select('user_id')
+      .eq('verify_token', token)
+      .maybeSingle();
+    if (!dono) return json({ error: 'Verificação falhou.' }, 403);
+    return new Response(challenge, { status: 200 });
   }
 
   if (req.method !== 'POST') {

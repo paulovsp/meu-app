@@ -103,11 +103,20 @@ async function montarDigestDoProfissional(
       .in('patient_id', todosIds)
       .eq('status', 'agendado')
       .gte('date', desde.toISOString().slice(0, 10))
-      .lte('date', new Date().toISOString().slice(0, 10));
+      // `lt` e não `lte`: o resumo sai de manhã, e sessão marcada pra hoje
+      // ainda nem aconteceu — cobrar confirmação dela seria erro.
+      .lt('date', new Date().toISOString().slice(0, 10));
     aguardandoConfirmacao = count || 0;
   }
 
   return { atrasados, sessoesSemRelato, aguardandoConfirmacao };
+}
+
+/** "1 sessão" / "2 sessões". O código antigo fazia
+ *  `sessão${n === 1 ? '' : 'ões'}`, que produzia "sessãoões" no plural —
+ *  texto que ia assim mesmo pra caixa de entrada. */
+function plural(n: number, singular: string, plural: string) {
+  return `${n} ${n === 1 ? singular : plural}`;
 }
 
 function montarHtml(
@@ -118,21 +127,21 @@ function montarHtml(
   const partes: string[] = [];
   if (aguardandoConfirmacao > 0) {
     partes.push(
-      `<h3>${aguardandoConfirmacao} sessão${aguardandoConfirmacao === 1 ? '' : 'ões'} aguardando confirmação</h3>` +
+      `<h3>${plural(aguardandoConfirmacao, 'sessão', 'sessões')} aguardando confirmação</h3>` +
       `<p>Abra o app e responda se ${aguardandoConfirmacao === 1 ? 'ela aconteceu' : 'elas aconteceram'} — ` +
       `é isso que atualiza cobrança, financeiro e fiscal.</p>`
     );
   }
   if (atrasados.length > 0) {
     partes.push(
-      `<h3>${atrasados.length} pagamento${atrasados.length === 1 ? '' : 's'} em atraso</h3><p>` +
+      `<h3>${plural(atrasados.length, 'pagamento em atraso', 'pagamentos em atraso')}</h3><p>` +
       atrasados.map((a) => `${a.nome} — ${a.diasAtraso} dia${a.diasAtraso === 1 ? '' : 's'} de atraso`).join('<br/>') +
       `</p>`
     );
   }
   if (sessoesSemRelato > 0) {
     partes.push(
-      `<h3>${sessoesSemRelato} sessão${sessoesSemRelato === 1 ? '' : 'ões'} sem relato</h3>` +
+      `<h3>${plural(sessoesSemRelato, 'sessão', 'sessões')} sem relato</h3>` +
       `<p>Adicione a transcrição ou anotação pra manter o prontuário em dia.</p>`
     );
   }
@@ -152,7 +161,18 @@ Deno.serve(async (req) => {
   }
 
   const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
-  const resultado = { enviados: 0, semNadaAvisar: 0, erros: [] as string[] };
+  const resultado = {
+    enviados: 0,
+    semNadaAvisar: 0,
+    erros: [] as string[],
+    ensaio: [] as { para: string; secoes: string[]; html: string }[],
+  };
+
+  // Modo de ensaio: monta tudo exatamente como no envio real e devolve o
+  // que SERIA enviado, sem mandar e-mail nenhum. Existe pra dar como
+  // verificar o resumo (inclusive seções que dependem de preferência
+  // desligada por padrão) sem escrever na caixa de entrada de ninguém.
+  const ensaio = await req.json().then((c) => c?.dryRun === true).catch(() => false);
 
   try {
     // Cada seção do resumo tem seu próprio interruptor (migration 0057).
@@ -181,6 +201,19 @@ Deno.serve(async (req) => {
           await montarDigestDoProfissional(supabaseAdmin, perfil.id, prefs);
         if (atrasados.length === 0 && sessoesSemRelato === 0 && aguardandoConfirmacao === 0) {
           resultado.semNadaAvisar++;
+          continue;
+        }
+
+        if (ensaio) {
+          const secoes: string[] = [];
+          if (aguardandoConfirmacao > 0) secoes.push(`aguardando confirmação: ${aguardandoConfirmacao}`);
+          if (atrasados.length > 0) secoes.push(`atrasados: ${atrasados.length}`);
+          if (sessoesSemRelato > 0) secoes.push(`sem relato: ${sessoesSemRelato}`);
+          resultado.ensaio.push({
+            para: perfil.email,
+            secoes,
+            html: montarHtml(atrasados, sessoesSemRelato, aguardandoConfirmacao),
+          });
           continue;
         }
 

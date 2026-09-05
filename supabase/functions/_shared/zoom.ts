@@ -20,14 +20,18 @@ const OAUTH_TOKEN_URL = 'https://zoom.us/oauth/token';
 export const ZOOM_API = 'https://api.zoom.us/v2';
 
 // Escopos granulares (o Zoom migrou dos clássicos):
-//   meeting:write:meeting          -> criar a reunião com gravação automática
+//   meeting:write:meeting                     -> criar a reunião com gravação automática
 //   cloud_recording:read:list_recording_files -> achar o arquivo de transcrição
-//   user:read:user                 -> conferir plano/configuração da conta
+//   user:read:user                            -> nome do anfitrião (separa "A:" de "P:")
+//   user:read:settings                        -> conferir se a conta gera transcrição
+// Precisam bater EXATAMENTE com os escopos marcados no app do Marketplace:
+// pedir um escopo não cadastrado faz o Zoom recusar a autorização inteira.
 // Nenhum escopo de leitura de conteúdo além do necessário.
 export const ESCOPOS_ZOOM = [
   'meeting:write:meeting',
   'cloud_recording:read:list_recording_files',
   'user:read:user',
+  'user:read:settings',
 ].join(' ');
 
 function basicAuth() {

@@ -8,8 +8,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../services/supabase';
-import { validarCPF, dataBRParaISO } from '../services/validacao';
+import { validarCPF, dataBRParaISO, parseTelefone } from '../services/validacao';
 import SeletorCidadeEstado from '../components/SeletorCidadeEstado';
+import TelefoneInput from '../components/TelefoneInput';
 
 const COLORS = {
   bg: '#F7F5F0',
@@ -50,6 +51,7 @@ export default function CadastroScreen({ navigation }) {
   const [seletorCidadeAberto, setSeletorCidadeAberto] = useState(false);
 
   const [crp, setCrp] = useState('');
+  const [telefone, setTelefone] = useState('');
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [confirmarSenha, setConfirmarSenha] = useState('');
@@ -84,25 +86,35 @@ export default function CadastroScreen({ navigation }) {
     const nomeTrim = nome.trim();
     const emailTrim = email.trim();
 
+    // Quatro campos obrigatórios, e só esses quatro: nome, CPF, telefone e
+    // e-mail. Data de nascimento, cidade/UF e CRP eram exigidos aqui sem
+    // que nada no app dependesse deles pra funcionar — só faziam a conta
+    // demorar mais pra existir. Ficam pro Perfil, quando a pessoa quiser.
     if (!nomeTrim) {
       Alert.alert('Campo obrigatório', 'Informe seu nome.');
       return;
     }
+    // Nome e CPF não mudam depois — é o que sustenta o bloqueio de
+    // cadastrar a si mesmo como analisante (o app existe pra que um
+    // terceiro confirme a gravação, não pra confirmar sozinho).
     if (!validarCPF(cpf)) {
       Alert.alert('CPF inválido', 'Confira o CPF digitado.');
       return;
     }
-    const dataNascimentoISO = dataBRParaISO(dataNascimento);
-    if (!dataNascimentoISO) {
-      Alert.alert('Campo obrigatório', 'Informe sua data de nascimento completa.');
-      return;
-    }
-    if (!cidade.trim() || !uf.trim()) {
-      Alert.alert('Campo obrigatório', 'Informe sua cidade e UF.');
+    const { ddd, numero } = parseTelefone(telefone);
+    if (!ddd || numero.length < 8) {
+      Alert.alert('Campo obrigatório', 'Informe seu telefone com DDD.');
       return;
     }
     if (!emailTrim) {
       Alert.alert('Campo obrigatório', 'Informe seu e-mail.');
+      return;
+    }
+    // Opcionais daqui pra baixo: só valida o que a pessoa escolheu
+    // preencher, e nunca barra por estar em branco.
+    const dataNascimentoISO = dataNascimento.trim() ? dataBRParaISO(dataNascimento) : null;
+    if (dataNascimento.trim() && !dataNascimentoISO) {
+      Alert.alert('Data inválida', 'Confira a data de nascimento (DD/MM/AAAA), ou deixe em branco.');
       return;
     }
     if (senha.length < 6) {
@@ -113,6 +125,21 @@ export default function CadastroScreen({ navigation }) {
       Alert.alert('Senhas diferentes', 'A confirmação não bate com a senha digitada.');
       return;
     }
+
+    // Última chance de corrigir: depois de criada a conta, nome e CPF não
+    // mudam mais nem pelo Perfil.
+    const confirmado = await new Promise((resolve) => {
+      Alert.alert(
+        'Confirme antes de criar',
+        `Nome: ${nomeTrim}\nCPF: ${cpf.trim()}\n\nEsses dois dados não poderão ser alterados depois. Está tudo certo?`,
+        [
+          { text: 'Corrigir', style: 'cancel', onPress: () => resolve(false) },
+          { text: 'Está certo', onPress: () => resolve(true) },
+        ],
+        { cancelable: false },
+      );
+    });
+    if (!confirmado) return;
 
     setCriando(true);
     try {
@@ -131,9 +158,12 @@ export default function CadastroScreen({ navigation }) {
             nome: nomeTrim,
             crp: crp.trim() || null,
             cpf: cpfLimpo,
+            // A coluna existia desde a 0001 e o trigger nunca a preenchia,
+            // porque o campo não existia nesta tela. Agora é obrigatório.
+            telefone: telefone.trim(),
             data_nascimento: dataNascimentoISO,
-            cidade: cidade.trim(),
-            uf: uf.trim(),
+            cidade: cidade.trim() || null,
+            uf: uf.trim() || null,
           },
         },
       });
@@ -211,8 +241,28 @@ export default function CadastroScreen({ navigation }) {
             placeholderTextColor="#756E66"
             maxLength={14}
           />
+          <Text style={s.ajudaCampo}>
+            Nome e CPF identificam o titular da conta e não podem ser
+            alterados depois. Confira antes de criar.
+          </Text>
 
-          <Text style={s.label}>Data de nascimento *</Text>
+          <Text style={s.label}>Telefone *</Text>
+          <TelefoneInput value={telefone} onChangeText={setTelefone} />
+
+          <Text style={s.label}>E-mail *</Text>
+          <TextInput
+            style={s.input}
+            value={email}
+            onChangeText={setEmail}
+            placeholder="Ex: sigmund.freud@email.com"
+            placeholderTextColor="#756E66"
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+
+          <Text style={s.secaoOpcional}>Opcionais — dá pra preencher depois, no Perfil</Text>
+
+          <Text style={s.label}>Data de nascimento</Text>
           <TextInput
             style={s.input}
             value={dataNascimento}
@@ -223,7 +273,7 @@ export default function CadastroScreen({ navigation }) {
             maxLength={10}
           />
 
-          <Text style={s.label}>Cidade e estado *</Text>
+          <Text style={s.label}>Cidade e estado</Text>
           <TouchableOpacity style={s.input} onPress={() => setSeletorCidadeAberto(true)}>
             <Text style={cidade ? s.inputSelecionadoTexto : s.inputPlaceholderTexto}>
               {cidade ? `${cidade} - ${uf}` : 'Toque para selecionar'}
@@ -246,17 +296,6 @@ export default function CadastroScreen({ navigation }) {
             onChangeText={setCrp}
             placeholder="Ex: CRP 06/123456"
             placeholderTextColor="#756E66"
-          />
-
-          <Text style={s.label}>E-mail *</Text>
-          <TextInput
-            style={s.input}
-            value={email}
-            onChangeText={setEmail}
-            placeholder="Ex: sigmund.freud@email.com"
-            placeholderTextColor="#756E66"
-            keyboardType="email-address"
-            autoCapitalize="none"
           />
 
           <Text style={s.label}>Senha *</Text>
@@ -333,6 +372,13 @@ const s = StyleSheet.create({
   label: {
     fontSize: 13, fontWeight: '600', color: COLORS.textDark,
     marginBottom: 6, marginTop: 16,
+  },
+  ajudaCampo: {
+    fontSize: 12.5, color: COLORS.textMid, lineHeight: 18, marginTop: 7,
+  },
+  secaoOpcional: {
+    fontSize: 12.5, fontWeight: '600', color: COLORS.textMid, lineHeight: 18,
+    marginTop: 28, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#E3DED4',
   },
   input: {
     backgroundColor: '#FDFCFA',

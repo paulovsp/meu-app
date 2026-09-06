@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import CabecalhoTela from '../components/CabecalhoTela';
 import * as ImagePicker from 'expo-image-picker';
+import { Ionicons } from '@expo/vector-icons';
 import {
   getPlanoFinanceiro, getRecebimentosDoMes, getPrecoMedioSessao,
   getContagemAnalisantesESupervisionandos, getContagemSessoesSemRelato, getResumoHorariosSemanais,
@@ -76,6 +77,11 @@ export default function PerfilScreen({ navigation }) {
 
   const [nome, setNome] = useState('');
   const [cpf, setCpf] = useState('');
+  // Guarda o que veio do banco: é o que decide se o campo de CPF aparece.
+  const [cpfSalvo, setCpfSalvo] = useState('');
+  // Contas criadas antes de o CPF ser obrigatório ficaram sem ele; essas
+  // podem preenchê-lo uma vez. Preenchido, o campo some pra sempre.
+  const cpfEditavel = !cpfSalvo.replace(/\D/g, '');
   const [dataNascimento, setDataNascimento] = useState('');
   const [cidade, setCidade] = useState('');
   const [uf, setUf] = useState('');
@@ -120,6 +126,7 @@ export default function PerfilScreen({ navigation }) {
       setUser(u);
       setNome(u.nome || '');
       setCpf(u.cpf || '');
+      setCpfSalvo(u.cpf || '');
       setDataNascimento(dataISOParaBR(u.data_nascimento));
       setCidade(u.cidade || '');
       setUf(u.uf || '');
@@ -397,21 +404,26 @@ export default function PerfilScreen({ navigation }) {
   }
 
   async function salvar() {
-    if (!nome.trim()) {
-      Alert.alert('Campo obrigatório', 'Informe seu nome.');
-      return;
-    }
-    if (!validarCPF(cpf)) {
+    // Nome e CPF não aparecem mais como campo editável — o banco recusa a
+    // alteração (trigger `profiles_nome_cpf_imutaveis`, migration 0076), e
+    // é isso que impede driblar o bloqueio de autocadastro de analisante
+    // trocando o próprio nome depois. Contas antigas que ficaram sem CPF
+    // ainda podem preenchê-lo UMA vez, e é o único caso em que o campo
+    // aparece — por isso a validação abaixo é condicional.
+    if (cpfEditavel && !validarCPF(cpf)) {
       Alert.alert('CPF inválido', 'Confira o CPF digitado.');
       return;
     }
-    const dataNascimentoISO = dataBRParaISO(dataNascimento);
-    if (!dataNascimentoISO) {
-      Alert.alert('Campo obrigatório', 'Informe sua data de nascimento completa.');
+    // Nascimento e cidade/UF são opcionais: nenhum fluxo do app depende
+    // deles. Só valida o que foi preenchido.
+    const dataNascimentoISO = dataNascimento.trim() ? dataBRParaISO(dataNascimento) : null;
+    if (dataNascimento.trim() && !dataNascimentoISO) {
+      Alert.alert('Data inválida', 'Confira a data de nascimento (DD/MM/AAAA), ou deixe em branco.');
       return;
     }
-    if (!cidade.trim() || !uf.trim()) {
-      Alert.alert('Campo obrigatório', 'Informe sua cidade e UF.');
+    const telefoneTrim = telefone.trim();
+    if (!telefoneTrim) {
+      Alert.alert('Campo obrigatório', 'Informe seu telefone.');
       return;
     }
 
@@ -430,13 +442,14 @@ export default function PerfilScreen({ navigation }) {
     const { error } = await supabase
       .from('profiles')
       .update({
-        nome: nome.trim(),
-        cpf: cpf.trim(),
+        // `nome` fora do update de propósito: mandá-lo, mesmo igual, faria
+        // o trigger comparar e recusar por engano numa diferença de espaço.
+        ...(cpfEditavel ? { cpf: cpf.trim() } : {}),
         data_nascimento: dataNascimentoISO,
-        cidade: cidade.trim(),
-        uf: uf.trim(),
+        cidade: cidade.trim() || null,
+        uf: uf.trim() || null,
         crp: crp.trim(),
-        telefone: telefone.trim(),
+        telefone: telefoneTrim,
         pix_key: pixKey.trim() || null,
         contador_nome: contadorNome.trim(),
         contador_email: contadorEmail.trim(),
@@ -712,20 +725,40 @@ export default function PerfilScreen({ navigation }) {
 
         {editando ? (
           <>
-            <Text style={st.label}>Nome completo *</Text>
-            <TextInput style={st.input} value={nome} onChangeText={setNome} />
+            <Text style={st.label}>Nome completo</Text>
+            <View style={st.inputTravado}>
+              <Text style={st.inputTravadoTexto}>{nome || '—'}</Text>
+              <Ionicons name="lock-closed-outline" size={15} color="#8C857B" />
+            </View>
 
-            <Text style={st.label}>CPF *</Text>
-            <TextInput
-              style={st.input}
-              value={cpf}
-              onChangeText={formatarCpf}
-              keyboardType="numeric"
-              placeholder="000.000.000-00"
-              maxLength={14}
-            />
+            {cpfEditavel ? (
+              <>
+                <Text style={st.label}>CPF *</Text>
+                <TextInput
+                  style={st.input}
+                  value={cpf}
+                  onChangeText={formatarCpf}
+                  keyboardType="numeric"
+                  placeholder="000.000.000-00"
+                  maxLength={14}
+                />
+              </>
+            ) : (
+              <>
+                <Text style={st.label}>CPF</Text>
+                <View style={st.inputTravado}>
+                  <Text style={st.inputTravadoTexto}>{cpf || '—'}</Text>
+                  <Ionicons name="lock-closed-outline" size={15} color="#8C857B" />
+                </View>
+              </>
+            )}
+            <Text style={st.ajudaCampo}>
+              Nome e CPF identificam o titular da conta e não mudam depois de
+              gravados. É o que garante que ninguém apareça como o próprio
+              analisante. Se algum estiver errado, fale com o suporte.
+            </Text>
 
-            <Text style={st.label}>Data de nascimento *</Text>
+            <Text style={st.label}>Data de nascimento</Text>
             <TextInput
               style={st.input}
               value={dataNascimento}
@@ -735,7 +768,7 @@ export default function PerfilScreen({ navigation }) {
               maxLength={10}
             />
 
-            <Text style={st.label}>Cidade e estado *</Text>
+            <Text style={st.label}>Cidade e estado</Text>
             <TouchableOpacity style={st.input} onPress={() => setSeletorCidadeAberto(true)}>
               <Text style={cidade ? st.inputSelecionadoTexto : st.inputPlaceholderTexto}>
                 {cidade ? `${cidade} - ${uf}` : 'Toque para selecionar'}
@@ -763,7 +796,7 @@ export default function PerfilScreen({ navigation }) {
               autoCapitalize="none"
             />
 
-            <Text style={st.label}>Telefone</Text>
+            <Text style={st.label}>Telefone *</Text>
             <TelefoneInput value={telefone} onChangeText={setTelefone} />
 
             <Text style={st.label}>Chave Pix</Text>
@@ -1446,6 +1479,13 @@ const st = StyleSheet.create({
     paddingVertical: 12, fontSize: 15, color: '#302C28',
     borderWidth: 1, borderColor: '#EAE5DC',
   },
+  inputTravado: {
+    backgroundColor: '#F2EFE9', borderRadius: 12, paddingHorizontal: 16,
+    paddingVertical: 12, borderWidth: 1, borderColor: '#E3DED4',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+  },
+  inputTravadoTexto: { flex: 1, fontSize: 15, color: '#756E66', lineHeight: 22 },
+  ajudaCampo: { fontSize: 12.5, color: '#8C857B', lineHeight: 18, marginTop: 8 },
   inputSelecionadoTexto: { fontSize: 15, color: '#302C28', lineHeight: 22 },
   inputPlaceholderTexto: { fontSize: 15, color: '#756E66', lineHeight: 22 },
   btnRow: { flexDirection: 'row', gap: 12, marginTop: 20 },

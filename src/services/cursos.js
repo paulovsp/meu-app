@@ -6,6 +6,7 @@
 import { supabase } from './supabase';
 import { adicionarDespesa, editarDespesa, removerDespesa } from './despesas';
 import { normalizarHorario, somarMinutos } from './horarios';
+import { hojeISO } from './validacao';
 
 /** Carga horária total (em horas) de `quantidade` aulas de `duracaoMin`
  * minutos cada — o que antes era digitado à mão no campo "Carga horária".
@@ -77,7 +78,7 @@ async function sincronizarDespesaDoCurso(curso) {
       categoria: 'cursos',
       descricao: curso.titulo,
       valor: Number(curso.custo),
-      data: curso.data || new Date().toISOString().slice(0, 10),
+      data: curso.data || hojeISO(),
       recorrente: false,
       cursoId: curso.id,
     });

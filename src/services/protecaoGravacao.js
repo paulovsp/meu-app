@@ -18,6 +18,16 @@ export const CANAL_SESSAO = 'gravacao';
 /** Canal da gravação de aula (FormularioCursoScreen). */
 export const CANAL_CURSO = 'gravacao_curso';
 
+/** Como cada canal se chama pra quem lê o aviso. */
+const NOME_DO_CANAL = {
+  [CANAL_SESSAO]: 'da sessão',
+  [CANAL_CURSO]: 'da aula',
+};
+
+/** Todos os canais de gravação — a tela de Proteção olha os dois, senão
+ *  diria "tudo liberado" com o canal da aula desligado. */
+export const TODOS_OS_CANAIS = [CANAL_SESSAO, CANAL_CURSO];
+
 /**
  * Devolve a lista de pendências que ainda podem interromper a gravação.
  *
@@ -28,8 +38,9 @@ export const CANAL_CURSO = 'gravacao_curso';
  *  - 'impede'  — sem isso a gravação em segundo plano NÃO funciona.
  *  - 'arrisca' — funciona, mas o sistema pode derrubar a qualquer momento.
  */
-export async function diagnosticarProtecao(canalId = CANAL_SESSAO) {
+export async function diagnosticarProtecao(canal = CANAL_SESSAO) {
   if (Platform.OS !== 'android') return [];
+  const canais = Array.isArray(canal) ? canal : [canal];
   const pendencias = [];
 
   try {
@@ -49,22 +60,26 @@ export async function diagnosticarProtecao(canalId = CANAL_SESSAO) {
   } catch (_) {}
 
   // Permissão geral concedida mas o canal específico silenciado dá no mesmo:
-  // a notificação do serviço não aparece.
-  try {
-    const canal = await notifee.getChannel(canalId);
-    if (canal?.blocked) {
-      pendencias.push({
-        id: 'canal',
-        gravidade: 'impede',
-        titulo: 'Aviso de gravação desativado',
-        descricao:
-          'A categoria de notificação da gravação está desligada nas '
-          + 'configurações do Android.',
-        acaoLabel: 'Reativar aviso',
-        abrir: () => notifee.openNotificationSettings(canalId),
-      });
-    }
-  } catch (_) {}
+  // a notificação do serviço não aparece. Um canal por tipo de gravação, e
+  // desligar só o da aula é uma situação real — daí a conferência ser por
+  // canal, com o nome de cada um no aviso.
+  for (const canalId of canais) {
+    try {
+      const info = await notifee.getChannel(canalId);
+      if (info?.blocked) {
+        pendencias.push({
+          id: `canal:${canalId}`,
+          gravidade: 'impede',
+          titulo: `Aviso de gravação ${NOME_DO_CANAL[canalId] || ''} desativado`.trim(),
+          descricao:
+            'A categoria de notificação dessa gravação está desligada nas '
+            + 'configurações do Android — sem ela o serviço não sobe.',
+          acaoLabel: 'Reativar aviso',
+          abrir: () => notifee.openNotificationSettings(canalId),
+        });
+      }
+    } catch (_) {}
+  }
 
   try {
     if (await notifee.isBatteryOptimizationEnabled()) {

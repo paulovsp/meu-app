@@ -43,6 +43,7 @@ export default function IntegracaoWhatsappScreen() {
   const [accessToken, setAccessToken] = useState('');
   const [appSecret, setAppSecret] = useState('');
   const [verifyToken, setVerifyToken] = useState('');
+  const [gerandoToken, setGerandoToken] = useState(false);
 
   useFocusEffect(useCallback(() => {
     let ativo = true;
@@ -65,11 +66,14 @@ export default function IntegracaoWhatsappScreen() {
   // Chamado ao abrir o passo a passo: sem token gerado, a pessoa não tem o
   // que colar no campo "Verify Token" do painel da Meta.
   async function prepararToken() {
-    if (verifyToken) return;
+    if (verifyToken || gerandoToken) return;
+    setGerandoToken(true);
     try {
       setVerifyToken(await garantirTokenDeVerificacao());
     } catch (err) {
       Alert.alert('Erro', mensagemDeErro(err));
+    } finally {
+      setGerandoToken(false);
     }
   }
 
@@ -192,8 +196,10 @@ export default function IntegracaoWhatsappScreen() {
                   {verifyToken ? (
                     <Text style={s.url} selectable>{verifyToken}</Text>
                   ) : (
-                    <TouchableOpacity onPress={prepararToken}>
-                      <Text style={s.gerarToken}>Gerar meu Verify Token</Text>
+                    <TouchableOpacity onPress={prepararToken} disabled={gerandoToken}>
+                      <Text style={s.gerarToken}>
+                        {gerandoToken ? 'Gerando...' : 'Gerar meu Verify Token'}
+                      </Text>
                     </TouchableOpacity>
                   )}
                   <Text style={s.passo}>

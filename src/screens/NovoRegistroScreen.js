@@ -20,7 +20,7 @@ import {
   listarPacientes, addRecord, editRecord, getAppointmentByPatientAndDate,
 } from '../services/database';
 import { mensagemDeErro } from '../services/erros';
-import { dataBRParaISO, dataISOParaBR } from '../services/validacao';
+import { dataBRParaISO, dataISOParaBR, dataParaISO } from '../services/validacao';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
 
 const MEDIA_IMAGES = ['images'];
@@ -174,7 +174,9 @@ export default function NovoRegistroScreen() {
   // valor atual do campo na hora de salvar, nunca do que veio por parâmetro.
   const [dataSessaoRegistro, setDataSessaoRegistro] = useState(
     editando && registroExistente?.date
-      ? dataISOParaBR(new Date(registroExistente.date).toISOString().slice(0, 10))
+      // `dataParaISO` e não `toISOString()`: um registro salvo às 22h
+      // voltava pra edição com a data de amanhã.
+      ? dataISOParaBR(dataParaISO(new Date(registroExistente.date)))
       : (dataSessaoParam ? dataISOParaBR(dataSessaoParam) : '')
   );
 

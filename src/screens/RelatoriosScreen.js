@@ -56,6 +56,20 @@ export default function RelatoriosScreen() {
     }, [])
   );
 
+  // O histórico era carregado uma única vez, ao escolher o analisante.
+  // Voltar do detalhe depois de apagar um relatório deixava o apagado ainda
+  // na lista, e tocar nele abriria um relatório que não existe mais.
+  useFocusEffect(
+    useCallback(() => {
+      if (!paciente) return;
+      let ativo = true;
+      listarRelatorios(paciente.id)
+        .then((h) => { if (ativo) setHistoricoRelatorios(h); })
+        .catch(() => {});
+      return () => { ativo = false; };
+    }, [paciente?.id])
+  );
+
   async function selecionarPaciente(p) {
     setPaciente(p);
     setCarregandoDetalhe(true);

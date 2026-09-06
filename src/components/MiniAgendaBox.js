@@ -7,6 +7,7 @@ import {
 } from '../services/database';
 import { corTipoEvento, ehTipoGrupo } from '../services/tiposEvento';
 import { papel, tinta, salvia } from '../theme';
+import { hojeISO } from '../services/validacao';
 
 const COLORS = {
   surface: papel.alto,
@@ -17,11 +18,6 @@ const COLORS = {
 };
 
 const COR_LIVRE = '#43A047';
-
-function hojeISO() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 
 // Primeiro nome (ou o título/"Grupo") — o widget é estreito demais pro nome
 // inteiro.

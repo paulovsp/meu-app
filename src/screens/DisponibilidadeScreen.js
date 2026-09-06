@@ -34,7 +34,7 @@ import {
 import { mensagemDeErro } from '../services/erros';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
 import { TIPOS_EVENTO, infoTipoEvento, corTipoEvento, ehTipoGrupo, tipoTemPacienteUnico } from '../services/tiposEvento';
-import { dataBRParaISO, dataISOParaBR } from '../services/validacao';
+import { dataBRParaISO, dataISOParaBR, diaSemanaDeISO } from '../services/validacao';
 import {
   mascararHorario, normalizarHorario, horarioValido, horarioParaMinutos, terminoPadrao,
   DURACAO_PADRAO_SESSAO_MIN,
@@ -69,11 +69,6 @@ function dataValida(dataBR) {
   const [ano, mes, dia] = iso.split('-').map(Number);
   const data = new Date(ano, mes - 1, dia);
   return data.getFullYear() === ano && data.getMonth() === mes - 1 && data.getDate() === dia;
-}
-
-function diaSemanaDeISO(dataISO) {
-  const [ano, mes, dia] = dataISO.split('-').map(Number);
-  return new Date(ano, mes - 1, dia).getDay();
 }
 
 // Horário de supervisão (individual ou em grupo) só pode envolver

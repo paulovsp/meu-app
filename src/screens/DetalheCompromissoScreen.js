@@ -96,7 +96,9 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
     const tipo = compromisso.tipo || 'sessao_individual';
     const eventoIndividual = tipo === 'sessao_individual' || tipo === 'supervisao_individual';
     if (!eventoIndividual) return;
-    temTranscricaoParaData(compromisso.patient_id, compromisso.date).then(setTemTranscricao);
+    temTranscricaoParaData(compromisso.patient_id, compromisso.date)
+      .then(setTemTranscricao)
+      .catch(() => {});
   }, [compromisso]);
 
   if (!compromisso) {
@@ -574,7 +576,11 @@ Nenhum relato ou transcrição foi adicionado para esta sessão ainda.
         </TouchableOpacity>
       )}
 
-      <TouchableOpacity style={styles.btnEditarHorario} onPress={editarInformacoesDoHorario}>
+      <TouchableOpacity
+        style={styles.btnEditarHorario}
+        onPress={editarInformacoesDoHorario}
+        disabled={agindo}
+      >
         <Text style={styles.btnEditarHorarioTxt}>Editar o horário e os próximos</Text>
       </TouchableOpacity>
 

@@ -35,6 +35,7 @@ import { mensagemDeErro } from '../services/erros';
 import { useSwipeHorizontal } from '../hooks/useSwipeHorizontal';
 import { usePinchZoom } from '../hooks/usePinchZoom';
 import { corTipoEvento, infoTipoEvento, ehTipoGrupo } from '../services/tiposEvento';
+import { diaSemanaDeISO } from '../services/validacao';
 
 const DIAS_LABEL = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -263,7 +264,7 @@ export default function AgendaScreen({ navigation }) {
       date: dataISO || (slot ? null : toISO(dataRef)),
       startTime: appointment?.start_time || slot?.start_time || null,
       endTime: appointment?.end_time || slot?.end_time || null,
-      dayOfWeek: slot?.day_of_week ?? new Date(dataISO).getDay(),
+      dayOfWeek: slot?.day_of_week ?? diaSemanaDeISO(dataISO),
     });
   }
 
@@ -527,7 +528,7 @@ export default function AgendaScreen({ navigation }) {
             tipo: appointment.tipo,
             titulo: appointment.titulo,
             participantes: appointment.participantes,
-            day_of_week: new Date(dataISO).getDay(),
+            day_of_week: diaSemanaDeISO(dataISO),
           },
           dataISO,
           key: `virtual-${dataISO}-${appointment.id}`,

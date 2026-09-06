@@ -272,9 +272,14 @@ export default function AppNavigator() {
   const [politicaAceita, setPoliticaAceita] = useState(null);
 
   useEffect(() => {
-    AsyncStorage.getItem(CHAVE_POLITICA_ACEITA).then((valor) => {
-      setPoliticaAceita(valor === 'true');
-    });
+    // Mesmo cuidado do AuthContext: `politicaAceita === null` é o estado de
+    // "ainda carregando" e trava a tela num spinner. Sem `.catch`, uma falha
+    // de leitura do AsyncStorage deixava o app parado ali pra sempre.
+    // Falhar aqui significa "não sei se aceitou" — e a saída segura é
+    // mostrar o aviso de privacidade de novo, nunca pular.
+    AsyncStorage.getItem(CHAVE_POLITICA_ACEITA)
+      .then((valor) => setPoliticaAceita(valor === 'true'))
+      .catch(() => setPoliticaAceita(false));
   }, []);
 
   function aceitarPolitica() {

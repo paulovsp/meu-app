@@ -1,6 +1,7 @@
 import {
   mesDeCompetencia, diaDeVencimento, sessaoEhCobravel, STATUS_PREVISTOS,
 } from './competencia';
+import { dataParaISO, hojeISO } from './validacao';
 
 // ── PACIENTES (Supabase — tabela `patients`) ───────────
 
@@ -603,7 +604,10 @@ export async function criarAppointmentAvulso({ patientId, dataISO, startTime, en
 
 export async function getAvailabilitySlots() {
   const { supabase } = require('./supabase');
-  const hojeISO = new Date().toISOString().slice(0, 10);
+  // `dataParaISO` e não `toISOString().slice(0,10)`: em UTC-3, depois das
+  // 21h o segundo já devolve amanhã, e o horário avulso marcado pra HOJE
+  // sumia desta lista no fim da tarde.
+  const hojeISO = dataParaISO(new Date());
   const { data, error } = await supabase
     .from('availability_slots')
     .select('*, patients(nome, telefone, preco_sessao, preco_moeda)')
@@ -1106,7 +1110,7 @@ export async function listarStatusSessoes() {
   const { supabase } = require('./supabase');
   const desde = new Date();
   desde.setDate(desde.getDate() - 90);
-  const desdeISO = desde.toISOString().slice(0, 10);
+  const desdeISO = dataParaISO(desde);
   const { data, error } = await supabase
     .from('appointments')
     .select(
@@ -1164,8 +1168,8 @@ export async function listarCompromissosAguardandoCheckin() {
   const { supabase } = require('./supabase');
   const desde = new Date();
   desde.setDate(desde.getDate() - 90);
-  const desdeISO = desde.toISOString().slice(0, 10);
-  const hojeISO = new Date().toISOString().slice(0, 10);
+  const desdeISO = dataParaISO(desde);
+  const hojeISO = dataParaISO(new Date());
   const { data, error } = await supabase
     .from('appointments')
     .select(APPOINTMENT_SELECT_COM_PACIENTE)
@@ -1359,7 +1363,9 @@ export async function getOrCreateAppointmentForSlot(slot, dataISO) {
 export async function listarCompromissosFuturosDoHorario({ patientId, dayOfWeek, startTime }) {
   if (!patientId) return [];
   const { supabase } = require('./supabase');
-  const hojeISO = new Date().toISOString().slice(0, 10);
+  // Em UTC, depois das 21h "hoje" vira amanhã — e os compromissos de hoje
+  // saíam da varredura de futuros, ficando pra trás na limpeza da edição.
+  const hojeISO = dataParaISO(new Date());
   const { data, error } = await supabase
     .from('appointments')
     .select('id, date, start_time')
@@ -1518,10 +1524,7 @@ export async function getPatientById(patientId) {
 // fim) em vez de só sobrescrever uma data — permite ver o histórico
 // completo de paralisações, não só a mais recente.
 
-function hojeISODate() {
-  const hoje = new Date();
-  return `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
-}
+const hojeISODate = hojeISO;
 
 export async function getHistoricoParalizacoes(patientId) {
   const { supabase } = require('./supabase');
@@ -1822,9 +1825,8 @@ export async function getSlotsOcupados() {
   return [...individuais, ...doGrupo];
 }
 
-function dataParaISO(date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-}
+// `dataParaISO`/`hojeISODate` vinham daqui, copiados; agora são um só,
+// em services/validacao.js (com teste). Ver o import no topo do arquivo.
 
 function adicionarDias(date, n) {
   const d = new Date(date);

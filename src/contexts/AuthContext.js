@@ -20,11 +20,19 @@ export function AuthProvider({ children }) {
   const [ocultarSessao, setOcultarSessao] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setLoading(false);
-      sincronizarTokenBiometrico(data.session);
-    });
+    // O `.catch` não é zelo: `setLoading(false)` só acontecia no caminho
+    // feliz. Se a leitura da sessão falhasse — armazenamento corrompido,
+    // erro do SecureStore, qualquer coisa —, `loading` ficava `true` pra
+    // sempre e o app parava no spinner, sem tela de login e sem saída a não
+    // ser reinstalar. Falhar aqui tem que significar "não há sessão", que é
+    // recuperável: a pessoa entra de novo.
+    supabase.auth.getSession()
+      .then(({ data }) => {
+        setSession(data.session);
+        sincronizarTokenBiometrico(data.session);
+      })
+      .catch(() => setSession(null))
+      .finally(() => setLoading(false));
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, novaSessao) => {
       setSession(novaSessao);

@@ -1133,7 +1133,11 @@ Você pode bloquear a tela ou usar outros apps — a gravação continua.
           ) : null}
 
           {!gravando && !transcrevendo && gravacaoAutorizada && (
-            <TouchableOpacity style={s.btnImportar} onPress={importarAudio}>
+            <TouchableOpacity
+              style={[s.btnImportar, preparando && { opacity: 0.7 }]}
+              onPress={importarAudio}
+              disabled={preparando}
+            >
               <Ionicons name="folder-open-outline" size={17} color="#497363" />
               <Text style={s.btnImportarTexto}>Transcrever um áudio já gravado</Text>
             </TouchableOpacity>
@@ -1218,8 +1222,14 @@ Você pode bloquear a tela ou usar outros apps — a gravação continua.
                 enviar de novo — ou digite abaixo, e aí o áudio é descartado
                 ao salvar.
               </Text>
-              <TouchableOpacity style={s.btnReenviar} onPress={tentarEnviarDeNovo}>
-                <Text style={s.btnReenviarTexto}>Tentar enviar de novo</Text>
+              <TouchableOpacity
+                style={[s.btnReenviar, transcrevendo && { opacity: 0.7 }]}
+                onPress={tentarEnviarDeNovo}
+                disabled={transcrevendo}
+              >
+                {transcrevendo
+                  ? <ActivityIndicator color="#FFFFFF" />
+                  : <Text style={s.btnReenviarTexto}>Tentar enviar de novo</Text>}
               </TouchableOpacity>
             </View>
           )}

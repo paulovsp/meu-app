@@ -329,7 +329,12 @@ export default function InicioScreen({ navigation }) {
             resolveFila();
             return;
           }
-          processarFilaCheckin(fila, indice + 1).then(resolveFila);
+          // Sem `.catch`, uma falha no meio da fila deixava
+          // `processandoCheckinRef` travado em `true` — e aí a pergunta de
+          // check-in nunca mais aparecia, nem depois de reabrir a tela.
+          processarFilaCheckin(fila, indice + 1)
+            .catch(() => { processandoCheckinRef.current = false; })
+            .finally(resolveFila);
         },
       });
     });

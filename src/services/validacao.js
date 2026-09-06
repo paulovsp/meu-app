@@ -74,6 +74,54 @@ export function validarCPF(cpfTexto) {
   return resto === parseInt(cpf[10], 10);
 }
 
+/**
+ * Data no fuso de QUEM ESTÁ USANDO o app, como "AAAA-MM-DD".
+ *
+ * Existe porque o caminho óbvio está errado: `toISOString().slice(0, 10)`
+ * converte pra UTC antes de cortar, e no Brasil (UTC−3) qualquer coisa
+ * depois das 21h já cai no dia seguinte. Um horário avulso marcado pra
+ * hoje sumia da lista às 21h; a varredura de "compromissos futuros"
+ * passava a ignorar os de hoje; uma despesa de curso nascia com a data de
+ * amanhã. Nenhum desses erros aparece de dia — só à noite, que é quando a
+ * profissional costuma organizar a semana.
+ *
+ * A versão certa monta a string a partir dos componentes LOCAIS, e estava
+ * copiada em quatro arquivos. Agora é uma só.
+ */
+export function dataParaISO(data = new Date()) {
+  const ano = data.getFullYear();
+  const mes = String(data.getMonth() + 1).padStart(2, '0');
+  const dia = String(data.getDate()).padStart(2, '0');
+  return `${ano}-${mes}-${dia}`;
+}
+
+/** Hoje, no fuso local. Atalho de `dataParaISO()`. */
+export function hojeISO() {
+  return dataParaISO(new Date());
+}
+
+/**
+ * "AAAA-MM-DD" -> Date à MEIA-NOITE LOCAL.
+ *
+ * `new Date('2026-09-06')` é lido como meia-noite UTC — que no Brasil é
+ * 05/09 às 21h. Quem chamasse `.getDay()` nisso recebia o dia da semana
+ * ANTERIOR, e foi assim que a Agenda mandava o dia errado pra tela de
+ * edição de horário. Passando ano/mês/dia separados, o Date nasce local.
+ */
+export function dataISOParaData(dataISO) {
+  if (!dataISO) return null;
+  const [ano, mes, dia] = String(dataISO).split('-').map(Number);
+  if (!ano || !mes || !dia) return null;
+  return new Date(ano, mes - 1, dia);
+}
+
+/** Dia da semana (0 = domingo) de uma data "AAAA-MM-DD", sem o desvio de
+ *  fuso descrito em `dataISOParaData`. */
+export function diaSemanaDeISO(dataISO) {
+  const d = dataISOParaData(dataISO);
+  return d ? d.getDay() : null;
+}
+
 /** "25/07/2026" -> "2026-07-25". Retorna null se a data estiver incompleta. */
 export function dataBRParaISO(dataBR) {
   const partes = (dataBR || '').split('/');
@@ -104,7 +152,10 @@ export function calcularAnosEMeses(dataStr) {
     if (!a || !m || !d) return null;
     data = new Date(a, m - 1, d);
   } else {
-    data = new Date(dataStr);
+    // `new Date('1980-05-15')` nasce em UTC — e no Brasil isso é 14/05 às
+    // 21h. O `getDate()` logo abaixo lia 14, e a idade saía um mês errada
+    // na virada do aniversário.
+    data = dataISOParaData(dataStr) || new Date(dataStr);
   }
   if (isNaN(data.getTime())) return null;
 

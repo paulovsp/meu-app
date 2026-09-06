@@ -11,7 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import CabecalhoTela from '../components/CabecalhoTela';
-import { diagnosticarProtecao } from '../services/protecaoGravacao';
+import { diagnosticarProtecao, TODOS_OS_CANAIS } from '../services/protecaoGravacao';
 
 const COLORS = {
   bg: '#F7F5F0',
@@ -34,7 +34,9 @@ export default function ProtecaoGravacaoScreen() {
   useFocusEffect(useCallback(() => {
     let ativo = true;
     setCarregando(true);
-    diagnosticarProtecao()
+    // Os dois canais (sessão e aula): olhar só um faria a tela dizer
+    // "tudo liberado" com a gravação de aula bloqueada.
+    diagnosticarProtecao(TODOS_OS_CANAIS)
       .then((lista) => { if (ativo) setPendencias(lista); })
       .finally(() => { if (ativo) setCarregando(false); });
     return () => { ativo = false; };
@@ -45,9 +47,10 @@ export default function ProtecaoGravacaoScreen() {
       <CabecalhoTela titulo="Proteção da gravação" onVoltar={() => navigation.goBack()} />
       <ScrollView style={s.container} contentContainerStyle={{ paddingBottom: 40 }}>
         <Text style={s.intro}>
-          Durante uma sessão o Dr.Sig mantém um serviço em primeiro plano — é
-          ele que segura o microfone quando você bloqueia a tela ou abre outro
-          aplicativo. Alguns ajustes do Android podem derrubar esse serviço.
+          Durante uma sessão ou uma aula o Dr.Sig mantém um serviço em
+          primeiro plano — é ele que segura o microfone quando você bloqueia a
+          tela ou abre outro aplicativo. Alguns ajustes do Android podem
+          derrubar esse serviço.
         </Text>
 
         {carregando ? (

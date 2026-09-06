@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView,
-  Alert, ActivityIndicator, Platform, KeyboardAvoidingView,
+  Alert, ActivityIndicator, Platform, KeyboardAvoidingView, AppState,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -29,6 +29,9 @@ import { mensagemDeErro } from '../services/erros';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
 import { dataBRParaISO, dataISOParaBR } from '../services/validacao';
 import { mascararHorario, normalizarHorario } from '../services/horarios';
+import {
+  diagnosticarProtecao, impedeGravacaoEmSegundoPlano, CANAL_CURSO,
+} from '../services/protecaoGravacao';
 
 const COLORS = {
   bg: '#F7F5F0',
@@ -132,6 +135,11 @@ export default function FormularioCursoScreen() {
   // Sobrou bloco sem enviar: habilita tentar de novo em vez de perder a aula.
   const [podeReenviar, setPodeReenviar] = useState(false);
   const [progressoEnvio, setProgressoEnvio] = useState('');
+  // Ajustes do Android que podem matar a gravação em segundo plano. A tela
+  // de sessão já tinha isso desde a v19; a de aula não — e uma aula dura
+  // horas, com o celular no bolso, que é exatamente quando o sistema
+  // resolve encerrar o serviço.
+  const [pendenciasProtecao, setPendenciasProtecao] = useState([]);
 
   const gravadorRef = useRef(null);
   // Blocos da gravação ({ uri, indice, enviado }) — os arquivos só somem
@@ -150,6 +158,34 @@ export default function FormularioCursoScreen() {
       notifee.stopForegroundService().catch(() => {});
     };
   }, []);
+
+  useEffect(() => {
+    let ativo = true;
+    diagnosticarProtecao(CANAL_CURSO)
+      .then((lista) => { if (ativo) setPendenciasProtecao(lista); })
+      .catch(() => {});
+    return () => { ativo = false; };
+  }, []);
+
+  // Se o Android encerrar a captação com o app em segundo plano, nenhum
+  // Alert aparece na hora — a pessoa só descobriria no fim de uma aula de
+  // duas horas, com a transcrição vazia. Aqui a checagem acontece assim que
+  // ela volta pro app, ainda dando tempo de recomeçar.
+  useEffect(() => {
+    if (!gravando) return undefined;
+    const sub = AppState.addEventListener('change', async (estado) => {
+      if (estado !== 'active') return;
+      const viva = await gravadorRef.current?.estaGravando();
+      if (viva === false) {
+        Alert.alert(
+          'A gravação foi interrompida',
+          'O Android encerrou a captação enquanto o app estava em segundo plano. '
+          + 'O que foi gravado até aqui está guardado: encerre a gravação para transcrever essa parte.'
+        );
+      }
+    });
+    return () => sub.remove();
+  }, [gravando]);
 
   // Trava qualquer forma de sair da tela (seta do cabeçalho, gesto/botão
   // físico de voltar) enquanto a gravação anterior ainda está sendo
@@ -292,6 +328,28 @@ export default function FormularioCursoScreen() {
     }
   }
 
+  /** Quando o diagnóstico aponta ajuste do sistema que IMPEDE a proteção, a
+   *  saída é resolver, não só avisar: o botão do meio leva direto pra tela
+   *  que abre cada ajuste do Android. Mesmo diálogo de NovaSessaoScreen. */
+  function confirmarProtecaoBloqueada(lista) {
+    const itens = lista
+      .filter((p) => p.gravidade === 'impede')
+      .map((p) => `• ${p.titulo}`)
+      .join('\n');
+    return new Promise((resolve) => {
+      Alert.alert(
+        'A gravação vai parar se você sair do app',
+        `Estes ajustes do Android estão impedindo a proteção em segundo plano:\n\n${itens}\n\nDá pra resolver agora, em poucos toques.`,
+        [
+          { text: 'Cancelar', style: 'cancel', onPress: () => resolve('cancelar') },
+          { text: 'Gravar assim mesmo', onPress: () => resolve('seguir') },
+          { text: 'Ajustar agora', onPress: () => resolve('ajustar') },
+        ],
+        { cancelable: false }
+      );
+    });
+  }
+
   /** Sem foreground service, abrir outro app interrompe a gravação. Quem
    *  decide se grava assim mesmo é a pessoa, antes de começar. */
   function confirmarGravacaoDesprotegida() {
@@ -352,10 +410,27 @@ export default function FormularioCursoScreen() {
       });
       await gravadorRef.current?.liberar();
 
+      // Primeiro o que o sistema pode fazer contra a gravação: notificação
+      // bloqueada impede o serviço de subir, e aí não adianta tentar.
+      const pendencias = await diagnosticarProtecao(CANAL_CURSO);
+      setPendenciasProtecao(pendencias);
+      const bloqueadoPeloSistema = impedeGravacaoEmSegundoPlano(pendencias);
+      if (bloqueadoPeloSistema) {
+        const escolha = await confirmarProtecaoBloqueada(pendencias);
+        if (escolha === 'cancelar') return;
+        if (escolha === 'ajustar') {
+          navigation.navigate('ProtecaoGravacao');
+          return;
+        }
+      }
+
       // O serviço sobe ANTES do microfone: é ele que segura a permissão de
       // gravar com o app fora da frente.
       const protegido = await mostrarNotificacao();
-      if (!protegido) {
+      // Segundo aviso SÓ quando o diagnóstico não achou nada e mesmo assim o
+      // serviço não subiu — com notificação bloqueada a pessoa já decidiu, e
+      // repetir o aviso seria empilhar duas caixas dizendo a mesma coisa.
+      if (!protegido && !bloqueadoPeloSistema) {
         const seguirAssimMesmo = await confirmarGravacaoDesprotegida();
         if (!seguirAssimMesmo) {
           await removerNotificacao();
@@ -683,6 +758,22 @@ export default function FormularioCursoScreen() {
                     <Ionicons name="folder-open-outline" size={17} color={COLORS.btnBlue} />
                     <Text style={s.importarBtnTexto}>Transcrever um áudio já gravado</Text>
                   </TouchableOpacity>
+                  {/* Aviso discreto, não caixa de diálogo: as pendências de
+                      "arrisca" não impedem gravar, e interromper o fluxo a
+                      cada aula por causa delas seria pior que o problema. */}
+                  {pendenciasProtecao.length > 0 && (
+                    <TouchableOpacity
+                      style={s.linkProtecao}
+                      onPress={() => navigation.navigate('ProtecaoGravacao')}
+                    >
+                      <Ionicons name="alert-circle-outline" size={15} color="#B36B00" />
+                      <Text style={s.linkProtecaoTexto}>
+                        {pendenciasProtecao.length === 1
+                          ? 'Um ajuste do Android pode interromper a gravação — conferir'
+                          : `${pendenciasProtecao.length} ajustes do Android podem interromper a gravação — conferir`}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                 </>
               )}
 
@@ -712,10 +803,20 @@ export default function FormularioCursoScreen() {
                   <Text style={s.reenvioTexto}>
                     O áudio está guardado no aparelho e não foi perdido.
                   </Text>
-                  <TouchableOpacity style={s.reenvioBtn} onPress={tentarEnviarDeNovo}>
-                    <Text style={s.reenvioBtnTexto}>Tentar enviar de novo</Text>
+                  {/* `disabled` e não só o `!enviandoTranscricao` do bloco:
+                      o estado só chega na tela no render seguinte, e dois
+                      toques rápidos cabem antes disso — mandando o áudio
+                      duas vezes e cobrando dois créditos de IA. */}
+                  <TouchableOpacity
+                    style={[s.reenvioBtn, enviandoTranscricao && { opacity: 0.7 }]}
+                    onPress={tentarEnviarDeNovo}
+                    disabled={enviandoTranscricao}
+                  >
+                    {enviandoTranscricao
+                      ? <ActivityIndicator color="#FFFFFF" />
+                      : <Text style={s.reenvioBtnTexto}>Tentar enviar de novo</Text>}
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={descartarAudioGuardado}>
+                  <TouchableOpacity onPress={descartarAudioGuardado} disabled={enviandoTranscricao}>
                     <Text style={s.descartarTexto}>Descartar áudio e digitar à mão</Text>
                   </TouchableOpacity>
                 </View>
@@ -811,6 +912,8 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: '#C6D6CE', backgroundColor: COLORS.surface,
   },
   importarBtnTexto: { fontSize: 14, fontWeight: '600', color: COLORS.btnBlue, lineHeight: 20 },
+  linkProtecao: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12 },
+  linkProtecaoTexto: { flex: 1, fontSize: 12.5, color: '#B36B00', lineHeight: 18, fontWeight: '600' },
   reenvioBox: { backgroundColor: '#F7E7E6', borderRadius: 12, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: '#E5CBC9' },
   reenvioTitulo: { fontSize: 14, fontWeight: '600', color: '#975451', marginBottom: 6, lineHeight: 20 },
   reenvioTexto: { fontSize: 13, color: '#7A5250', lineHeight: 19, marginBottom: 10 },

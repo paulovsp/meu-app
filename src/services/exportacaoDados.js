@@ -7,6 +7,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { supabase } from './supabase';
 import { listarPacientes, getSessions, getRecords } from './database';
+import { hojeISO } from './validacao';
 
 export async function exportarDadosUsuario() {
   const { data: { session } } = await supabase.auth.getSession();
@@ -31,7 +32,7 @@ export async function exportarDadosUsuario() {
     analisantes,
   };
 
-  const nomeArquivo = `drsig-meus-dados-${new Date().toISOString().slice(0, 10)}.json`;
+  const nomeArquivo = `drsig-meus-dados-${hojeISO()}.json`;
   const uri = `${FileSystem.documentDirectory}${nomeArquivo}`;
   await FileSystem.writeAsStringAsync(uri, JSON.stringify(pacote, null, 2));
 

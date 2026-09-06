@@ -64,3 +64,51 @@ describe('validacao.js — regressão (funções já existentes, não tocadas)',
     expect(dataISOParaBR('2026-07-25')).toBe('25/07/2026');
   });
 });
+
+// ── Datas no fuso local ───────────────────────────────────────────────
+//
+// Estes testes existem por um erro que só aparecia à noite: o caminho
+// óbvio (`toISOString().slice(0,10)`, `new Date('2026-09-06')`) trabalha em
+// UTC, e no Brasil (UTC−3) qualquer coisa depois das 21h já cai no dia
+// seguinte. Um horário avulso de hoje sumia da lista no fim da tarde; a
+// Agenda mandava o dia da semana anterior pra tela de edição.
+//
+// A hora é fixada às 22h de propósito: é a janela em que UTC e local
+// discordam, e onde o bug se manifesta.
+describe('datas no fuso de quem usa o app', () => {
+  const { dataParaISO, hojeISO, dataISOParaData, diaSemanaDeISO } = require('../validacao');
+
+  it('dataParaISO usa o dia LOCAL, não o de UTC', () => {
+    // 06/09/2026, 22h no horário de Brasília. Em UTC já é dia 07.
+    const noite = new Date(2026, 8, 6, 22, 30, 0);
+    expect(dataParaISO(noite)).toBe('2026-09-06');
+  });
+
+  it('dataParaISO devolve zeros à esquerda', () => {
+    expect(dataParaISO(new Date(2026, 0, 5))).toBe('2026-01-05');
+  });
+
+  it('hojeISO tem o formato AAAA-MM-DD', () => {
+    expect(hojeISO()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('dataISOParaData nasce à meia-noite LOCAL', () => {
+    const d = dataISOParaData('2026-09-06');
+    expect(d.getFullYear()).toBe(2026);
+    expect(d.getMonth()).toBe(8);
+    expect(d.getDate()).toBe(6);
+    expect(d.getHours()).toBe(0);
+  });
+
+  it('diaSemanaDeISO não devolve o dia anterior', () => {
+    // 06/09/2026 é um domingo.
+    expect(diaSemanaDeISO('2026-09-06')).toBe(0);
+    // 07/09/2026, segunda.
+    expect(diaSemanaDeISO('2026-09-07')).toBe(1);
+  });
+
+  it('dataISOParaData/diaSemanaDeISO aceitam vazio sem estourar', () => {
+    expect(dataISOParaData(null)).toBeNull();
+    expect(diaSemanaDeISO('')).toBeNull();
+  });
+});

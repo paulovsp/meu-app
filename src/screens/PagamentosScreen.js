@@ -14,6 +14,7 @@ import { mensagemDeErro } from '../services/erros';
 import MenuLateral from '../components/MenuLateral';
 import CabecalhoTela from '../components/CabecalhoTela';
 import { CLINICA_BUTTONS, ADMIN_BUTTONS } from '../constants/menuBotoes';
+import { hojeISO } from '../services/validacao';
 
 const COLORS = {
   bg: '#F7F5F0',
@@ -31,11 +32,6 @@ const MESES_LABEL = [
 
 function formatarMoeda(valor) {
   return (valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
-function hojeISO() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 export default function PagamentosScreen() {

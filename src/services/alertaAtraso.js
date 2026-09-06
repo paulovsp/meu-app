@@ -7,6 +7,7 @@
 // Esta função só cuida do push (mais imediato) e da lista pro pop-up da
 // tela inicial.
 import { getRecebimentosDoMes } from './database';
+import { hojeISO } from './validacao';
 
 function diasNoMes(ano, mesIndex) {
   return new Date(ano, mesIndex + 1, 0).getDate();
@@ -17,11 +18,6 @@ function diasDesdeVencimento(ano, mesIndex, diaPagamento) {
   const hoje = new Date();
   const hojeSemHora = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
   return Math.round((hojeSemHora - vencimento) / 86400000);
-}
-
-function hojeISO() {
-  const hoje = new Date();
-  return `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
 }
 
 /** Analisantes de cobrança mensal, não recebidos, com pelo menos 1 dia de

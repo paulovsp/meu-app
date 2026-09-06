@@ -214,14 +214,14 @@ export default function DetalheAnalisanteScreen() {
           setSessoes(await getSessions(pacienteInicial.id));
           setRegistros(await getRecords(pacienteInicial.id));
           if (pacienteAtual.preco_moeda && pacienteAtual.preco_moeda !== 'BRL') {
-            getCotacaoCacheada(pacienteAtual.preco_moeda).then(setCotacaoCache);
+            getCotacaoCacheada(pacienteAtual.preco_moeda).then(setCotacaoCache).catch(() => {});
           }
         } catch (e) {
           Alert.alert('Erro ao carregar', mensagemDeErro(e));
         }
       })();
-      getStatusAutorizacao(pacienteInicial.id).then(setAutorizacao);
-      getModalidadeDerivada(pacienteInicial.id).then(setModalidadeDerivada);
+      getStatusAutorizacao(pacienteInicial.id).then(setAutorizacao).catch(() => {});
+      getModalidadeDerivada(pacienteInicial.id).then(setModalidadeDerivada).catch(() => {});
       getHistoricoParalizacoes(pacienteInicial.id).then(setHistoricoParalizacoes).catch(() => {});
     }, [pacienteInicial.id])
   );
@@ -435,7 +435,7 @@ export default function DetalheAnalisanteScreen() {
       return;
     }
     Alert.alert('E-mail enviado', `Enviamos um e-mail para ${paciente.email} pedindo a confirmação do analisante.`);
-    getStatusAutorizacao(paciente.id).then(setAutorizacao);
+    getStatusAutorizacao(paciente.id).then(setAutorizacao).catch(() => {});
   }
 
   // ─── Datas formatadas ──────────────────────────────────

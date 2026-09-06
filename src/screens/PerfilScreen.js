@@ -147,15 +147,19 @@ export default function PerfilScreen({ navigation }) {
 
       // Checagem silenciosa de renovação mensal de créditos — se houver
       // renovação pendente, já reflete o saldo/data novos sem recarregar tudo.
-      chamarRenovarCreditos().then((resultado) => {
-        if (resultado?.renovado) {
-          setUser((atual) => (atual ? {
-            ...atual,
-            creditos_ia: resultado.saldoAtual,
-            proxima_renovacao_credito: resultado.proximaRenovacao,
-          } : atual));
-        }
-      });
+      chamarRenovarCreditos()
+        .then((resultado) => {
+          if (resultado?.renovado) {
+            setUser((atual) => (atual ? {
+              ...atual,
+              creditos_ia: resultado.saldoAtual,
+              proxima_renovacao_credito: resultado.proximaRenovacao,
+            } : atual));
+          }
+        })
+        // Checagem silenciosa: falhar aqui não pode virar rejeição não
+        // tratada nem atrapalhar o resto do Perfil, que já carregou.
+        .catch(() => {});
     }
 
     if (planoResultado?.__erro) {

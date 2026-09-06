@@ -14,10 +14,6 @@ const LOCALE_POR_MOEDA = {
   BRL: 'pt-BR', USD: 'en-US', EUR: 'de-DE', GBP: 'en-GB', AUD: 'en-AU', CAD: 'en-CA',
 };
 
-export function getMoeda(codigo) {
-  return MOEDAS.find((m) => m.codigo === codigo) || MOEDAS[0];
-}
-
 export function formatarValorMoeda(valor, moedaCodigo) {
   const locale = LOCALE_POR_MOEDA[moedaCodigo] || 'pt-BR';
   return (valor || 0).toLocaleString(locale, { style: 'currency', currency: moedaCodigo || 'BRL' });

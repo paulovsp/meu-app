@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Linking, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Calendar } from 'react-native-calendars';
@@ -18,6 +18,7 @@ import {
 } from '../services/database';
 import { mensagemDeErro } from '../services/erros';
 import { montarMensagemCobranca } from '../services/mensagens';
+import { abrirLinkExterno } from '../services/links';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import MenuLateral from '../components/MenuLateral';
@@ -299,7 +300,15 @@ export default function CobrancaScreen() {
       Alert.alert('Sem telefone', `${item.nome} não tem telefone cadastrado na ficha.`);
       return;
     }
-    Linking.openURL(`https://wa.me/${numero}?text=${encodeURIComponent(mensagemLembrete(item, profissional, ano, mesIndex))}`);
+    // Sem o tratamento de falha, um aparelho sem WhatsApp respondia a este
+    // botão com nada: nem abria, nem avisava.
+    abrirLinkExterno(
+      `https://wa.me/${numero}?text=${encodeURIComponent(mensagemLembrete(item, profissional, ano, mesIndex))}`,
+      {
+        titulo: 'WhatsApp não abriu',
+        texto: 'Não foi possível abrir o WhatsApp neste aparelho. Confira se ele está instalado.',
+      }
+    );
   }
 
   function enviarEmail(item) {
@@ -309,7 +318,10 @@ export default function CobrancaScreen() {
     }
     const assunto = encodeURIComponent('Lembrete de contribuição financeira');
     const corpo = encodeURIComponent(mensagemLembrete(item, profissional, ano, mesIndex));
-    Linking.openURL(`mailto:${item.email}?subject=${assunto}&body=${corpo}`);
+    abrirLinkExterno(`mailto:${item.email}?subject=${assunto}&body=${corpo}`, {
+      titulo: 'E-mail não abriu',
+      texto: 'Nenhum aplicativo de e-mail está configurado neste aparelho.',
+    });
   }
 
   // Cobrança "por sessão" não tem dia_pagamento — confirmada sessão a

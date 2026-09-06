@@ -158,7 +158,7 @@ export default function PagamentosScreen() {
           <ActivityIndicator size="large" color={COLORS.btnBlue} />
         </View>
       ) : (
-        <ScrollView contentContainerStyle={s.scrollInner}>
+        <ScrollView contentContainerStyle={s.scrollInner} keyboardShouldPersistTaps="handled">
           <View style={s.totalCard}>
             <Text style={s.totalLabel}>Total do mês</Text>
             <Text style={s.totalValor}>{formatarMoeda(totalGeral)}</Text>

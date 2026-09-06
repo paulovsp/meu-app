@@ -168,7 +168,11 @@ export default function BuscaScreen() {
           ) : pessoas.length === 0 ? (
             <Text style={s.seletorVazio}>Nenhum analisante ou supervisionando cadastrado ainda.</Text>
           ) : (
-            <ScrollView style={s.seletorLista} contentContainerStyle={s.seletorListaConteudo}>
+            <ScrollView
+              style={s.seletorLista}
+              contentContainerStyle={s.seletorListaConteudo}
+              keyboardShouldPersistTaps="handled"
+            >
               <TouchableOpacity
                 style={[s.chip, todosSelecionados && s.chipSelecionado]}
                 onPress={alternarTodos}

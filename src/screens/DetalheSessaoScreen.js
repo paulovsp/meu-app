@@ -54,7 +54,11 @@ export default function DetalheSessaoScreen() {
       try {
         const fresh = await getSessionById(sessionIdParam);
         if (!fresh) {
-          Alert.alert('Sessão não encontrada', '', [{ text: 'OK', onPress: () => navigation.goBack() }]);
+          Alert.alert(
+            'Sessão não encontrada',
+            'Ela pode ter sido apagada em outro aparelho.',
+            [{ text: 'OK', onPress: () => navigation.goBack() }]
+          );
           return;
         }
         setSessao(fresh);

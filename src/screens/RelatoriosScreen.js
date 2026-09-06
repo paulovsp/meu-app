@@ -185,7 +185,7 @@ export default function RelatoriosScreen() {
           <ActivityIndicator size="large" color={COLORS.btnBlue} />
         </View>
       ) : (
-        <ScrollView contentContainerStyle={s.scrollInner}>
+        <ScrollView contentContainerStyle={s.scrollInner} keyboardShouldPersistTaps="handled">
           <Text style={s.sectionTitle}>Gerar relatório</Text>
           {TIPOS_RELATORIO.map((tipo) => (
             <View key={tipo.valor} style={s.relatorioCard}>

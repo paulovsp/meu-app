@@ -219,16 +219,6 @@ export async function getTranscriptTurns(sessionId) {
   return data;
 }
 
-export async function getTurnCount(sessionId) {
-  const { supabase } = require('./supabase');
-  const { count, error } = await supabase
-    .from('transcript_turns')
-    .select('*', { count: 'exact', head: true })
-    .eq('session_id', sessionId);
-  if (error) throw error;
-  return count ?? 0;
-}
-
 // ── REGISTROS ──────────────────────────────────────────
 
 export async function getRecords(patientId) {
@@ -238,13 +228,6 @@ export async function getRecords(patientId) {
     .select('*')
     .eq('patient_id', patientId)
     .order('date', { ascending: false });
-  if (error) throw error;
-  return data;
-}
-
-export async function getRecordById(id) {
-  const { supabase } = require('./supabase');
-  const { data, error } = await supabase.from('records').select('*').eq('id', id).maybeSingle();
   if (error) throw error;
   return data;
 }
@@ -309,21 +292,6 @@ export async function getAppointmentByPatientAndDate(patientId, dataISO) {
   return data?.[0] || null;
 }
 
-// ⚠️ TEMPORÁRIO — só pra importação de dados de teste, não é função do app final.
-export async function importarRegistroComData(patientId, type, title, content, dataISO) {
-  const { supabase } = require('./supabase');
-  const { data, error } = await supabase
-    .from('records')
-    .insert({
-      patient_id: patientId, session_id: null, type: type || null, title: title || '',
-      content: content || '', file_uri: null, date: dataISO, category: null, author: 'analyst',
-    })
-    .select()
-    .single();
-  if (error) throw error;
-  return data.id;
-}
-
 // ── NORMALIZAÇÃO DE AUTOR ──────────────────────────────
 
 export function normalizarAuthor(autor) {
@@ -336,25 +304,6 @@ export function normalizarAuthor(autor) {
 }
 
 // ── FORMATAÇÃO DE TEXTO COM AUTOR ──────────────────────
-
-export function formatarTextoComAutor(texto, author) {
-  if (!texto || !texto.trim()) return texto;
-
-  const authorNorm = normalizarAuthor(author);
-  const JA_TEM_PREFIXO = /^[AP]\s*:/i;
-  const linhas = texto.split('\n');
-
-  const resultado = linhas.map(linha => {
-    const linhaLimpa = linha.trim();
-    if (!linhaLimpa) return '';
-    if (JA_TEM_PREFIXO.test(linhaLimpa)) return linhaLimpa;
-    if (authorNorm === 'analyst') return `A: ${linhaLimpa}`;
-    if (authorNorm === 'analysand') return `P: ${linhaLimpa}`;
-    return `A: ${linhaLimpa}`;
-  });
-
-  return resultado.join('\n');
-}
 
 // ── PARSE DE TRANSCRIÇÃO ───────────────────────────────
 
@@ -699,19 +648,6 @@ export async function updateAvailabilitySlot(id, day_of_week, start_time, end_ti
 export async function deleteAvailabilitySlot(id) {
   const { supabase } = require('./supabase');
   const { error } = await supabase.from('availability_slots').delete().eq('id', id);
-  if (error) throw error;
-}
-
-export async function clearAvailabilityByDay(day_of_week) {
-  const { supabase } = require('./supabase');
-  const { error } = await supabase.from('availability_slots').delete().eq('day_of_week', day_of_week);
-  if (error) throw error;
-}
-
-export async function clearAllAvailability() {
-  const { supabase } = require('./supabase');
-  const userId = await getUserId();
-  const { error } = await supabase.from('availability_slots').delete().eq('user_id', userId);
   if (error) throw error;
 }
 
@@ -2040,26 +1976,6 @@ export async function getPagamentosPorPaciente(patientId) {
     .order('mes', { ascending: false });
   if (error) throw error;
   return data;
-}
-
-/** Soma dos pagamentos por sessão (appointment_id preenchido) já
- * confirmados de um paciente num mês — usado por Cobrança, pelo
- * cronograma de Recebimentos e pelo catch-up de envio fiscal semanal.
- * `mes` é 0-11 (mesma convenção do restante da tabela `pagamentos`). */
-export async function getPagamentosSessaoDoMes(patientId, ano, mes) {
-  const { supabase } = require('./supabase');
-  const { data, error } = await supabase
-    .from('pagamentos')
-    .select('valor')
-    .eq('patient_id', patientId)
-    .eq('ano', ano)
-    .eq('mes', mes)
-    .not('appointment_id', 'is', null);
-  if (error) throw error;
-  return {
-    valor: data.reduce((soma, r) => soma + (r.valor || 0), 0),
-    sessoes: data.length,
-  };
 }
 
 /** Lista, uma a uma, as sessões cobráveis (realizada ou falta — cancelada

@@ -926,7 +926,11 @@ Você pode fazer a sessão normalmente e gravar pelo aparelho, desde que a chama
     return (
       <SafeAreaView style={s.safeArea} edges={['bottom']}>
         <CabecalhoTela titulo={`Sessão pelo ${plataforma?.label || "provedor"}`} onVoltar={() => setStep(STEPS.SELECT_PLATFORM)} />
-        <ScrollView style={s.container} contentContainerStyle={{ paddingBottom: 40 }}>
+        <ScrollView
+          style={s.container}
+          contentContainerStyle={{ paddingBottom: 40 }}
+          keyboardShouldPersistTaps="handled"
+        >
           <Text style={s.sub}>
             Analisante: <Text style={s.bold}>{paciente?.nome}</Text>
           </Text>
@@ -1027,7 +1031,11 @@ Nada é gravado por este aparelho, então não há risco de áudio mudo por disp
             setStep(isOnline ? STEPS.SELECT_PLATFORM : STEPS.SELECT_TYPE);
           }}
         />
-        <ScrollView style={s.container} contentContainerStyle={{ paddingBottom: 40 }}>
+        <ScrollView
+          style={s.container}
+          contentContainerStyle={{ paddingBottom: 40 }}
+          keyboardShouldPersistTaps="handled"
+        >
           <Text style={s.sub}>
             Analisante: <Text style={s.bold}>{paciente?.nome}</Text>
           </Text>

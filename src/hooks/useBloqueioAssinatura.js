@@ -9,12 +9,17 @@ import { assinaturaEstaAtiva, MENSAGEM_ASSINATURA_INATIVA } from '../services/as
 export function useBloqueioAssinatura(navigation) {
   useEffect(() => {
     let cancelado = false;
-    assinaturaEstaAtiva().then((ativa) => {
-      if (cancelado || ativa) return;
-      Alert.alert('Assinatura inativa', MENSAGEM_ASSINATURA_INATIVA, [
-        { text: 'OK', onPress: () => navigation.goBack() },
-      ]);
-    });
+    assinaturaEstaAtiva()
+      .then((ativa) => {
+        if (cancelado || ativa) return;
+        Alert.alert('Assinatura inativa', MENSAGEM_ASSINATURA_INATIVA, [
+          { text: 'OK', onPress: () => navigation.goBack() },
+        ]);
+      })
+      // Falha aberta, mesma política de `assinaturaEstaAtiva`: se nem a
+      // leitura da sessão funcionar, não é hora de expulsar quem paga da
+      // tela. A RLS do banco continua sendo a checagem real.
+      .catch(() => {});
     return () => { cancelado = true; };
   }, []);
 }

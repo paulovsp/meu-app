@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Linking } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { abrirLinkExterno } from '../services/links';
 
 const URL_POLITICA = 'https://app.drsig.com.br/privacidade.html';
 
@@ -48,7 +49,10 @@ export default function AvisoPrivacidadeScreen({ onAceitar }) {
         <Text style={s.paragrafo}>
           A política de privacidade completa está publicada em:
         </Text>
-        <TouchableOpacity onPress={() => Linking.openURL(URL_POLITICA)}>
+        <TouchableOpacity onPress={() => abrirLinkExterno(URL_POLITICA, {
+          titulo: 'Não foi possível abrir',
+          texto: 'Nenhum navegador conseguiu abrir a política de privacidade neste aparelho.',
+        })}>
           <Text style={s.link}>{URL_POLITICA}</Text>
         </TouchableOpacity>
 

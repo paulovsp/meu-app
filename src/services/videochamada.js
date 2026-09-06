@@ -112,8 +112,6 @@ export async function getIntegracoes() {
   return data || [];
 }
 
-export const getIntegracaoMeet = () => getIntegracao('google_meet');
-
 /** true quando dá pra fazer sessão por aquele provedor agora: conectada,
  *  válida e com plano que gera transcrição. */
 export function integracaoUtilizavel(integracao) {

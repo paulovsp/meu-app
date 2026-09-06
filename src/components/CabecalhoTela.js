@@ -75,8 +75,3 @@ const s = StyleSheet.create({
   acoes: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: 6, minHeight: 44 },
   onda: { position: 'absolute', left: 0, right: 0, bottom: 0 },
 });
-
-// Altura total real ocupada por este componente (sem contar o inset do
-// topo, que cada tela já lê sozinha via useSafeAreaInsets se precisar) —
-// exportado pra quem precisar reservar esse espaço manualmente.
-export const ALTURA_CABECALHO = ALTURA_BARRA + ALTURA_ONDA;

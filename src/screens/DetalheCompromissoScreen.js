@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator,
-  Modal, TextInput,
+  Modal, TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import CabecalhoTela from '../components/CabecalhoTela';
@@ -482,7 +482,11 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
       <CabecalhoTela titulo="Compromisso" onVoltar={() => navigation.goBack()} />
       {/* Área segura no pé: sem isso os botões ficam por baixo da barra de
           gestos do sistema. */}
-      <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+        keyboardShouldPersistTaps="handled"
+      >
         <Text style={[styles.tipoLabel, { color: infoTipoEvento(tipo).cor }]}>
           {infoTipoEvento(tipo).labelCurto}
         </Text>
@@ -585,7 +589,13 @@ Nenhum relato ou transcrição foi adicionado para esta sessão ainda.
       </TouchableOpacity>
 
       <Modal visible={remarcando} transparent animationType="fade" onRequestClose={() => setRemarcando(false)}>
-        <View style={styles.modalFundo}>
+        {/* Três campos numerados dentro de uma caixa centralizada: sem isto,
+            no iOS o teclado sobe por cima dos botões Cancelar/Remarcar e não
+            há como confirmar sem fechar o teclado primeiro. */}
+        <KeyboardAvoidingView
+          style={styles.modalFundo}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
           <View style={styles.modalCaixa}>
             <Text style={styles.modalTitulo}>Remarcar só esta sessão</Text>
             <Text style={styles.modalSub}>
@@ -662,7 +672,7 @@ Nenhum relato ou transcrição foi adicionado para esta sessão ainda.
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <TouchableOpacity

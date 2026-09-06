@@ -45,19 +45,6 @@ export async function criarCheckoutCreditos(valorBRL) {
   return data?.initPoint;
 }
 
-export async function getSaldoCreditos(userId) {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('creditos_ia')
-    .eq('id', userId)
-    .single();
-  if (error) {
-    console.error('Erro ao buscar saldo de créditos de IA:', error.message);
-    return null;
-  }
-  return Number(data?.creditos_ia ?? 0);
-}
-
 export function usdParaBRL(valorUSD) {
   return (valorUSD || 0) * TAXA_REFERENCIA_USD_BRL;
 }

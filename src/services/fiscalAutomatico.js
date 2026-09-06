@@ -12,7 +12,7 @@
 import { supabase } from './supabase';
 import {
   emitirParaPaciente, composePeriodoMensal, composePeriodoSemana, composePeriodoSessao,
-  MESES_LABEL, capitalizar,
+  MESES_LABEL,
 } from './fiscalEmissao';
 import {
   getConfiguracaoFiscal, marcarEnvioFiscalAutomatico,

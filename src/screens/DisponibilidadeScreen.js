@@ -24,9 +24,12 @@ import {
   getPatients,
   addPatient,
   cancelarCompromissosFuturosDoHorario,
+  deleteAppointment,
+  getPagamentoPorAppointment,
+  deletarPagamentoDeAppointment,
+  desvincularPagamentoDeAppointment,
   parsePreco,
   formatarMoeda,
-  atualizarHorarioAppointment,
 } from '../services/database';
 import { mensagemDeErro } from '../services/erros';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
@@ -136,14 +139,18 @@ export default function DisponibilidadeScreen() {
   const [pagamentoParticipantes, setPagamentoParticipantes] = useState({});
 
   // Presentes só quando esta tela foi aberta a partir de UM compromisso
-  // específico (via "Editar informações do horário", DetalheCompromissoScreen.js)
-  // — é o que permite perguntar, na hora de salvar, "só hoje ou todos os
-  // futuros?" em vez de sempre mexer no horário recorrente inteiro. Ausentes
-  // (null) quando a tela é aberta pra criar um horário novo, ou editando um
-  // slot direto da lista desta própria tela — nesses casos salva sempre
-  // como recorrente, sem perguntar (não existe "hoje" nesse contexto).
+  // específico (via "Editar o horário e os próximos", DetalheCompromissoScreen.js).
+  // Esta tela salva SEMPRE o horário — o molde —, então eles não decidem o
+  // que é salvo: servem pra voltar pro compromisso depois e pra saber se
+  // aquela ocorrência ficou para trás no lugar antigo. Mudar uma sessão só
+  // é outra ação, "Remarcar só esta sessão", na tela do compromisso.
   const [appointmentIdEditando, setAppointmentIdEditando] = useState(null);
   const [dataOcorrenciaEditando, setDataOcorrenciaEditando] = useState(null);
+  // Hora de início do compromisso pelo qual se chegou aqui. Guardada porque
+  // é o que permite saber, depois de salvar, se aquele compromisso ficou
+  // órfão no lugar antigo — a queixa de que "o app não apaga o antigo e
+  // escreve o novo no mesmo dia do anterior".
+  const [horaOcorrenciaEditando, setHoraOcorrenciaEditando] = useState(null);
 
   const [analisanteId, setAnalisanteId] = useState(null);
   const [analisanteNome, setAnalisanteNome] = useState('');
@@ -215,6 +222,7 @@ export default function DisponibilidadeScreen() {
         editarSlot(slotClicado);
         setAppointmentIdEditando(params.appointmentId || null);
         setDataOcorrenciaEditando(params.date || null);
+        setHoraOcorrenciaEditando(params.startTime || null);
       }
       return;
     }
@@ -223,6 +231,7 @@ export default function DisponibilidadeScreen() {
       limparFormulario();
       setAppointmentIdEditando(params.appointmentId || null);
       setDataOcorrenciaEditando(params.date || null);
+      setHoraOcorrenciaEditando(params.startTime || null);
       setDiaSemana(params.dayOfWeek);
 
       if (params.startTime) setHorarioInicio(params.startTime);
@@ -284,6 +293,7 @@ export default function DisponibilidadeScreen() {
     setSlotEditandoId(null);
     setAppointmentIdEditando(null);
     setDataOcorrenciaEditando(null);
+    setHoraOcorrenciaEditando(null);
     setDiaSemana(1);
     setHorarioInicio('');
     setHorarioFim('');
@@ -382,20 +392,32 @@ export default function DisponibilidadeScreen() {
     }
   }
 
-  // Muda só a hora DESTE compromisso específico (tabela appointments),
-  // sem tocar no horário recorrente nem em nenhuma outra informação
-  // (paciente/tipo/modalidade continuam iguais) — é o que "só hoje"
-  // significa (item 4, v13, antes numa tela separada, hoje só mais uma
-  // opção desta mesma tela na hora de salvar).
-  async function salvarSoHoje(inicio, fim) {
-    setSalvando(true);
+  /** O compromisso de origem continua no dia/hora em que estava? */
+  function ocorrenciaSaiuDoLugar(novoInicio) {
+    if (!dataOcorrenciaEditando) return true;
+    const diaOriginal = diaSemanaDeISO(dataOcorrenciaEditando);
+    const diaNovo = escopo === 'avulso' ? diaSemanaDeISO(dataBRParaISO(dataAvulsa)) : diaSemana;
+    // Avulso: compara a data em si, não só o dia da semana — mudar de
+    // 08/08 pra 15/08 mantém o dia da semana e ainda assim é outro dia.
+    if (escopo === 'avulso' && dataBRParaISO(dataAvulsa) !== dataOcorrenciaEditando) return true;
+    if (diaOriginal !== diaNovo) return true;
+    return !!horaOcorrenciaEditando && horaOcorrenciaEditando !== novoInicio;
+  }
+
+  /** Apagar o compromisso pode levar junto um pagamento vinculado (a coluna
+   *  tem ON DELETE CASCADE). Um pagamento JÁ RECEBIDO não pode sumir por
+   *  causa de uma remarcação — ele é desvinculado e fica no financeiro. */
+  async function apagarCompromissoDeOrigem(idCompromisso) {
     try {
-      await atualizarHorarioAppointment(appointmentIdEditando, { startTime: inicio, endTime: fim });
-      navigation.goBack();
-    } catch (e) {
-      Alert.alert('Erro ao salvar', mensagemDeErro(e));
-    } finally {
-      setSalvando(false);
+      const pagamento = await getPagamentoPorAppointment(idCompromisso);
+      if (pagamento) {
+        if (pagamento.recebido) await desvincularPagamentoDeAppointment(idCompromisso);
+        else await deletarPagamentoDeAppointment(idCompromisso);
+      }
+      await deleteAppointment(idCompromisso);
+    } catch (_) {
+      // O horário novo já foi salvo; falhar aqui não pode desfazer isso.
+      // O compromisso antigo continua apagável pela própria Agenda.
     }
   }
 
@@ -426,29 +448,19 @@ export default function DisponibilidadeScreen() {
     setHorarioInicio(inicio);
     setHorarioFim(fim);
 
-    // Veio de um compromisso específico (não de criar/editar o horário
-    // recorrente em abstrato) — pergunta se a mudança vale só pra hoje
-    // (só a hora desta ocorrência muda) ou pro horário recorrente inteiro
-    // (tudo o que está nesta tela passa a valer também pros futuros).
-    // Tudo o mais (validação de grupo/paciente/recorrência, conflito de
-    // horário, etc.) só faz sentido pro caminho recorrente, por isso essa
-    // pergunta acontece ANTES do resto.
-    if (appointmentIdEditando) {
-      const dataFormatada = dataOcorrenciaEditando
-        ? dataOcorrenciaEditando.split('-').reverse().join('/')
-        : 'hoje';
-      Alert.alert(
-        'Salvar horário',
-        `Salvar só para ${dataFormatada} (só a hora muda), ou para este horário e todos os futuros (tudo muda)?`,
-        [
-          { text: 'Cancelar', style: 'cancel' },
-          { text: `Só ${dataFormatada}`, onPress: () => salvarSoHoje(inicio, fim) },
-          { text: 'Este e todos os futuros', onPress: () => continuarSalvamentoRecorrente(inicio, fim) },
-        ]
-      );
-      return;
-    }
-
+    // Antes, vindo de um compromisso, aqui se perguntava "só nesta data ou
+    // neste e nos futuros?". A pergunta era errada por dois motivos: a
+    // tela já pergunta "avulso ou recorrente" logo acima (duas perguntas
+    // sobre a mesma coisa, com respostas que podiam se contradizer), e o
+    // caminho "só nesta data" jogava fora tudo o que tinha sido editado —
+    // salvava apenas hora de início e fim no compromisso, ignorando a data
+    // digitada, o dia da semana, a modalidade. Era daí que vinha o horário
+    // que "não lia a data" e o compromisso que virava "17:30 - 16:20"
+    // (aquele caminho também não validava o intervalo).
+    //
+    // Agora esta tela edita SEMPRE o horário (o molde). Remarcar uma única
+    // sessão sem mexer no molde é outra ação, no próprio compromisso:
+    // "Remarcar só esta sessão", em DetalheCompromissoScreen.
     await continuarSalvamentoRecorrente(inicio, fim);
   }
 
@@ -559,8 +571,21 @@ export default function DisponibilidadeScreen() {
             : [],
           recorrencia,
         });
+        // O compromisso pelo qual se chegou aqui não é recriado no lugar
+        // antigo — mas continua existindo lá até alguém apagá-lo. É por isso
+        // que, ao mudar a data de uma sessão, apareciam duas: a nova e a
+        // velha. `aplicarSlot` já limpa as ocorrências futuras de um horário
+        // que mudou de lugar, mas só as que têm analisante; esta aqui cobre
+        // também o compromisso avulso (sem horário por trás) e os de grupo.
+        if (appointmentIdEditando && ocorrenciaSaiuDoLugar(inicio)) {
+          await apagarCompromissoDeOrigem(appointmentIdEditando);
+        }
         await carregarSlots();
+        const voltarParaCompromisso = !!appointmentIdEditando;
         limparFormulario();
+        // Quem chegou aqui a partir de um compromisso da Agenda espera
+        // voltar pra ele depois de salvar, não ficar na lista de horários.
+        if (voltarParaCompromisso) navigation.goBack();
       } catch (e) {
         Alert.alert('Erro ao salvar', mensagemDeErro(e));
       } finally {

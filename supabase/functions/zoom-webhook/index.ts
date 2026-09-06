@@ -9,12 +9,10 @@
 // Roda com --no-verify-jwt: quem chama é o Zoom, não o app. A autenticação
 // é a assinatura HMAC que o Zoom põe em cada requisição, conferida abaixo.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { vttParaTurnos } from '../_shared/zoom.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const ZOOM_WEBHOOK_SECRET = Deno.env.get('ZOOM_WEBHOOK_SECRET') ?? '';
-const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
 const enc = new TextEncoder();
 
@@ -42,21 +40,6 @@ async function assinaturaConfere(req: Request, corpoBruto: string) {
   return assinaturaRecebida === esperada;
 }
 
-async function notificar(admin: any, userId: string, sessionId: string, title: string, body: string) {
-  try {
-    const { data: perfil } = await admin
-      .from('profiles').select('expo_push_token, notif_transcricao_push').eq('id', userId).single();
-    if (!perfil?.expo_push_token || perfil.notif_transcricao_push === false) return;
-    await fetch(EXPO_PUSH_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ to: perfil.expo_push_token, title, body, data: { sessionId } }),
-    });
-  } catch (_) {
-    // Push é reforço; o status também aparece ao abrir a sessão.
-  }
-}
-
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'Método não permitido.' }, 405);
 
@@ -78,7 +61,26 @@ Deno.serve(async (req) => {
     return json({ plainToken, encryptedToken: await hmacHex(plainToken) });
   }
 
-  if (!(await assinaturaConfere(req, corpoBruto))) {
+  // ─── Diagnóstico temporário (06/09/2026) ────────────────────────────────
+  // Registra TODA requisição que chega, inclusive a que vai ser recusada por
+  // assinatura — sem isso, evento recusado não deixa rastro em lugar nenhum.
+  // Ver migration 0063. Remover junto com a tabela.
+  const assinaturaOk = await assinaturaConfere(req, corpoBruto);
+  try {
+    const arquivosDbg: any[] = corpo?.payload?.object?.recording_files ?? [];
+    await createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
+      .from('zoom_webhook_debug')
+      .insert({
+        evento: corpo?.event ?? null,
+        meeting_id: corpo?.payload?.object?.id ? String(corpo.payload.object.id) : null,
+        assinatura_ok: assinaturaOk,
+        tem_legenda: arquivosDbg.some((a) => a?.file_type === 'TRANSCRIPT'),
+      });
+  } catch (_) {
+    // Diagnóstico nunca pode derrubar o webhook.
+  }
+
+  if (!assinaturaOk) {
     return json({ error: 'Assinatura inválida.' }, 401);
   }
 
@@ -91,83 +93,15 @@ Deno.serve(async (req) => {
     return json({ ok: true, ignorado: evento });
   }
 
-  try {
-    const objeto = corpo?.payload?.object ?? {};
-    const meetingId = String(objeto?.id ?? '');
-    const downloadToken = corpo?.download_token ?? corpo?.payload?.download_token ?? '';
-    if (!meetingId) return json({ error: 'Reunião não identificada.' }, 400);
-
-    const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
-
-    const { data: sessao } = await admin
-      .from('sessions')
-      .select('id, transcript, transcricao_status, patients(user_id)')
-      .eq('zoom_meeting_id', meetingId)
-      .maybeSingle();
-    // Reunião que não é de nenhuma sessão do app (a pessoa usa o Zoom pra
-    // outras coisas) — ignorar em silêncio é o certo.
-    if (!sessao) return json({ ok: true, semSessao: true });
-    if (sessao.transcricao_status === 'concluida') return json({ ok: true, jaConcluida: true });
-
-    const userId = (sessao as any)?.patients?.user_id;
-
-    const arquivos: any[] = objeto?.recording_files ?? [];
-    const legenda = arquivos.find((a) => a?.file_type === 'TRANSCRIPT');
-    if (!legenda?.download_url) {
-      // Sem legenda ainda: se veio do evento de gravação, o de transcrição
-      // ainda está por vir. Só vira erro no evento de transcrição, que é o
-      // que promete o arquivo.
-      if (evento === 'recording.transcript_completed') {
-        await admin.from('sessions').update({ transcricao_status: 'erro' }).eq('id', sessao.id);
-        await notificar(admin, userId, sessao.id, 'Transcrição não recebida',
-          'O Zoom não gerou a legenda desta reunião. Verifique se a transcrição de áudio está ativada na conta.');
-      }
-      return json({ ok: true, aguardandoLegenda: true });
-    }
-
-    // O download_url exige o token que veio no próprio evento (vale 24h).
-    const respVtt = await fetch(legenda.download_url, {
-      headers: downloadToken ? { Authorization: `Bearer ${downloadToken}` } : {},
-    });
-    if (!respVtt.ok) {
-      await admin.from('sessions').update({ transcricao_status: 'erro' }).eq('id', sessao.id);
-      await notificar(admin, userId, sessao.id, 'Transcrição não recebida',
-        `Não foi possível baixar a legenda do Zoom (erro ${respVtt.status}).`);
-      return json({ error: `Falha ao baixar a legenda (${respVtt.status}).` }, 502);
-    }
-    const vtt = await respVtt.text();
-
-    const { data: integracao } = await admin
-      .from('integracoes_videochamada')
-      .select('conta_nome')
-      .eq('user_id', userId)
-      .eq('provedor', 'zoom')
-      .maybeSingle();
-
-    const dialogo = vttParaTurnos(vtt, integracao?.conta_nome ?? null);
-    if (!dialogo) {
-      await admin.from('sessions').update({ transcricao_status: 'erro' }).eq('id', sessao.id);
-      await notificar(admin, userId, sessao.id, 'Transcrição vazia',
-        'A legenda do Zoom veio sem falas. Você pode transcrever manualmente.');
-      return json({ ok: true, legendaVazia: true });
-    }
-
-    // Preserva o parágrafo de introdução gravado pelo app; extrair só ele
-    // deixa a montagem idempotente se o Zoom reenviar o evento.
-    const introducao = String(sessao.transcript || '').split('\n\n')[0].trim();
-    await admin.from('sessions').update({
-      transcript: introducao ? `${introducao}\n\n${dialogo}` : dialogo,
-      transcricao_status: 'concluida',
-      transcricao_origem: 'zoom',
-    }).eq('id', sessao.id);
-
-    // Sem débito de crédito de propósito: quem transcreveu foi o Zoom, não
-    // a AssemblyAI — não há custo pra Dr.Sig repassar.
-    await notificar(admin, userId, sessao.id, 'Transcrição pronta',
-      'A transcrição da sua sessão pelo Zoom já está disponível.');
-
-    return json({ ok: true });
-  } catch (err) {
-    return json({ error: String((err as Error)?.message || err) }, 500);
-  }
+  // A partir de 06/09/2026 este webhook NÃO importa mais a transcrição do
+  // Zoom. Ela sai em inglês mesmo com a sessão toda em português, e não há
+  // como mudar isso (ver o cabeçalho de zoom-buscar-transcricao). Quem
+  // transcreve agora é a AssemblyAI, a partir do áudio da gravação.
+  //
+  // A função continua no ar de propósito: ela ainda registra o que chega na
+  // tabela de diagnóstico acima, que é como saberemos se o Zoom voltar a
+  // entregar. O que ela não faz mais é escrever na sessão — se voltasse a
+  // funcionar do jeito antigo, gravaria texto em inglês por cima do que a
+  // AssemblyAI produziu.
+  return json({ ok: true, transcricaoDelegadaAIA: true });
 });

@@ -18,7 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import CabecalhoTela from '../components/CabecalhoTela';
 import { mensagemDeErro } from '../services/erros';
 import {
-  getIntegracao, conectar, desconectar, integracaoUtilizavel, PROVEDORES,
+  getIntegracao, conectar, desconectar, integracaoUtilizavel, estadoIntegracao, PROVEDORES,
 } from '../services/videochamada';
 
 const COLORS = {
@@ -39,6 +39,9 @@ export default function IntegracaoVideochamadaScreen() {
   const [integracao, setIntegracao] = useState(null);
   const [carregando, setCarregando] = useState(true);
   const [conectando, setConectando] = useState(false);
+  // O Zoom agora passa pelo servidor pra revogar de verdade — deixou de ser
+  // instantâneo, então precisa aparecer que está acontecendo.
+  const [desconectando, setDesconectando] = useState(false);
 
   // useFocusEffect (e não useEffect): a conexão termina no NAVEGADOR, fora do
   // app. Quando a pessoa volta pra cá, a tela precisa reler o estado — senão
@@ -70,18 +73,21 @@ export default function IntegracaoVideochamadaScreen() {
   function aoDesconectar() {
     Alert.alert(
       `Desconectar o ${provedor.label}`,
-      'Suas sessões online voltam a ser gravadas pelo microfone do aparelho. As transcrições já salvas não são afetadas.',
+      `A autorização do Dr.Sig é cancelada no ${provedor.label} — na próxima vez ele pergunta de novo qual conta usar. Suas sessões online voltam a ser gravadas pelo microfone do aparelho, e as transcrições já salvas não são afetadas.`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
           text: 'Desconectar',
           style: 'destructive',
           onPress: async () => {
+            setDesconectando(true);
             try {
               await desconectar(provedor.id);
               setIntegracao(null);
             } catch (err) {
               Alert.alert('Erro', mensagemDeErro(err));
+            } finally {
+              setDesconectando(false);
             }
           },
         },
@@ -89,9 +95,10 @@ export default function IntegracaoVideochamadaScreen() {
     );
   }
 
-  const conectada = !!integracao;
+  const estado = estadoIntegracao(integracao);
+  const conectada = estado !== 'ausente';
   const utilizavel = integracaoUtilizavel(integracao);
-  const precisaReconectar = conectada && !!integracao.invalidado_em;
+  const precisaReconectar = estado === 'expirada';
 
   return (
     <SafeAreaView style={s.safe} edges={['bottom']}>
@@ -106,7 +113,10 @@ export default function IntegracaoVideochamadaScreen() {
 
         <View style={s.vantagens}>
           <Vantagem icone="mic-off-outline" texto="Não usa o microfone — acaba o problema de áudio mudo quando a chamada está no mesmo celular." />
-          <Vantagem icone="cash-outline" texto={`Não consome créditos de IA: quem transcreve é o ${provedor.label}.`} />
+          <Vantagem
+            icone={provedor.consomeCreditos ? 'language-outline' : 'cash-outline'}
+            texto={provedor.comoTranscreve}
+          />
           <Vantagem icone="people-outline" texto="Já separa as falas por participante." />
         </View>
 
@@ -136,27 +146,45 @@ export default function IntegracaoVideochamadaScreen() {
             {conectada && (
               <View style={[
                 s.status,
-                utilizavel ? s.statusOk : precisaReconectar ? s.statusErro : s.statusAviso,
+                estado === 'pronta' ? s.statusOk
+                  : estado === 'expirada' || estado === 'sem_recurso' ? s.statusErro
+                  : s.statusAviso,
               ]}>
                 <Text style={s.statusTitulo}>
-                  {utilizavel ? 'Conectado e pronto'
-                    : precisaReconectar ? 'Conexão expirada'
-                    : 'Conectado, mas sem transcrição automática'}
+                  {estado === 'pronta' ? 'Conectado e pronto'
+                    : estado === 'expirada' ? 'Conexão expirada'
+                    : estado === 'sem_recurso' ? 'Conectado, mas sem transcrição automática'
+                    : 'Conectado — não deu para conferir o plano'}
                 </Text>
                 {!!integracao.conta_email && (
                   <Text style={s.statusTexto}>Conta: {integracao.conta_email}</Text>
                 )}
-                {precisaReconectar ? (
+                {/* Três textos diferentes porque são três situações
+                    diferentes. Até aqui, "não deu pra confirmar" era
+                    mostrado com a mesma frase de "seu plano não faz" — e
+                    uma conta perfeitamente boa parecia defeituosa só
+                    porque a consulta de configurações tinha falhado. */}
+                {estado === 'expirada' ? (
                   <Text style={s.statusTexto}>
                     {integracao.invalidado_motivo || 'O acesso precisa ser renovado.'} Toque em
                     "Reconectar" abaixo.
                   </Text>
-                ) : !utilizavel ? (
+                ) : estado === 'sem_recurso' ? (
                   <Text style={s.statusTexto}>
-                    Esta conta não gera transcrição automática. Suas
-                    sessões online continuam funcionando com a gravação pelo
-                    aparelho — nesse caso, faça a chamada em outro dispositivo,
-                    para o microfone não ser disputado.
+                    O {provedor.label} respondeu que esta conta não gera
+                    transcrição automática. Suas sessões online continuam
+                    funcionando com a gravação pelo aparelho — nesse caso,
+                    faça a chamada em outro dispositivo, para o microfone não
+                    ser disputado.
+                  </Text>
+                ) : estado === 'indefinida' ? (
+                  <Text style={s.statusTexto}>
+                    A conta está conectada, mas o {provedor.label} não
+                    respondeu quais recursos ela tem. Pode funcionar
+                    normalmente — só não dá para garantir antes. Vale fazer
+                    uma sessão de teste antes de contar com a transcrição
+                    automática, ou tocar em "Reconectar" para conferir de
+                    novo.
                   </Text>
                 ) : null}
               </View>
@@ -169,7 +197,7 @@ export default function IntegracaoVideochamadaScreen() {
             >
               {conectando ? <ActivityIndicator color="#FFFFFF" /> : (
                 <>
-                  <Ionicons name="logo-google" size={17} color="#FFFFFF" />
+                  <Ionicons name={provedor.icone} size={17} color="#FFFFFF" />
                   <Text style={s.btnPrincipalTexto}>
                     {conectada ? `Reconectar conta do ${provedor.label}` : `Conectar conta do ${provedor.label}`}
                   </Text>
@@ -178,8 +206,14 @@ export default function IntegracaoVideochamadaScreen() {
             </TouchableOpacity>
 
             {conectada && (
-              <TouchableOpacity style={s.btnDesconectar} onPress={aoDesconectar}>
-                <Text style={s.btnDesconectarTexto}>Desconectar</Text>
+              <TouchableOpacity
+                style={[s.btnDesconectar, desconectando && { opacity: 0.7 }]}
+                onPress={aoDesconectar}
+                disabled={desconectando}
+              >
+                {desconectando
+                  ? <ActivityIndicator color={COLORS.vermelho} />
+                  : <Text style={s.btnDesconectarTexto}>Desconectar</Text>}
               </TouchableOpacity>
             )}
           </>

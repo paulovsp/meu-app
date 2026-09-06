@@ -680,6 +680,11 @@ export async function updateAvailabilitySlot(id, day_of_week, start_time, end_ti
     .update({
       day_of_week, start_time, end_time, modality,
       patient_id: patient_id || null, tipo, titulo: titulo || null,
+      // Qualquer edição encerra a reserva por prazo (migration 0066). A
+      // reserva pertence ao analisante que parou a análise; se a profissional
+      // usou o horário pra outra pessoa, ou pra supervisão, deixar a marca
+      // faria o cron tirar o NOVO ocupante na data do vencimento.
+      reservado_ate: null,
       ...normalizarRecorrencia(recorrencia),
     })
     .eq('id', id);
@@ -742,6 +747,30 @@ export async function deleteAvailabilitySlotsByPatient(patientId) {
  * recriam o compromisso sozinhas (`ensureAppointmentsForDate` só
  * materializa slot com `patient_id` preenchido) — só falta apagar o que já
  * tinha sido materializado antes de zerar o vínculo. */
+/**
+ * Mantém os horários do analisante reservados por um prazo, em vez de para
+ * sempre. Vencido o prazo, o cron da migration 0066 solta o horário sozinho,
+ * preservando a modalidade que ele já tinha.
+ *
+ * `semanas = null` volta a reserva pra indefinida (o comportamento antigo),
+ * usado quando a pessoa escolhe explicitamente segurar sem prazo.
+ */
+export async function reservarHorariosDoPaciente(patientId, semanas) {
+  const { supabase } = require('./supabase');
+  let ate = null;
+  if (Number.isFinite(semanas) && semanas > 0) {
+    const d = new Date();
+    d.setDate(d.getDate() + semanas * 7);
+    ate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  const { error } = await supabase
+    .from('availability_slots')
+    .update({ reservado_ate: ate })
+    .eq('patient_id', patientId);
+  if (error) throw error;
+  return ate;
+}
+
 export async function liberarHorariosDoPaciente(patientId, modalidade = null) {
   const { supabase } = require('./supabase');
 
@@ -758,7 +787,7 @@ export async function liberarHorariosDoPaciente(patientId, modalidade = null) {
     if (futuros.length > 0) await deleteAppointments(futuros.map((a) => a.id));
   }
 
-  const payload = { patient_id: null };
+  const payload = { patient_id: null, reservado_ate: null };
   if (modalidade === 'online' || modalidade === 'presencial') payload.modality = modalidade;
   const { error } = await supabase.from('availability_slots').update(payload).eq('patient_id', patientId);
   if (error) throw error;
@@ -915,6 +944,32 @@ export async function aplicarSlot({
 }) {
   for (const slot of livresParaRemover) {
     await deleteAvailabilitySlot(slot.id);
+  }
+
+  // Editar um horário que MUDOU de dia ou de hora deixava para trás os
+  // compromissos já materializados no lugar antigo — e a Agenda seguia
+  // mostrando o horário velho como ocupado, ao lado do novo. Um horário
+  // virava dois. A liberação por paralisação já fazia essa limpeza; a
+  // edição não fazia.
+  if (id) {
+    const { supabase } = require('./supabase');
+    const { data: anterior } = await supabase
+      .from('availability_slots')
+      .select('day_of_week, start_time, patient_id')
+      .eq('id', id)
+      .maybeSingle();
+
+    const mudouDeLugar = !!anterior
+      && (anterior.day_of_week !== day_of_week || anterior.start_time !== start_time);
+
+    if (mudouDeLugar && anterior.patient_id) {
+      const futuros = await listarCompromissosFuturosDoHorario({
+        patientId: anterior.patient_id,
+        dayOfWeek: anterior.day_of_week,
+        startTime: anterior.start_time,
+      });
+      if (futuros.length > 0) await deleteAppointments(futuros.map((a) => a.id));
+    }
   }
 
   let novoId = id;
@@ -1401,11 +1456,15 @@ export async function desvincularPagamentoDeAppointment(appointmentId) {
 /** Atualiza start_time/end_time só desse compromisso específico, sem tocar
  * no horário recorrente em availability_slots — "só este horário" ao
  * editar (item 4, v13). */
-export async function atualizarHorarioAppointment(appointmentId, { startTime, endTime }) {
+export async function atualizarHorarioAppointment(appointmentId, { date, startTime, endTime }) {
   const { supabase } = require('./supabase');
+  const campos = { start_time: startTime, end_time: endTime };
+  // Remarcar uma sessão quase sempre é mudar de DIA, não só de hora — sem
+  // isto, "remarcar" só conseguia empurrar a sessão dentro do mesmo dia.
+  if (date) campos.date = date;
   const { error } = await supabase
     .from('appointments')
-    .update({ start_time: startTime, end_time: endTime })
+    .update(campos)
     .eq('id', appointmentId);
   if (error) throw error;
 }
@@ -1785,7 +1844,11 @@ function inicioDaSemana(date) {
  * quinzenais/personalizados/avulsos (`slotAtivoNaData`): um horário
  * quinzenal só ocorre em metade das semanas do mês, um avulso só numa data
  * específica (se ela cair dentro do mês). */
-function contarOcorrenciasAtivasNoMes(slot, ano, mesIndex) {
+/** Quantas vezes este horário acontece no mês — é o multiplicador que
+ * transforma o preço da sessão no total mensal de Entradas. Exportada pra
+ * ser testável: é aqui que semanal, quinzenal, personalizada e avulso
+ * precisam se comportar de forma diferente. */
+export function contarOcorrenciasAtivasNoMes(slot, ano, mesIndex) {
   const diasNoMes = new Date(ano, mesIndex + 1, 0).getDate();
   let total = 0;
   for (let d = 1; d <= diasNoMes; d++) {

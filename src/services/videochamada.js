@@ -26,6 +26,7 @@ export const PROVEDORES = {
     id: 'google_meet',
     label: 'Google Meet',
     plataformaApp: 'meet',
+    icone: 'logo-google',
     requisitos: [
       'Google Workspace Business Plus',
       'Enterprise Standard ou Enterprise Plus',
@@ -33,17 +34,26 @@ export const PROVEDORES = {
       'Enterprise Essentials ou Essentials Plus',
     ],
     ressalva: 'Conta pessoal @gmail.com e planos Business Starter/Standard não geram transcrição automática.',
+    // Quem transcreve é o próprio Google, então não há custo de IA a repassar.
+    consomeCreditos: false,
+    comoTranscreve: 'Quem transcreve é o próprio Google Meet, sem consumir créditos de IA.',
   },
   zoom: {
     id: 'zoom',
     label: 'Zoom',
     plataformaApp: 'zoom',
+    icone: 'videocam-outline',
     requisitos: [
       'Zoom Pro, Business, Education ou Enterprise',
       'Gravação em nuvem ativada na conta',
-      'Transcrição de áudio ativada na conta',
     ],
-    ressalva: 'O plano gratuito do Zoom não grava em nuvem, e sem gravação em nuvem não existe transcrição.',
+    ressalva: 'O plano gratuito do Zoom não grava em nuvem, e sem gravação em nuvem o Dr.Sig não tem de onde tirar o áudio.',
+    // Mudou em 06/09/2026: a transcrição do próprio Zoom sai em inglês mesmo
+    // com a sessão inteira em português, e não há ajuste de conta que
+    // resolva. O Zoom passou a servir só pra captar o áudio; quem transcreve
+    // é a AssemblyAI — e isso, sim, consome créditos.
+    consomeCreditos: true,
+    comoTranscreve: 'O Zoom grava o áudio e a transcrição é feita pelo Dr.Sig, em português — isso consome créditos de IA, como uma sessão gravada pelo aparelho.',
   },
 };
 
@@ -112,6 +122,28 @@ export function integracaoUtilizavel(integracao) {
     && integracao.transcricao_automatica_disponivel === true;
 }
 
+/**
+ * O estado da conexão em uma palavra. São QUATRO, não dois — e a tela
+ * tratava três deles como o mesmo "não funciona", o que fazia uma conta
+ * boa parecer defeituosa só porque a consulta de configurações falhou.
+ *
+ *  'ausente'      — nenhuma conta conectada.
+ *  'expirada'     — conectada, mas o acesso foi revogado/expirou.
+ *  'pronta'       — conectada e o plano gera transcrição.
+ *  'sem_recurso'  — conectada, e o provedor respondeu que o plano NÃO gera.
+ *  'indefinida'   — conectada, e não deu pra confirmar (a consulta falhou).
+ *                   Diferente de 'sem_recurso': aqui pode muito bem
+ *                   funcionar, só não dá pra prometer.
+ */
+export function estadoIntegracao(integracao) {
+  if (!integracao) return 'ausente';
+  if (integracao.invalidado_em) return 'expirada';
+  const disponivel = integracao.transcricao_automatica_disponivel;
+  if (disponivel === true) return 'pronta';
+  if (disponivel === false) return 'sem_recurso';
+  return 'indefinida';
+}
+
 /** Abre a tela de consentimento do provedor no navegador. A volta acontece
  *  na página app.drsig.com.br/<provedor>-conectado.html, que finaliza a
  *  conexão (o app não tem deep link configurado). */
@@ -123,6 +155,15 @@ export async function conectar(provedor) {
 }
 
 export async function desconectar(provedor) {
+  // Zoom: apagar a linha aqui não desfaz nada do lado do Zoom — a
+  // autorização continua de pé lá, e reconectar voltava direto na mesma
+  // conta, sem nem perguntar qual. Quem cancela de verdade é o servidor,
+  // que tem o refresh_token (o app não tem permissão de ler essa coluna).
+  if (provedor === 'zoom') {
+    await invocar('zoom-desconectar', {});
+    return;
+  }
+
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return;
   const { error } = await supabase
@@ -151,8 +192,22 @@ export function criarSalaDaPlataforma(plataformaId, sessionId) {
   return plataformaId === 'zoom' ? criarReuniaoZoom(sessionId) : criarSalaMeet(sessionId);
 }
 
-/** Força a busca da transcrição de uma sessão, sem esperar o ciclo de 5
- *  minutos do cron. */
+/** Força a busca da transcrição de uma sessão, sem esperar o ciclo do cron
+ *  (2 minutos). Usada pelo botão "Buscar transcrição agora" na sessão. */
 export async function buscarTranscricaoMeet(sessionId) {
   return invocar('meet-buscar-transcricao', { sessionId });
+}
+
+/** Idem, pro Zoom: baixa o áudio da gravação em nuvem e manda pra
+ *  transcrição, sem esperar o cron. */
+export async function buscarTranscricaoZoom(sessionId) {
+  return invocar('zoom-buscar-transcricao', { sessionId });
+}
+
+/** Despacha pro provedor certo — a tela da sessão sabe a plataforma, não
+ *  precisa saber qual função é de quem. */
+export function buscarTranscricaoDaPlataforma(plataformaId, sessionId) {
+  return plataformaId === 'zoom'
+    ? buscarTranscricaoZoom(sessionId)
+    : buscarTranscricaoMeet(sessionId);
 }

@@ -1,0 +1,13 @@
+-- Continuação da 0067: conectar o WhatsApp ainda dava "permission denied".
+--
+-- A tela usa `upsert` com onConflict: 'user_id'. O PostgREST traduz isso num
+-- INSERT ... ON CONFLICT (user_id) DO UPDATE SET <todas as colunas enviadas>,
+-- e `user_id` é uma delas. Ou seja: além de INSERT, a coluna precisa de
+-- UPDATE — o que não é óbvio olhando o código do app, onde ninguém "atualiza
+-- o user_id".
+--
+-- Continua seguro: a policy de update exige `user_id = auth.uid()` no USING e
+-- no WITH CHECK, então ninguém consegue mover a própria linha pra outra
+-- pessoa nem mexer na linha de terceiro. E os segredos seguem fora do grant
+-- de LEITURA, que é a proteção que essa tabela existe pra dar.
+grant update (user_id) on public.integracoes_whatsapp to authenticated;

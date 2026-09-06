@@ -1,0 +1,12 @@
+-- Recarrega o cache de esquema do PostgREST.
+--
+-- Depois de três migrations mexendo nos grants de `integracoes_whatsapp`
+-- (0067, 0068, 0069) o erro "permission denied for table" continuou
+-- idêntico — inclusive depois de a escrita ter sido liberada na tabela
+-- inteira, o que descarta permissão de coluna como causa.
+--
+-- O PostgREST guarda privilégios em cache e só os relê ao receber este
+-- NOTIFY. Sem ele, GRANT novo pode não valer para requisições que já
+-- passam pelo cache antigo — que é exatamente o sintoma de "mudei a
+-- permissão e nada mudou".
+notify pgrst, 'reload schema';

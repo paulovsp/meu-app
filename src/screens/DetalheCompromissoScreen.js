@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator,
+  Modal, TextInput,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import CabecalhoTela from '../components/CabecalhoTela';
@@ -20,6 +21,7 @@ import {
   desvincularPagamentoDeAppointment,
   parsePreco,
   formatarMoeda,
+  atualizarHorarioAppointment,
 } from '../services/database';
 import { horarioJaPassou, getEstadoCompromisso, ESTADO_LABEL } from '../services/compromissoStatus';
 import { mensagemDeErro } from '../services/erros';
@@ -29,6 +31,25 @@ import {
   nomeExibicaoCompromisso, perguntarPagamentoSessao, perguntarCheckin, perguntarTipoNaoRealizada,
 } from '../services/checkinCompromisso';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { dataBRParaISO, dataISOParaBR } from '../services/validacao';
+import {
+  mascararHorario, normalizarHorario, horarioValido, horarioParaMinutos, terminoPadrao,
+} from '../services/horarios';
+
+function mascararDataBR(texto) {
+  const n = texto.replace(/\D/g, '').slice(0, 8);
+  if (n.length > 4) return `${n.slice(0, 2)}/${n.slice(2, 4)}/${n.slice(4)}`;
+  if (n.length > 2) return `${n.slice(0, 2)}/${n.slice(2)}`;
+  return n;
+}
+
+function dataBRValida(dataBR) {
+  const iso = dataBRParaISO(dataBR);
+  if (!iso) return false;
+  const [ano, mes, dia] = iso.split('-').map(Number);
+  const d = new Date(ano, mes - 1, dia);
+  return d.getFullYear() === ano && d.getMonth() === mes - 1 && d.getDate() === dia;
+}
 
 export default function DetalheCompromissoScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
@@ -39,6 +60,14 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
   const [compromisso, setCompromisso] = useState(null);
   const [temTranscricao, setTemTranscricao] = useState(false);
   const [agindo, setAgindo] = useState(false);
+  // "Remarcar só esta sessão": mexe SÓ neste compromisso, sem tocar no
+  // horário recorrente. É a metade que antes vivia escondida dentro do
+  // "Editar informações do horário" como a opção "só nesta data" — e que
+  // lá, além de confusa, jogava fora a data digitada.
+  const [remarcando, setRemarcando] = useState(false);
+  const [novaData, setNovaData] = useState('');
+  const [novoInicio, setNovoInicio] = useState('');
+  const [novoFim, setNovoFim] = useState('');
   const alertaMostradoRef = useRef(false);
 
   const carregar = useCallback(async () => {
@@ -100,9 +129,50 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
   // avulso (sem horário recorrente, ex: marcado via "horário liberado" —
   // nesse caso não existe slot pra pré-preencher, e sem mandar essas
   // informações a tela abriria em branco mesmo já tendo paciente/tipo/
-  // modalidade definidos). Manda `appointmentId` sempre — é o que permite
-  // a própria tela perguntar, na hora de salvar, "só hoje ou todos os
-  // futuros?" (ver salvarSlot em DisponibilidadeScreen.js).
+  // modalidade definidos). `appointmentId` vai junto só pra que aquela tela
+  // saiba voltar pra cá depois de salvar — a edição de lá é sempre do
+  // horário (o molde). Mudar uma única sessão é `abrirRemarcacao`, acima.
+  function abrirRemarcacao() {
+    setNovaData(dataISOParaBR(compromisso.date));
+    setNovoInicio(compromisso.start_time);
+    setNovoFim(compromisso.end_time);
+    setRemarcando(true);
+  }
+
+  async function confirmarRemarcacao() {
+    if (!dataBRValida(novaData)) {
+      Alert.alert('Data inválida', 'Informe a nova data no formato DD/MM/AAAA.');
+      return;
+    }
+    const inicio = normalizarHorario(novoInicio);
+    const fim = normalizarHorario(novoFim);
+    if (!horarioValido(inicio) || !horarioValido(fim)) {
+      Alert.alert('Horário inválido', 'Informe os horários no formato HH:MM.\n\nExemplo: 07:45 (dá pra digitar só "745").');
+      return;
+    }
+    // A falta desta conferência no caminho antigo foi o que deixou passar
+    // um compromisso salvo como "17:30 - 16:20".
+    if (horarioParaMinutos(inicio) >= horarioParaMinutos(fim)) {
+      Alert.alert('Intervalo inválido', 'O horário de término deve ser posterior ao horário de início.');
+      return;
+    }
+
+    setAgindo(true);
+    try {
+      await atualizarHorarioAppointment(compromisso.id, {
+        date: dataBRParaISO(novaData),
+        startTime: inicio,
+        endTime: fim,
+      });
+      setRemarcando(false);
+      await carregar();
+    } catch (e) {
+      Alert.alert('Erro ao remarcar', mensagemDeErro(e));
+    } finally {
+      setAgindo(false);
+    }
+  }
+
   async function editarInformacoesDoHorario() {
     const [ano, mes, dia] = compromisso.date.split('-').map(Number);
     const dayOfWeek = new Date(ano, mes - 1, dia).getDay();
@@ -498,9 +568,96 @@ Nenhum relato ou transcrição foi adicionado para esta sessão ainda.
         </View>
       )}
 
+      {podeAgir && (
+        <TouchableOpacity style={styles.btnEditarHorario} onPress={abrirRemarcacao}>
+          <Text style={styles.btnEditarHorarioTxt}>Remarcar só esta sessão</Text>
+        </TouchableOpacity>
+      )}
+
       <TouchableOpacity style={styles.btnEditarHorario} onPress={editarInformacoesDoHorario}>
-        <Text style={styles.btnEditarHorarioTxt}>Editar informações do horário</Text>
+        <Text style={styles.btnEditarHorarioTxt}>Editar o horário e os próximos</Text>
       </TouchableOpacity>
+
+      <Modal visible={remarcando} transparent animationType="fade" onRequestClose={() => setRemarcando(false)}>
+        <View style={styles.modalFundo}>
+          <View style={styles.modalCaixa}>
+            <Text style={styles.modalTitulo}>Remarcar só esta sessão</Text>
+            <Text style={styles.modalSub}>
+              Muda apenas este encontro. O horário nas próximas semanas continua como está.
+            </Text>
+
+            <Text style={styles.modalLabel}>Nova data</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={novaData}
+              onChangeText={(t) => setNovaData(mascararDataBR(t))}
+              placeholder="DD/MM/AAAA"
+              placeholderTextColor="#A9A29A"
+              keyboardType="number-pad"
+              maxLength={10}
+            />
+
+            <View style={styles.modalLinhaHoras}>
+              <View style={styles.modalMeia}>
+                <Text style={styles.modalLabel}>Início</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={novoInicio}
+                  onChangeText={(t) => {
+                    const m = mascararHorario(t);
+                    setNovoInicio(m);
+                    const sugerido = terminoPadrao(m);
+                    if (sugerido) setNovoFim(sugerido);
+                  }}
+                  onBlur={() => {
+                    const n = normalizarHorario(novoInicio);
+                    if (n) setNovoInicio(n);
+                  }}
+                  placeholder="HH:MM"
+                  placeholderTextColor="#A9A29A"
+                  keyboardType="number-pad"
+                  maxLength={5}
+                />
+              </View>
+              <View style={styles.modalMeia}>
+                <Text style={styles.modalLabel}>Término</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={novoFim}
+                  onChangeText={(t) => setNovoFim(mascararHorario(t))}
+                  onBlur={() => {
+                    const n = normalizarHorario(novoFim);
+                    if (n) setNovoFim(n);
+                  }}
+                  placeholder="HH:MM"
+                  placeholderTextColor="#A9A29A"
+                  keyboardType="number-pad"
+                  maxLength={5}
+                />
+              </View>
+            </View>
+
+            <View style={styles.modalBotoes}>
+              <TouchableOpacity
+                style={styles.modalBtnSecundario}
+                onPress={() => setRemarcando(false)}
+                disabled={agindo}
+              >
+                <Text style={styles.modalBtnSecundarioTxt}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtnPrincipal, agindo && { opacity: 0.7 }]}
+                onPress={confirmarRemarcacao}
+                disabled={agindo}
+              >
+                {agindo
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={styles.modalBtnPrincipalTxt}>Remarcar</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <TouchableOpacity
         style={[styles.btnApagar, agindo && { opacity: 0.7 }]}
@@ -574,6 +731,32 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: '#497363',
   },
   btnEditarHorarioTxt: { color: '#497363', fontWeight: '500' },
+  modalFundo: {
+    flex: 1, backgroundColor: 'rgba(48,44,40,0.45)',
+    justifyContent: 'center', paddingHorizontal: 22,
+  },
+  modalCaixa: { backgroundColor: '#FFFDF9', borderRadius: 14, padding: 20 },
+  modalTitulo: { fontSize: 17, fontWeight: '600', color: '#302C28', lineHeight: 24 },
+  modalSub: { fontSize: 13, color: '#756E66', lineHeight: 19, marginTop: 6, marginBottom: 14 },
+  modalLabel: { fontSize: 12.5, color: '#8C857B', marginBottom: 5, lineHeight: 18 },
+  modalInput: {
+    borderWidth: 1, borderColor: '#E0DAD1', borderRadius: 9,
+    paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, color: '#302C28',
+    backgroundColor: '#fff',
+  },
+  modalLinhaHoras: { flexDirection: 'row', gap: 12, marginTop: 12 },
+  modalMeia: { flex: 1 },
+  modalBotoes: { flexDirection: 'row', gap: 10, marginTop: 20 },
+  modalBtnSecundario: {
+    flex: 1, paddingVertical: 13, borderRadius: 10, alignItems: 'center',
+    borderWidth: 1, borderColor: '#D8D2C8',
+  },
+  modalBtnSecundarioTxt: { color: '#756E66', fontWeight: '500' },
+  modalBtnPrincipal: {
+    flex: 1, paddingVertical: 13, borderRadius: 10, alignItems: 'center',
+    backgroundColor: '#44745B',
+  },
+  modalBtnPrincipalTxt: { color: '#fff', fontWeight: '500' },
   btnApagar: {
     backgroundColor: '#F1E4E3', padding: 14, borderRadius: 10, alignItems: 'center',
     marginBottom: 10, borderWidth: 1, borderColor: '#975451',

@@ -11,13 +11,13 @@
 //   - o app, com o JWT da profissional: força a busca de UMA sessão, pra
 //     quando ela não quer esperar o próximo ciclo.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { notificarTranscricao } from '../_shared/notificarTranscricao.ts';
 import { accessTokenDoUsuario, chamarMeet, IntegracaoInvalidaError } from '../_shared/google.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const CRON_SECRET = Deno.env.get('MEET_CRON_SECRET') ?? '';
-const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
 // Depois disso, uma sessão que nunca teve chamada nenhuma na sala para de
 // ser consultada e vira erro — senão ficaria "processando" pra sempre, que
@@ -62,20 +62,9 @@ async function listarTudo(accessToken: string, caminho: string, chave: string) {
   return itens;
 }
 
-async function notificar(admin: any, userId: string, sessionId: string, title: string, body: string) {
-  try {
-    const { data: perfil } = await admin
-      .from('profiles').select('expo_push_token, notif_transcricao_push').eq('id', userId).single();
-    if (!perfil?.expo_push_token || perfil.notif_transcricao_push === false) return;
-    await fetch(EXPO_PUSH_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ to: perfil.expo_push_token, title, body, data: { sessionId } }),
-    });
-  } catch (_) {
-    // Push é reforço; o status também aparece ao abrir a sessão.
-  }
-}
+// O aviso (push + e-mail) mora em _shared/notificarTranscricao.ts: estava
+// duplicado e as cópias divergiram — esta aqui não mandava e-mail.
+const notificar = notificarTranscricao;
 
 /** Processa UMA sessão. Devolve o que aconteceu, pro cron poder registrar. */
 async function processarSessao(admin: any, sessao: any): Promise<string> {
@@ -101,8 +90,19 @@ async function processarSessao(admin: any, sessao: any): Promise<string> {
   const registros = await listarTudo(accessToken, `conferenceRecords?filter=${filtro}`, 'conferenceRecords');
   // Só interessa chamada já encerrada: enquanto endTime é nulo, a sessão
   // ainda está acontecendo e a transcrição não existe.
-  const encerrada = registros.find((r: any) => r?.endTime);
-  if (!encerrada) {
+  //
+  // E uma sala pode ter MAIS DE UMA chamada: basta alguém sair e voltar pelo
+  // mesmo link, ou uma entrada de poucos segundos antes da sessão começar de
+  // verdade. Aqui havia um `find` que travava na PRIMEIRA encerrada — e se
+  // justamente essa não tivesse transcrição, a sessão ficava em
+  // "aguardando_transcricao" até desistir por tempo, mesmo com o Google já
+  // tendo gerado (e mandado por e-mail) a transcrição de outra chamada da
+  // mesma sala. Foi exatamente o que aconteceu em 06/09/2026.
+  const encerradas = registros
+    .filter((r: any) => r?.endTime)
+    .sort((a: any, b: any) => String(b.endTime).localeCompare(String(a.endTime)));
+
+  if (encerradas.length === 0) {
     if (idadeHoras > HORAS_ATE_DESISTIR) {
       await admin.from('sessions').update({ transcricao_status: 'erro' }).eq('id', sessao.id);
       await notificar(admin, userId, sessao.id, 'Nenhuma chamada nesta sala',
@@ -112,13 +112,25 @@ async function processarSessao(admin: any, sessao: any): Promise<string> {
     return 'aguardando_chamada';
   }
 
-  const transcricoes = await listarTudo(accessToken, `${encerrada.name}/transcripts`, 'transcripts');
-  const pronta = transcricoes.find((t: any) => t?.state === 'ENDED') ?? transcricoes[0];
+  // Da chamada mais recente para a mais antiga, a primeira que tiver
+  // transcrição é a que vale.
+  let encerrada: any = null;
+  let pronta: any = null;
+  for (const registro of encerradas) {
+    const transcricoes = await listarTudo(accessToken, `${registro.name}/transcripts`, 'transcripts');
+    const candidata = transcricoes.find((t: any) => t?.state === 'ENDED') ?? transcricoes[0];
+    if (candidata) {
+      encerrada = registro;
+      pronta = candidata;
+      break;
+    }
+  }
+
   if (!pronta) {
     if (idadeHoras > HORAS_ATE_DESISTIR) {
       await admin.from('sessions').update({
         transcricao_status: 'erro',
-        meet_conference_record: encerrada.name,
+        meet_conference_record: encerradas[0].name,
       }).eq('id', sessao.id);
       await notificar(admin, userId, sessao.id, 'Transcrição não gerada',
         'A chamada aconteceu, mas o Google não gerou transcrição. Verifique o plano da conta.');

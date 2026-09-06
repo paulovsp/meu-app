@@ -224,6 +224,15 @@ export default function IntegracaoWhatsappScreen() {
                   placeholder="Cole aqui"
                   placeholderTextColor="#B8B2A8"
                 />
+                <Text style={s.aviso}>
+                  Atenção: o token que a Meta mostra pronto na primeira tela
+                  ("Gerar token de acesso") vale só 24 horas. Com ele a
+                  conexão funciona hoje e para de funcionar amanhã, sem aviso.
+                  O permanente é outro: na Meta, vá em Configurações do
+                  negócio → Usuários → Usuários do sistema, crie um usuário do
+                  sistema com acesso ao seu app do WhatsApp e gere o token por
+                  lá, sem prazo de validade.
+                </Text>
 
                 <Text style={s.label}>App Secret</Text>
                 <TextInput
@@ -292,6 +301,10 @@ const s = StyleSheet.create({
   btnOkTexto: { color: '#FFFFFF', fontSize: 12.5, fontWeight: '600' },
   btnIgnorar: { backgroundColor: COLORS.bg, borderRadius: 8, paddingVertical: 7, paddingHorizontal: 12, borderWidth: 1, borderColor: COLORS.border },
   btnIgnorarTexto: { color: COLORS.textMid, fontSize: 12.5, fontWeight: '600' },
+  aviso: {
+    fontSize: 13, color: '#8A5A22', lineHeight: 19, marginTop: 8,
+    backgroundColor: '#FBF2E4', borderRadius: 9, padding: 11,
+  },
   gerarToken: { fontSize: 13.5, color: '#44745B', fontWeight: '700', lineHeight: 20, paddingVertical: 4 },
   irRecebiveis: { backgroundColor: '#E2EFE8', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#C3DFCF' },
   irRecebiveisTexto: { fontSize: 14.5, fontWeight: '700', color: '#44745B', lineHeight: 21 },

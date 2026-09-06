@@ -72,14 +72,24 @@ export async function conectarWhatsapp({ phoneNumberId, accessToken, appSecret }
     );
   }
 
-  const { error } = await supabase.from('integracoes_whatsapp').upsert({
-    user_id: user.id,
-    phone_number_id: phoneNumberId.trim(),
-    access_token: accessToken.trim(),
-    app_secret: appSecret.trim(),
-    invalidado_em: null,
-    invalidado_motivo: null,
-  }, { onConflict: 'user_id' });
+  // Grava por função, não por upsert direto na tabela.
+  //
+  // O upsert falhava com "permission denied for table integracoes_whatsapp"
+  // e resistiu a tudo que foi medido em 06/09/2026: os privilégios de
+  // INSERT e UPDATE existem em todas as colunas pra `authenticated`, a
+  // sessão é válida (a mesma escreve em outras tabelas), o cache do
+  // PostgREST foi recarregado, e esta mesma tela INSERE aqui sem problema
+  // em `garantirTokenDeVerificacao`. Só o upsert era recusado.
+  //
+  // A função `salvar_integracao_whatsapp` (migration 0073) faz a mesma
+  // coisa com privilégio próprio e confere `auth.uid()` lá dentro — a
+  // garantia de não escrever na linha alheia continua, só saiu da RLS pra
+  // dentro da função.
+  const { error } = await supabase.rpc('salvar_integracao_whatsapp', {
+    p_phone_number_id: phoneNumberId.trim(),
+    p_access_token: accessToken.trim(),
+    p_app_secret: appSecret.trim(),
+  });
   if (error) throw error;
 }
 

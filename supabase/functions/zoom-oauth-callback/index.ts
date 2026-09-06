@@ -43,8 +43,19 @@ function json(body: unknown, status = 200) {
 async function testarTranscricao(accessToken: string): Promise<boolean | null> {
   try {
     const cfg = await chamarZoom(accessToken, '/users/me/settings?option=recording');
-    const nuvem = cfg?.cloud_recording;
-    const transcricao = cfg?.recording_audio_transcript;
+    // A resposta pode vir com as chaves na RAIZ ou aninhadas em `recording`.
+    // O parâmetro `option` da Zoom só reconhece alguns valores (autenticação,
+    // segurança da reunião); com `recording` ele é ignorado e a API devolve o
+    // objeto completo de configurações, onde gravação fica em `recording`.
+    // Aqui se lia só a forma achatada: as duas chaves vinham `undefined`, a
+    // função devolvia "não deu pra confirmar", e a tela tratava isso como
+    // "o plano não faz transcrição" — mesmo com tudo ligado na conta.
+    // Aceitar as duas formas tira a dependência desse detalhe.
+    const rec = (cfg && typeof cfg.recording === 'object' && cfg.recording !== null)
+      ? cfg.recording
+      : cfg;
+    const nuvem = rec?.cloud_recording;
+    const transcricao = rec?.recording_audio_transcript;
     if (typeof nuvem !== 'boolean' && typeof transcricao !== 'boolean') return null;
     return nuvem === true && transcricao === true;
   } catch (_) {

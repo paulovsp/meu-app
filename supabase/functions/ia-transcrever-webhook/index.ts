@@ -9,6 +9,7 @@
 // `duracaoSegundos` que o app manda em `ia-transcrever` nunca é usado pra
 // cobrança (é falsificável, vem do cliente).
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { notificarTranscricao } from '../_shared/notificarTranscricao.ts';
 import { calcularCobrancaIA } from '../_shared/precificacaoIA.ts';
 import { acharBloco, marcarBlocoComErro, salvarBlocoEMontarTexto } from '../_shared/blocosTranscricao.ts';
 
@@ -19,7 +20,6 @@ const ASSEMBLYAI_WEBHOOK_SECRET = Deno.env.get('ASSEMBLYAI_WEBHOOK_SECRET')!;
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!;
 
 const ASSEMBLYAI_TRANSCRIPT_URL = 'https://api.assemblyai.com/v2/transcript';
-const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -195,54 +195,7 @@ async function enviarNotificacaoTranscricao(
   bodyMsg: string,
   supabaseAdmin: ReturnType<typeof createClient>,
 ) {
-  if (!userId) return;
-  const { data: perfil } = await supabaseAdmin
-    .from('profiles')
-    .select('email, expo_push_token, notif_transcricao_push, notif_transcricao_email')
-    .eq('id', userId)
-    .single();
-  if (!perfil) return;
-
-  if (perfil.notif_transcricao_push !== false && perfil.expo_push_token) {
-    try {
-      await fetch(EXPO_PUSH_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to: perfil.expo_push_token,
-          title,
-          body: bodyMsg,
-          data: { sessionId },
-        }),
-      });
-    } catch (_) {
-      // Push é reforço — falha aqui não deve derrubar o resto do fluxo.
-    }
-  }
-
-  if (perfil.notif_transcricao_email === true && perfil.email) {
-    try {
-      await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${RESEND_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          from: 'Dr.Sig <naoresponda@drsig.com.br>',
-          to: [perfil.email],
-          subject: title,
-          html: `
-            <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1A1A2E;">
-              <h2>${title}</h2>
-              <p>${bodyMsg}</p>
-              <p>Abra o app Dr.Sig para conferir.</p>
-            </div>
-          `,
-        }),
-      });
-    } catch (_) {
-      // E-mail também é reforço, mesmo critério do push.
-    }
-  }
+  // O corpo deste aviso vivia aqui e foi copiado (mal) pras buscas do Meet e
+  // do Zoom, que ficaram sem o e-mail. Agora é um módulo só.
+  await notificarTranscricao(supabaseAdmin, userId, sessionId, title, bodyMsg);
 }

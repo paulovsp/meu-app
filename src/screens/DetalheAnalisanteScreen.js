@@ -10,7 +10,7 @@ import {
   getSessions, getRecords, deleteSession, deleteRecord, parsePreco, getPatientById, getModalidadeDerivada,
   getHistoricoParalizacoes, marcarParalizacao, marcarRetorno,
   editarPeriodoParalizacao, excluirPeriodoParalizacao,
-  getAvailabilitySlotsByPatient, liberarHorariosDoPaciente,
+  getAvailabilitySlotsByPatient, liberarHorariosDoPaciente, reservarHorariosDoPaciente,
 } from '../services/database';
 import { formatarValorMoeda, getCotacaoCacheada } from '../services/currency';
 import { solicitarAutorizacao, getStatusAutorizacao } from '../services/autorizacaoGravacao';
@@ -233,37 +233,57 @@ export default function DetalheAnalisanteScreen() {
   // data_paralizacao é gravada (getSlotsOcupados em database.js ignora
   // horários de paciente paralisado) — não depende de nenhuma escolha feita
   // nesses popups, então cancelar/fechar não deixa a conta desincronizada.
-  async function perguntarModalidadeLiberacao(patientId) {
-    Alert.alert(
-      'Liberar como qual modalidade?',
-      'Os horários liberados aparecerão disponíveis com a modalidade escolhida.',
-      [
-        { text: 'Cancelar' },
-        { text: 'Presencial', onPress: () => confirmarLiberacao(patientId, 'presencial') },
-        { text: 'Online', onPress: () => confirmarLiberacao(patientId, 'online') },
-      ]
-    );
-  }
-
-  async function confirmarLiberacao(patientId, modalidade) {
+  async function confirmarLiberacao(patientId) {
     try {
-      await liberarHorariosDoPaciente(patientId, modalidade);
+      // Sem escolher modalidade: o horário volta a ficar livre do jeito que
+      // já era usado, online ou presencial. Perguntar isso era pedir uma
+      // decisão que a própria agenda já tinha tomado.
+      await liberarHorariosDoPaciente(patientId);
     } catch (e) {
       Alert.alert('Erro ao liberar horários', mensagemDeErro(e));
     }
+  }
+
+  async function reservarPorSemanas(patientId, semanas) {
+    try {
+      const ate = await reservarHorariosDoPaciente(patientId, semanas);
+      if (ate) {
+        const [a, m, d] = ate.split('-');
+        Alert.alert(
+          'Horários reservados',
+          `Ficam guardados até ${d}/${m}/${a}. Depois disso viram horários livres sozinhos, na mesma modalidade.`
+        );
+      }
+    } catch (e) {
+      Alert.alert('Erro ao reservar horários', mensagemDeErro(e));
+    }
+  }
+
+  function perguntarPrazoDaReserva(patientId) {
+    Alert.alert(
+      'Guardar por quanto tempo?',
+      'Passado o prazo, o horário vira livre sozinho — sem você precisar lembrar de voltar aqui.',
+      [
+        { text: '4 semanas', onPress: () => reservarPorSemanas(patientId, 4) },
+        { text: '8 semanas', onPress: () => reservarPorSemanas(patientId, 8) },
+        { text: '12 semanas', onPress: () => reservarPorSemanas(patientId, 12) },
+      ]
+    );
   }
 
   async function perguntarLiberacaoHorarios(patientId, nome) {
     try {
       const slots = await getAvailabilitySlotsByPatient(patientId);
       if (!slots || slots.length === 0) return;
+      const n = slots.length;
+      const plural = n === 1 ? '' : 's';
       Alert.alert(
-        'Liberar horários?',
-        `${nome || 'Este analisante'} tem ${slots.length} horário${slots.length === 1 ? '' : 's'} reservado${slots.length === 1 ? '' : 's'} na Agenda. Quer deixá-lo${slots.length === 1 ? '' : 's'} disponível${slots.length === 1 ? '' : 'is'} pra outro agendamento enquanto a análise estiver parada?`,
+        'E os horários na Agenda?',
+        `${nome || 'Este analisante'} tem ${n} horário${plural} reservado${plural}. Enquanto a análise estiver parada, eles continuam aparecendo como ocupados.`,
         [
-          { text: 'Não, manter reservados', style: 'cancel' },
-          { text: 'Definir modalidade...', onPress: () => perguntarModalidadeLiberacao(patientId) },
-          { text: 'Sim, liberar', onPress: () => confirmarLiberacao(patientId, null) },
+          { text: 'Guardar por um tempo', onPress: () => perguntarPrazoDaReserva(patientId) },
+          { text: 'Guardar sem prazo', onPress: () => reservarPorSemanas(patientId, null) },
+          { text: 'Liberar agora', onPress: () => confirmarLiberacao(patientId) },
         ]
       );
     } catch (e) {

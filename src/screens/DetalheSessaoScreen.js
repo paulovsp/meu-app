@@ -12,6 +12,7 @@ import {
   parseTranscriptToTurns, salvarTranscricaoManual,
 } from '../services/database';
 import { mensagemDeErro } from '../services/erros';
+import { buscarTranscricaoDaPlataforma } from '../services/videochamada';
 
 // O parágrafo de introdução (analisante/modalidade/data/duração), gerado em
 // NovaSessaoScreen.js, nunca tem quebra de linha própria — a PRIMEIRA linha
@@ -31,6 +32,7 @@ export default function DetalheSessaoScreen() {
   // `sessionId` — busca tudo no mount, ver useEffect abaixo).
   const { sessionId: sessionIdParam } = route.params;
 
+  const [buscandoProvedor, setBuscandoProvedor] = useState(false);
   const [sessao, setSessao]                   = useState(route.params.sessao || null);
   const [pacienteNome, setPacienteNome]       = useState(route.params.pacienteNome || '');
   const [carregandoSessao, setCarregandoSessao] = useState(!route.params.sessao);
@@ -119,6 +121,43 @@ export default function DetalheSessaoScreen() {
       Alert.alert('Erro ao atualizar', mensagemDeErro(e));
     } finally {
       setAtualizando(false);
+    }
+  }
+
+  // Sessão online: qual provedor tem a gravação. `null` = gravada pelo
+  // aparelho, e aí não há nada a buscar em provedor nenhum.
+  function plataformaDaSessao() {
+    if (sessao?.zoom_meeting_id) return 'zoom';
+    if (sessao?.meet_space_name || sessao?.meet_meeting_uri) return 'meet';
+    return null;
+  }
+
+  // "Atualizar" só relê o que já está no banco. Quando a transcrição
+  // depende do provedor, o que trava não é a leitura — é a busca, que
+  // acontecia só de 2 em 2 minutos pelo cron e, quando falhava, ficava sem
+  // ninguém para tentar de novo. Este botão dispara essa busca na hora.
+  async function buscarNoProvedor() {
+    const plataforma = plataformaDaSessao();
+    if (!plataforma) return;
+    setBuscandoProvedor(true);
+    try {
+      const r = await buscarTranscricaoDaPlataforma(plataforma, sessao.id);
+      await atualizarSessao();
+      // O resultado vem do servidor como um código curto; o que importa
+      // pra quem está olhando é se já dá pra ler o texto ou não.
+      const fresh = await getSessionById(sessao.id);
+      if (fresh?.transcricao_status === 'processando') {
+        Alert.alert(
+          'Ainda não está pronta',
+          r?.resultado === 'sem_gravacao' || r?.resultado === 'sem_conferencia'
+            ? 'A gravação ainda não apareceu no provedor. Isso costuma levar alguns minutos depois do fim da chamada.'
+            : 'A transcrição foi pedida e continua sendo processada. Você será avisada quando terminar.'
+        );
+      }
+    } catch (e) {
+      Alert.alert('Não deu para buscar', mensagemDeErro(e));
+    } finally {
+      setBuscandoProvedor(false);
     }
   }
 
@@ -292,6 +331,18 @@ export default function DetalheSessaoScreen() {
             : <Text style={styles.btnAtualizarText}>Atualizar</Text>
           }
         </TouchableOpacity>
+        {!!plataformaDaSessao() && (
+          <TouchableOpacity
+            style={styles.btnBuscarProvedor}
+            onPress={buscarNoProvedor}
+            disabled={buscandoProvedor}
+          >
+            {buscandoProvedor
+              ? <ActivityIndicator color="#497363" />
+              : <Text style={styles.btnBuscarProvedorText}>Buscar transcrição agora</Text>
+            }
+          </TouchableOpacity>
+        )}
       </View>
     );
   }
@@ -511,6 +562,8 @@ const styles = StyleSheet.create({
   statusLink: { fontSize: 13.5, color: '#44745B', fontWeight: '600', textAlign: 'center', marginTop: 8, paddingHorizontal: 12, lineHeight: 20 },
   btnAtualizar:       { backgroundColor: '#E3EAF1', borderRadius: 12, paddingHorizontal: 20, paddingVertical: 10, marginTop: 4 },
   btnAtualizarText: { color: '#4D6B88', fontWeight: '500', fontSize: 14, lineHeight: 20 },
+  btnBuscarProvedor:  { borderWidth: 1, borderColor: '#497363', borderRadius: 12, paddingHorizontal: 20, paddingVertical: 10, marginTop: 8 },
+  btnBuscarProvedorText: { color: '#497363', fontWeight: '500', fontSize: 14, lineHeight: 20 },
   textAreaManual: { minHeight: 160, borderWidth: 1, borderColor: '#EAE5DC', borderRadius: 12, padding: 12, fontSize: 15, color: '#302C28', textAlignVertical: 'top', lineHeight: 22 },
   btnSalvarManual:    { backgroundColor: '#44745B', alignItems: 'center' },
   btnSalvarManualText: { color: '#fff', fontWeight: '500', fontSize: 14, lineHeight: 20 },

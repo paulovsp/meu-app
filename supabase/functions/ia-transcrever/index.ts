@@ -53,12 +53,28 @@ Deno.serve(async (req) => {
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) return json({ error: 'Não autenticado.' }, 401);
 
-    const supabaseUser = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: userData, error: userError } = await supabaseUser.auth.getUser();
-    if (userError || !userData?.user) return json({ error: 'Sessão inválida.' }, 401);
-    const userId = userData.user.id;
+    // Chamada servidor-a-servidor: `zoom-buscar-transcricao` manda o áudio da
+    // gravação em nuvem do Zoom por aqui, e não tem (nem pode ter) o JWT da
+    // usuária — ela nem está com o app aberto. Quem prova a identidade nesse
+    // caminho é a service role key, que só as nossas próprias funções têm; o
+    // usuário vem explícito no cabeçalho.
+    const ehChamadaInterna = authHeader === `Bearer ${SERVICE_ROLE_KEY}`;
+    let userId: string;
+    // Fica null na chamada interna: ali não existe sessão de usuária pra
+    // apoiar a RLS, e a mesma garantia é feita explicitamente mais abaixo.
+    let supabaseUser: ReturnType<typeof createClient> | null = null;
+    if (ehChamadaInterna) {
+      const declarado = req.headers.get('x-user-id');
+      if (!declarado) return json({ error: 'x-user-id ausente.' }, 400);
+      userId = declarado;
+    } else {
+      supabaseUser = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data: userData, error: userError } = await supabaseUser.auth.getUser();
+      if (userError || !userData?.user) return json({ error: 'Sessão inválida.' }, 401);
+      userId = userData.user.id;
+    }
 
     // ── Caminho novo (binário) x caminho antigo (JSON base64) ──
     // No binário, o que não é áudio (sessão, ordem do bloco) viaja em
@@ -112,11 +128,22 @@ Deno.serve(async (req) => {
     // chamou. Antes essa checagem ficava no fim, depois de já ter mandado o
     // áudio pra AssemblyAI — dava pra queimar processamento numa sessão
     // que nem era da pessoa.
-    const { data: sessaoDona, error: sessaoDonaError } = await supabaseUser
-      .from('sessions')
-      .select('id, patient_id')
-      .eq('id', sessionId)
-      .maybeSingle();
+    // Na chamada interna não há supabaseUser pra RLS fazer esse trabalho, e
+    // deixar passar seria abrir mão da própria garantia que este bloco
+    // existe pra dar. Então o vínculo é conferido explicitamente: a sessão
+    // tem que pertencer a um analisante do usuário declarado no cabeçalho.
+    const { data: sessaoDona, error: sessaoDonaError } = supabaseUser
+      ? await supabaseUser
+          .from('sessions')
+          .select('id, patient_id')
+          .eq('id', sessionId)
+          .maybeSingle()
+      : await supabaseAdmin
+          .from('sessions')
+          .select('id, patient_id, patients!inner(user_id)')
+          .eq('id', sessionId)
+          .eq('patients.user_id', userId)
+          .maybeSingle();
     if (sessaoDonaError || !sessaoDona) {
       return json({ error: 'Sessão não encontrada ou sem permissão.' }, 404);
     }

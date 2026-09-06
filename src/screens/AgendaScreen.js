@@ -410,6 +410,13 @@ export default function AgendaScreen({ navigation }) {
     const precoMoeda = compromisso?.patient_preco_moeda || slot.patient_preco_moeda || 'BRL';
     const preco = precoRaw ? formatarValorMoeda(parsePreco(precoRaw), precoMoeda) : null;
 
+    // Reserva com prazo (paralisação): sem isso, um horário que vai vencer
+    // sozinho na semana que vem é indistinguível de um ocupado normal — e a
+    // pessoa não tem como saber que aquilo vai se resolver.
+    const reservadoAte = !compromisso && slot.patient_id && slot.reservado_ate
+      ? slot.reservado_ate.split('-').reverse().slice(0, 2).join('/')
+      : null;
+
     let estadoInfo = null;
     if (compromisso) {
       const temTranscricao = eventoIndividual ? !!temTranscricaoMap[compromisso.patient_id] : true;
@@ -465,6 +472,11 @@ export default function AgendaScreen({ navigation }) {
             <Text style={styles.diaCardNome} numberOfLines={1}>
               {nomePaciente || 'Analisante'}
             </Text>
+            {reservadoAte && (
+              <Text style={styles.diaCardReservado}>
+                Reservado até {reservadoAte} — depois fica livre
+              </Text>
+            )}
             <View style={styles.diaCardInfoRow}>
               {telefone ? (
                 <Text style={styles.diaCardInfoItem}>{telefone}</Text>
@@ -887,6 +899,7 @@ const styles = StyleSheet.create({
   diaCardCorpo: { gap: 6 },
   diaCardTipo: { fontSize: 11, fontWeight: '500', textTransform: 'uppercase', letterSpacing: 0.3, lineHeight: 16 },
   diaCardNome: { fontSize: 16, fontWeight: '500', color: '#302C28', lineHeight: 23 },
+  diaCardReservado: { fontSize: 11.5, color: '#B36B00', marginTop: 2, lineHeight: 16 },
   diaCardInfoRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
   diaCardInfoItem: { fontSize: 13, color: '#756E66', lineHeight: 19 },
   diaCardEstado: { fontSize: 12, fontWeight: '500', marginTop: 2, lineHeight: 17 },

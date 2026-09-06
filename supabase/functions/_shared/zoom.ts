@@ -17,6 +17,7 @@ export const ZOOM_CLIENT_SECRET = Deno.env.get('ZOOM_CLIENT_SECRET') ?? '';
 
 const OAUTH_AUTH_URL = 'https://zoom.us/oauth/authorize';
 const OAUTH_TOKEN_URL = 'https://zoom.us/oauth/token';
+const OAUTH_REVOKE_URL = 'https://zoom.us/oauth/revoke';
 export const ZOOM_API = 'https://api.zoom.us/v2';
 
 // Escopos granulares (o Zoom migrou dos clássicos):
@@ -24,15 +25,11 @@ export const ZOOM_API = 'https://api.zoom.us/v2';
 //   cloud_recording:read:list_recording_files -> achar o arquivo de transcrição
 //   user:read:user                            -> nome do anfitrião (separa "A:" de "P:")
 //   user:read:settings                        -> conferir se a conta gera transcrição
-// Precisam bater EXATAMENTE com os escopos marcados no app do Marketplace:
-// pedir um escopo não cadastrado faz o Zoom recusar a autorização inteira.
-// Nenhum escopo de leitura de conteúdo além do necessário.
-export const ESCOPOS_ZOOM = [
-  'meeting:write:meeting',
-  'cloud_recording:read:list_recording_files',
-  'user:read:user',
-  'user:read:settings',
-].join(' ');
+// Esta lista NÃO é enviada na URL de consentimento de propósito: num app
+// user-managed do Marketplace, quem define o escopo é o cadastro do app, e
+// mandar `scope=` na autorização só cria a chance de pedir algo que não está
+// marcado lá — o que faz o Zoom recusar a autorização inteira. Fica aqui
+// como o registro do que precisa estar marcado no Marketplace.
 
 function basicAuth() {
   return `Basic ${btoa(`${ZOOM_CLIENT_ID}:${ZOOM_CLIENT_SECRET}`)}`;
@@ -64,6 +61,34 @@ export async function trocarCodigoPorTokens(code: string, redirectUri: string) {
   const corpo = await resp.json();
   if (!resp.ok) throw new Error(corpo?.reason || corpo?.error || 'Falha ao trocar o código pelo token.');
   return corpo as { access_token: string; refresh_token?: string; expires_in: number };
+}
+
+/**
+ * Cancela a autorização do Dr.Sig no lado do Zoom.
+ *
+ * Apagar só a linha do banco não desconectava nada: a autorização
+ * continuava de pé na conta do Zoom, e "Conectar" de novo voltava direto
+ * pra mesma conta sem sequer perguntar qual — que é exatamente o que
+ * impede alguém de trocar de conta.
+ *
+ * Não estoura: se o token já estava morto, o objetivo (não ter mais acesso)
+ * já está cumprido, e falhar aqui só impediria a desconexão local.
+ */
+export async function revogarAcesso(refreshToken: string): Promise<boolean> {
+  if (!refreshToken) return false;
+  try {
+    const resp = await fetch(OAUTH_REVOKE_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: basicAuth(),
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({ token: refreshToken }),
+    });
+    return resp.ok;
+  } catch (_) {
+    return false;
+  }
 }
 
 /** Acesso perdido (token revogado ou expirado) — a saída não é "deu erro",

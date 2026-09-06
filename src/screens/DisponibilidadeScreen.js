@@ -24,6 +24,8 @@ import {
   getPatients,
   addPatient,
   cancelarCompromissosFuturosDoHorario,
+  listarCompromissosFuturosDoHorario,
+  slotAtivoNaData,
   deleteAppointment,
   getPagamentoPorAppointment,
   deletarPagamentoDeAppointment,
@@ -387,6 +389,12 @@ export default function DisponibilidadeScreen() {
     }
   }
 
+  // O horário que está aberto para edição era repetido? É o que decide se
+  // trocar para "avulso" é uma escolha comum ou uma que apaga semanas.
+  const slotOriginal = slotEditandoId ? slots.find((x) => x.id === slotEditandoId) : null;
+  const recorrenciaOriginalEraRepetida =
+    !!slotOriginal && (slotOriginal.recorrencia_tipo || 'semanal') !== 'avulso';
+
   /** O compromisso de origem continua no dia/hora em que estava? */
   function ocorrenciaSaiuDoLugar(novoInicio) {
     if (!dataOcorrenciaEditando) return true;
@@ -397,6 +405,43 @@ export default function DisponibilidadeScreen() {
     if (escopo === 'avulso' && dataBRParaISO(dataAvulsa) !== dataOcorrenciaEditando) return true;
     if (diaOriginal !== diaNovo) return true;
     return !!horaOcorrenciaEditando && horaOcorrenciaEditando !== novoInicio;
+  }
+
+  /**
+   * Quais sessões JÁ MARCADAS deixam de existir se esta edição for salva.
+   *
+   * Uma ocorrência futura do horário antigo some quando o molde novo não a
+   * reproduz no mesmo dia e hora — seja porque o horário mudou de lugar,
+   * seja porque deixou de se repetir naquela data (o caso de virar avulso,
+   * que é o que apagou as semanas seguintes sem avisar).
+   */
+  async function sessoesFuturasQueSomem(inicio, fim, recorrencia, diaSemanaEfetivo) {
+    if (!slotOriginal?.patient_id) return [];
+    let futuros = [];
+    try {
+      futuros = await listarCompromissosFuturosDoHorario({
+        patientId: slotOriginal.patient_id,
+        dayOfWeek: slotOriginal.day_of_week,
+        startTime: slotOriginal.start_time,
+      });
+    } catch (_) {
+      // Não dá pra contar: seguir sem aviso é pior do que avisar demais,
+      // mas travar o salvamento por causa disso também não. Segue sem.
+      return [];
+    }
+    if (futuros.length === 0) return [];
+
+    const mesmoLugar = slotOriginal.day_of_week === diaSemanaEfetivo
+      && slotOriginal.start_time === inicio;
+    if (!mesmoLugar) return futuros;
+
+    const moldeNovo = {
+      recorrencia_tipo: recorrencia.tipo,
+      data_avulsa: recorrencia.data_avulsa || null,
+      recorrencia_data_referencia: recorrencia.data_referencia || null,
+      recorrencia_semanas_ativas: recorrencia.semanas_ativas || null,
+    };
+    return futuros.filter((a) => !slotAtivoNaData(moldeNovo, a.date));
   }
 
   /** Apagar o compromisso pode levar junto um pagamento vinculado (a coluna
@@ -512,6 +557,35 @@ export default function DisponibilidadeScreen() {
         : recorrenciaTipo === 'quinzenal'
           ? { tipo: 'quinzenal', data_referencia: dataBRParaISO(dataReferencia) }
           : { tipo: 'personalizada', data_referencia: dataBRParaISO(dataReferencia), semanas_ativas: semanasAtivas };
+
+    // Antes de qualquer coisa: dizer quantas sessões futuras esta edição
+    // remove, e deixar cancelar. Foi o que faltou — a edição apagava as
+    // ocorrências seguintes sem nunca mencionar que ia fazer isso.
+    const perdidas = await sessoesFuturasQueSomem(inicio, fim, recorrencia, diaSemanaEfetivo);
+    if (perdidas.length > 0) {
+      const nome = slotOriginal?.patient_name || 'este analisante';
+      const datas = perdidas
+        .slice(0, 4)
+        .map((a) => a.date.split('-').reverse().join('/'))
+        .join(', ');
+      const eMais = perdidas.length > 4 ? ` e mais ${perdidas.length - 4}` : '';
+      const seguir = await new Promise((resolve) => {
+        Alert.alert(
+          perdidas.length === 1 ? 'Uma sessão será removida' : `${perdidas.length} sessões serão removidas`,
+          `Salvar assim remove ${perdidas.length === 1 ? 'a sessão' : 'as sessões'} de ${nome} em ${datas}${eMais}.`
+          + (escopo === 'avulso' && recorrenciaOriginalEraRepetida
+            ? '\n\nO horário deixa de se repetir e passa a valer só na data escolhida.'
+            : '\n\nElas voltam no novo dia/horário.')
+          + '\n\nPara mudar só uma sessão e manter o resto, cancele aqui e use “Remarcar só esta sessão”, na tela do compromisso.',
+          [
+            { text: 'Cancelar', style: 'cancel', onPress: () => resolve(false) },
+            { text: 'Continuar', style: 'destructive', onPress: () => resolve(true) },
+          ],
+          { cancelable: false },
+        );
+      });
+      if (!seguir) return;
+    }
 
     setSalvando(true);
     let ocupado, livres, modalidadeNormalizada;
@@ -767,6 +841,25 @@ export default function DisponibilidadeScreen() {
               </TouchableOpacity>
             ))}
           </View>
+
+          {/* O aviso aparece no momento da escolha, não só no salvar: aqui é
+              onde a pessoa acha que está dizendo "só esta data". "Avulso"
+              reescreve o molde — o horário deixa de existir nas outras
+              semanas. Mudar uma sessão sem mexer no resto é outra coisa, e
+              fica dito qual. */}
+          {escopo === 'avulso' && recorrenciaOriginalEraRepetida && (
+            <View style={styles.avisoAvulso}>
+              <Ionicons name="alert-circle-outline" size={17} color="#8A5A22" />
+              <Text style={styles.avisoAvulsoTxt}>
+                Este horário se repete hoje. Marcá-lo como avulso faz ele
+                valer só na data escolhida — as sessões das outras semanas
+                deixam de existir.
+                {'\n\n'}
+                Para mudar só uma sessão e manter o resto, use
+                “Remarcar só esta sessão”, na tela do compromisso.
+              </Text>
+            </View>
+          )}
 
           {escopo === 'avulso' ? (
             <>
@@ -1234,6 +1327,11 @@ export default function DisponibilidadeScreen() {
 }
 
 const styles = StyleSheet.create({
+  avisoAvulso: {
+    flexDirection: 'row', gap: 9, alignItems: 'flex-start',
+    backgroundColor: '#FBF2E4', borderRadius: 10, padding: 12, marginBottom: 14,
+  },
+  avisoAvulsoTxt: { flex: 1, fontSize: 12.5, color: '#8A5A22', lineHeight: 18 },
   safeArea: { flex: 1, backgroundColor: '#F7F5F0' },
   container: { flex: 1, backgroundColor: '#F7F5F0' },
   scrollContent: { padding: 16, paddingBottom: 36 },

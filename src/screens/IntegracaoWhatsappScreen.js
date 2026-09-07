@@ -130,8 +130,9 @@ export default function IntegracaoWhatsappScreen() {
 
         <Text style={s.intro}>
           Comprovantes de pagamento enviados pelo analisante no WhatsApp são
-          lidos automaticamente e entram numa fila para você conferir. O app
-          nunca marca um pagamento como recebido sozinho.
+          lidos automaticamente e entram numa fila para você conferir — tanto
+          o PDF que o banco gera quanto uma foto ou print. O app nunca marca
+          um pagamento como recebido sozinho.
         </Text>
 
         {carregando ? (

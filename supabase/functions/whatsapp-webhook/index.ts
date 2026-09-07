@@ -9,13 +9,19 @@
 // GET  -> handshake de verificação do webhook (Meta exige isso ao
 //         configurar a subscription: confere hub.verify_token contra o
 //         segredo compartilhado e ecoa hub.challenge de volta).
-// POST -> mensagens recebidas. Só processa mensagens do tipo "image": baixa
-//         a mídia da Graph API, roda OCR (mesmo serviço já usado na
-//         autorização de gravação), tenta casar o número do remetente com
+// POST -> mensagens recebidas. Processa foto E documento: baixa a mídia da
+//         Graph API, roda OCR (mesmo serviço já usado na autorização de
+//         gravação), tenta casar o número do remetente com
 //         `patients.telefone` do profissional dono daquele phone_number_id,
 //         e — só se parecer um comprovante (palavra-chave ou valor
 //         detectado) — grava em `whatsapp_comprovantes` como 'pendente'.
-// A imagem em si NUNCA é salva — só passa em memória durante esta
+//
+//         Documento entrou em 07/09/2026 porque a maioria dos bancos manda
+//         o comprovante em PDF, não em foto — essas mensagens vinham sendo
+//         descartadas em silêncio, e o comprovante chegava no WhatsApp da
+//         profissional sem nunca aparecer no app.
+//
+// O arquivo em si NUNCA é salvo — só passa em memória durante esta
 // requisição, igual à autorização de gravação. Nunca marca pagamento como
 // recebido sozinha: isso é sempre uma confirmação manual da profissional,
 // no app.
@@ -83,10 +89,16 @@ function pareceComprovante(texto: string): boolean {
   return palavrasChave.some((p) => normalizado.includes(p)) || extrairValor(texto) !== null;
 }
 
-async function baixarImagemBase64(
+// Limite do OCR.space: 1 MB por arquivo no plano gratuito. Comprovante de
+// banco fica muito abaixo disso (PDF de uma página, ~50-200 KB), mas quem
+// fotografa a tela em 12 MP estoura fácil — e sem esta checagem o serviço
+// devolve um erro genérico que não diz o que houve.
+const TAMANHO_MAXIMO_OCR_BYTES = 1024 * 1024;
+
+async function baixarMidiaBase64(
   mediaId: string,
   accessToken: string
-): Promise<{ base64: string; mimeType: string } | null> {
+): Promise<{ base64: string; mimeType: string; bytes: number } | null> {
   const metaResp = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${mediaId}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -98,17 +110,52 @@ async function baixarImagemBase64(
   const midiaResp = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!midiaResp.ok) return null;
   const buffer = new Uint8Array(await midiaResp.arrayBuffer());
-  return { base64: base64Encode(buffer), mimeType: meta?.mime_type || 'image/jpeg' };
+  return {
+    base64: base64Encode(buffer),
+    mimeType: meta?.mime_type || 'image/jpeg',
+    bytes: buffer.byteLength,
+  };
 }
 
-async function extrairTextoDaImagem(imagemBase64: string, mimeType: string): Promise<string> {
-  const prefixo = mimeType.includes('png') ? 'data:image/png' : 'data:image/jpeg';
+/** O comprovante que o banco manda quase nunca é foto: é PDF. Aceitar só
+ *  imagem deixava de fora a forma mais comum de comprovante que existe. */
+function ehPdf(mimeType: string): boolean {
+  return (mimeType || '').toLowerCase().includes('pdf');
+}
+
+/** Tipos que vale a pena tentar ler. Documento pode chegar como PDF (o
+ *  caso do banco) ou como imagem — alguns aparelhos mandam a foto da
+ *  galeria como "documento" em vez de "imagem". */
+function midiaLegivel(mimeType: string): boolean {
+  const m = (mimeType || '').toLowerCase();
+  return ehPdf(m) || m.startsWith('image/');
+}
+
+/**
+ * Texto de um comprovante, seja ele foto ou PDF.
+ *
+ * O OCR.space lê os dois; o que muda é o prefixo do data-URI e o
+ * `filetype`, que para PDF precisa ser explícito — sem ele o serviço tenta
+ * interpretar o conteúdo como imagem e falha.
+ *
+ * `OCREngine 2` (o que já era usado) não aceita PDF; o motor 1 aceita. Por
+ * isso a escolha do motor passa a depender do tipo de arquivo, e não é
+ * detalhe: mandar PDF no motor 2 volta como "erro ao processar", que é
+ * indistinguível de um comprovante ilegível.
+ */
+async function extrairTexto(base64: string, mimeType: string): Promise<string> {
+  const pdf = ehPdf(mimeType);
+  const prefixo = pdf
+    ? 'data:application/pdf'
+    : (mimeType.includes('png') ? 'data:image/png' : 'data:image/jpeg');
+
   const form = new FormData();
   form.set('apikey', OCR_SPACE_API_KEY);
   form.set('language', 'por');
-  form.set('OCREngine', '2');
+  form.set('OCREngine', pdf ? '1' : '2');
   form.set('scale', 'true');
-  form.set('base64Image', `${prefixo};base64,${imagemBase64}`);
+  if (pdf) form.set('filetype', 'PDF');
+  form.set('base64Image', `${prefixo};base64,${base64}`);
 
   const resp = await fetch('https://api.ocr.space/parse/image', { method: 'POST', body: form });
   if (!resp.ok) throw new Error(`Falha no serviço de OCR (${resp.status}).`);
@@ -182,14 +229,30 @@ Deno.serve(async (req) => {
         }
 
         for (const mensagem of mensagens) {
-          if (mensagem?.type !== 'image' || !mensagem?.image?.id) continue;
+          // Foto OU documento. A maioria dos bancos manda o comprovante em
+          // PDF, e até aqui essas mensagens eram descartadas em silêncio —
+          // o comprovante chegava no WhatsApp e nunca aparecia no app.
+          const anexo = mensagem?.type === 'image'
+            ? mensagem.image
+            : (mensagem?.type === 'document' ? mensagem.document : null);
+          if (!anexo?.id) continue;
+          // O `mime_type` do próprio evento evita baixar um .docx ou um
+          // .zip só pra descobrir depois que não dá pra ler.
+          if (anexo.mime_type && !midiaLegivel(anexo.mime_type)) continue;
 
-          const imagem = await baixarImagemBase64(mensagem.image.id, integracao.access_token);
-          if (!imagem) continue;
+          const arquivo = await baixarMidiaBase64(anexo.id, integracao.access_token);
+          if (!arquivo) continue;
+          if (!midiaLegivel(arquivo.mimeType)) continue;
+          if (arquivo.bytes > TAMANHO_MAXIMO_OCR_BYTES) {
+            console.error(
+              `[whatsapp-webhook] Arquivo grande demais pro OCR: ${arquivo.bytes} bytes (${arquivo.mimeType})`,
+            );
+            continue;
+          }
 
           let texto = '';
           try {
-            texto = await extrairTextoDaImagem(imagem.base64, imagem.mimeType);
+            texto = await extrairTexto(arquivo.base64, arquivo.mimeType);
           } catch (e) {
             console.error('[whatsapp-webhook] Falha no OCR:', (e as Error)?.message || e);
             continue;

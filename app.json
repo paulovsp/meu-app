@@ -29,7 +29,7 @@
         "android.permission.POST_NOTIFICATIONS"
       ],
       "package": "br.com.drsig.app",
-      "versionCode": 20
+      "versionCode": 21
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -59,6 +59,14 @@
       "eas": {
         "projectId": "d716169f-7f0f-411b-8b58-4bff10d26953"
       }
+    },
+    "updates": {
+      "url": "https://u.expo.dev/d716169f-7f0f-411b-8b58-4bff10d26953",
+      "fallbackToCacheTimeout": 0,
+      "checkAutomatically": "ON_LOAD"
+    },
+    "runtimeVersion": {
+      "policy": "fingerprint"
     }
   }
 }

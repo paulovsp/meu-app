@@ -16,6 +16,7 @@ import {
   deleteAppointment,
   deleteAppointments,
   marcarHorarioLiberado,
+  desmarcarHorarioLiberado,
   getPagamentoPorAppointment,
   deletarPagamentoDeAppointment,
   desvincularPagamentoDeAppointment,
@@ -58,6 +59,7 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
   useBloqueioAssinatura(navigation);
 
   const [compromisso, setCompromisso] = useState(null);
+  const [buscou, setBuscou] = useState(false);
   const [temTranscricao, setTemTranscricao] = useState(false);
   const [agindo, setAgindo] = useState(false);
   // "Remarcar só esta sessão": mexe SÓ neste compromisso, sem tocar no
@@ -75,6 +77,13 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
       setCompromisso(await getAppointmentById(appointmentId));
     } catch (e) {
       Alert.alert('Erro ao carregar', mensagemDeErro(e));
+    } finally {
+      // Sem esta marca, `compromisso === null` significava ao mesmo tempo
+      // "ainda buscando" e "não existe" — e a tela ficava em "Carregando..."
+      // para sempre quando o compromisso tinha sido apagado (é o que
+      // acontece ao editar o horário: o compromisso de origem some, esta
+      // tela recarrega por id e não acha mais nada).
+      setBuscou(true);
     }
   }, [appointmentId]);
 
@@ -105,8 +114,21 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
     return (
       <View style={{ flex: 1 }}>
         <CabecalhoTela titulo="Compromisso" onVoltar={() => navigation.goBack()} />
-        <View style={styles.container}>
-          <Text>Carregando...</Text>
+        <View style={[styles.container, styles.estadoVazio]}>
+          {!buscou ? (
+            <ActivityIndicator size="large" color="#497363" />
+          ) : (
+            <>
+              <Text style={styles.estadoVazioTitulo}>Este compromisso não existe mais</Text>
+              <Text style={styles.estadoVazioTexto}>
+                Ele pode ter sido apagado, ou movido junto com a edição do
+                horário. A agenda já está atualizada.
+              </Text>
+              <TouchableOpacity style={styles.btnEditarHorario} onPress={() => navigation.goBack()}>
+                <Text style={styles.btnEditarHorarioTxt}>Voltar para a agenda</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       </View>
     );
@@ -159,13 +181,36 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
       return;
     }
 
+    const dataOriginal = compromisso.date;
+    const inicioOriginal = compromisso.start_time;
+    const novaDataISO = dataBRParaISO(novaData);
+    const saiuDoLugar = novaDataISO !== dataOriginal || inicio !== inicioOriginal;
+
     setAgindo(true);
     try {
       await atualizarHorarioAppointment(compromisso.id, {
-        date: dataBRParaISO(novaData),
+        date: novaDataISO,
         startTime: inicio,
         endTime: fim,
       });
+
+      if (saiuDoLugar) {
+        // Mover o compromisso não bastava: o horário recorrente por trás
+        // dele continua valendo naquela data, então a Agenda seguia
+        // pintando o lugar antigo como ocupado — e, pior,
+        // `ensureAppointmentsForDate` recriava ali um compromisso novo na
+        // primeira vez que aquele dia fosse aberto. A sessão "voltava".
+        //
+        // `horarios_liberados` é o mesmo mecanismo de "apagar só este
+        // horário": vale para UMA data, não mexe no horário recorrente, e
+        // é o que faz o lugar antigo aparecer livre de verdade.
+        await marcarHorarioLiberado(dataOriginal, inicioOriginal);
+        // E o destino precisa do contrário: se aquele dia/hora estava
+        // marcado como liberado (a pessoa já tinha apagado algo ali), a
+        // liberação bloquearia justamente a sessão que acabou de chegar.
+        await desmarcarHorarioLiberado(novaDataISO, inicio);
+      }
+
       setRemarcando(false);
       await carregar();
     } catch (e) {
@@ -747,6 +792,9 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: '#497363',
   },
   btnEditarHorarioTxt: { color: '#497363', fontWeight: '500' },
+  estadoVazio: { justifyContent: 'center', alignItems: 'center', gap: 12 },
+  estadoVazioTitulo: { fontSize: 16, fontWeight: '600', color: '#302C28', lineHeight: 23, textAlign: 'center' },
+  estadoVazioTexto: { fontSize: 13.5, color: '#756E66', lineHeight: 20, textAlign: 'center', marginBottom: 8 },
   modalFundo: {
     flex: 1, backgroundColor: 'rgba(48,44,40,0.45)',
     justifyContent: 'center', paddingHorizontal: 22,

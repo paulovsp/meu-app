@@ -474,7 +474,15 @@ export default function DetalheAnalisanteScreen() {
       ? `${tipoLabel.label} de ${formatarData(item.date)}`
       : (item.title || 'Registro sem título');
 
-    Alert.alert('Remover item?', `Deseja remover "${titulo}"?\n\nEsta ação não pode ser desfeita.`, [
+    // Apagar uma SESSÃO não leva só a sessão: `records.session_id` e os
+    // turnos por falante são cascade, então o relato escrito a partir dela
+    // e a separação de falas vão junto. O aviso dizia "não pode ser
+    // desfeita" sem dizer o que, exatamente, se perde.
+    const detalhe = item._itemType === 'session'
+      ? '\n\nA transcrição e o relato escrito a partir desta sessão vão junto.'
+      : '';
+
+    Alert.alert('Remover item?', `Deseja remover "${titulo}"?${detalhe}\n\nEsta ação não pode ser desfeita.`, [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Remover', style: 'destructive',

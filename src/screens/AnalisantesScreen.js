@@ -6,7 +6,9 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { listarPacientes, deletarPaciente, getModalidadesPorPaciente } from '../services/database';
+import {
+  listarPacientes, deletarPaciente, getModalidadesPorPaciente, contarDadosDoPaciente,
+} from '../services/database';
 import { mensagemDeErro } from '../services/erros';
 import { calcularAnosEMeses, formatarAnosEMeses } from '../services/validacao';
 import MenuLateral from '../components/MenuLateral';
@@ -54,24 +56,83 @@ export default function AnalisantesScreen() {
     navigation.navigate('PatientForm', paciente ? { paciente } : {});
   }
 
+  /** Lista só o que existe de verdade, na ordem em que dói mais. */
+  function descreverPerda(c) {
+    const partes = [];
+    const plural = (n, um, muitos) => `${n} ${n === 1 ? um : muitos}`;
+    if (c.sessoes) partes.push(plural(c.sessoes, 'sessão gravada', 'sessões gravadas'));
+    if (c.registros) partes.push(plural(c.registros, 'registro escrito', 'registros escritos'));
+    if (c.compromissos) partes.push(plural(c.compromissos, 'compromisso', 'compromissos'));
+    if (c.relatorios) partes.push(plural(c.relatorios, 'relatório', 'relatórios'));
+    if (c.pagamentos) partes.push(plural(c.pagamentos, 'registro de pagamento', 'registros de pagamento'));
+    return partes;
+  }
+
+  /**
+   * Apagar um analisante derruba, em cascata, tudo que existe sobre ele:
+   * sessões, transcrições, registros, compromissos, relatórios,
+   * pagamentos e a elaboração dos núcleos. Até aqui a tela perguntava
+   * apenas `Deseja remover "Fulana"?` — a frase de tirar uma linha de uma
+   * lista, para a ação mais destrutiva do app inteiro.
+   *
+   * Agora são dois passos: o primeiro DIZ o tamanho, com os números
+   * contados no banco; o segundo existe para que ninguém chegue no fim
+   * por reflexo.
+   */
   function confirmarDelecao(id, nome) {
-    Alert.alert('Remover analisante', `Deseja remover "${nome}"?`, [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Remover', style: 'destructive',
-        onPress: async () => {
-          setRemovendoId(id);
-          try {
-            await deletarPaciente(id);
-            await carregar();
-          } catch (e) {
-            Alert.alert('Erro ao remover', mensagemDeErro(e));
-          } finally {
-            setRemovendoId(null);
-          }
-        }
+    (async () => {
+      let contagem = null;
+      setRemovendoId(id);
+      try {
+        contagem = await contarDadosDoPaciente(id);
+      } catch (_) {
+        // Não deu pra contar: seguir sem número é aceitável, seguir sem
+        // aviso não. O texto abaixo cobre os dois casos.
+      } finally {
+        setRemovendoId(null);
       }
-    ]);
+
+      const perdas = contagem ? descreverPerda(contagem) : [];
+      const detalhe = perdas.length > 0
+        ? `Isto apaga em definitivo:\n\n${perdas.map((t) => `• ${t}`).join('\n')}\n\nMais as transcrições e a elaboração clínica ligadas a esses itens.`
+        : 'Isto apaga em definitivo tudo que existe sobre esta pessoa: sessões, transcrições, registros, compromissos, relatórios e histórico financeiro.';
+
+      const seguir = await new Promise((resolve) => {
+        Alert.alert(
+          `Apagar ${nome} e todo o histórico?`,
+          `${detalhe}\n\nNão há como desfazer.`,
+          [
+            { text: 'Cancelar', style: 'cancel', onPress: () => resolve(false) },
+            { text: 'Continuar', style: 'destructive', onPress: () => resolve(true) },
+          ],
+          { cancelable: false },
+        );
+      });
+      if (!seguir) return;
+
+      const confirmado = await new Promise((resolve) => {
+        Alert.alert(
+          'Tem certeza?',
+          `O prontuário de ${nome} será apagado do servidor e não poderá ser recuperado — nem por nós.\n\nSe a intenção for apenas parar de atender, use "Paralisação da análise" na ficha: o histórico fica preservado.`,
+          [
+            { text: 'Não apagar', style: 'cancel', onPress: () => resolve(false) },
+            { text: 'Apagar tudo', style: 'destructive', onPress: () => resolve(true) },
+          ],
+          { cancelable: false },
+        );
+      });
+      if (!confirmado) return;
+
+      setRemovendoId(id);
+      try {
+        await deletarPaciente(id);
+        await carregar();
+      } catch (e) {
+        Alert.alert('Erro ao remover', mensagemDeErro(e));
+      } finally {
+        setRemovendoId(null);
+      }
+    })();
   }
 
   // ⚠️ CORRIGIDO: não existe mais campo "codinome" — usa sempre o nome real

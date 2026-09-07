@@ -18,9 +18,11 @@ import notifee, { AndroidImportance, AndroidForegroundServiceType } from 'react-
 import { Ionicons } from '@expo/vector-icons';
 import {
   criarCurso, editarCurso, removerCurso, marcarConsentimentoProfessor,
-  salvarTranscricaoManual, getCursoById,
+  salvarTranscricaoManual, getCursoById, contarDadosDoCurso,
   calcularCargaHoraria, terminoDerivadoDaAula,
 } from '../services/cursos';
+import { removerDespesa } from '../services/despesas';
+import { formatarMoeda } from '../services/database';
 import {
   criarGravadorEmBlocos, enviarBlocoParaTranscricao, enviarGravacaoCompleta,
   apagarBlocos, escolherArquivoDeAudio, MENSAGEM_SILENCIO, RECORDING_OPTIONS,
@@ -245,24 +247,79 @@ export default function FormularioCursoScreen() {
     }
   }
 
+  /**
+   * "Remover do seu currículo?" descrevia tirar uma linha de uma lista de
+   * formação. O que a exclusão faz de verdade: apaga as aulas da agenda
+   * (`appointments.curso_id` é cascade) e a transcrição de cada aula
+   * gravada, que mora na própria linha do curso.
+   *
+   * E deixava um rastro ao contrário: a despesa usa `set null`, então
+   * sobrevivia órfã em Pagamentos, sem curso nenhum atrás — um valor que
+   * ninguém ia lembrar de onde veio. Agora ela entra na pergunta.
+   */
   function confirmarRemocao() {
-    Alert.alert('Remover curso', `Remover "${curso.titulo}" do seu currículo?`, [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Remover',
-        style: 'destructive',
-        onPress: async () => {
-          setRemovendo(true);
-          try {
-            await removerCurso(curso.id);
-            navigation.goBack();
-          } catch (err) {
-            Alert.alert('Erro', mensagemDeErro(err));
-            setRemovendo(false);
-          }
-        },
-      },
-    ]);
+    (async () => {
+      let dados = null;
+      setRemovendo(true);
+      try {
+        dados = await contarDadosDoCurso(curso.id);
+      } catch (_) {
+        // Sem os números o aviso fica genérico, mas continua existindo.
+      } finally {
+        setRemovendo(false);
+      }
+
+      const perdas = [];
+      if (dados?.aulas) {
+        perdas.push(dados.aulas === 1 ? '1 aula na agenda' : `${dados.aulas} aulas na agenda`);
+      }
+      if (dados?.temTranscricao) perdas.push('a transcrição da aula gravada');
+      const detalhe = perdas.length > 0
+        ? `Isto apaga em definitivo ${perdas.join(' e ')}.`
+        : 'Isto apaga o curso e tudo que estiver ligado a ele — aulas na agenda e transcrições.';
+
+      const seguir = await new Promise((resolve) => {
+        Alert.alert(
+          `Apagar "${curso.titulo}"?`,
+          `${detalhe}\n\nNão há como desfazer.`,
+          [
+            { text: 'Cancelar', style: 'cancel', onPress: () => resolve(false) },
+            { text: 'Continuar', style: 'destructive', onPress: () => resolve(true) },
+          ],
+          { cancelable: false },
+        );
+      });
+      if (!seguir) return;
+
+      // A despesa é decisão à parte: ela é um lançamento financeiro que
+      // aconteceu de verdade, e apagar o curso não desfaz o gasto.
+      let apagarDespesa = false;
+      if (dados?.despesa) {
+        const escolha = await new Promise((resolve) => {
+          Alert.alert(
+            'E a despesa deste curso?',
+            `Existe uma despesa de ${formatarMoeda(dados.despesa.valor)} lançada em Pagamentos por causa deste curso.`
+            + '\n\nO gasto aconteceu de verdade — apagar o curso não o desfaz. Mantê-la preserva o financeiro; apagá-la some com o lançamento.',
+            [
+              { text: 'Manter a despesa', onPress: () => resolve('manter') },
+              { text: 'Apagar também', style: 'destructive', onPress: () => resolve('apagar') },
+            ],
+            { cancelable: false },
+          );
+        });
+        apagarDespesa = escolha === 'apagar';
+      }
+
+      setRemovendo(true);
+      try {
+        if (apagarDespesa) await removerDespesa(dados.despesa.id);
+        await removerCurso(curso.id);
+        navigation.goBack();
+      } catch (err) {
+        Alert.alert('Erro', mensagemDeErro(err));
+        setRemovendo(false);
+      }
+    })();
   }
 
   // Vale tanto pra gravar na hora quanto pra importar um áudio já gravado —

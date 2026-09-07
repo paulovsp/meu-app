@@ -195,6 +195,28 @@ export async function editarCurso(id, dados) {
   return { ...data, _agenda: agenda };
 }
 
+/**
+ * O que vai junto ao apagar um curso — e o que NÃO vai.
+ *
+ * Vai: as aulas na agenda (`appointments.curso_id` é cascade) e a
+ * transcrição de cada aula gravada, que mora na própria linha do curso.
+ * Não vai: a despesa, que usa `set null` e sobreviveria órfã em
+ * Pagamentos, sem curso nenhum atrás dela. Por isso ela é devolvida aqui:
+ * quem apaga precisa poder decidir.
+ */
+export async function contarDadosDoCurso(cursoId) {
+  const [{ count: aulas }, curso, despesa] = await Promise.all([
+    supabase.from('appointments').select('id', { count: 'exact', head: true }).eq('curso_id', cursoId),
+    supabase.from('cursos').select('transcript').eq('id', cursoId).maybeSingle(),
+    supabase.from('despesas_consultorio').select('id, descricao, valor').eq('curso_id', cursoId).maybeSingle(),
+  ]);
+  return {
+    aulas: aulas ?? 0,
+    temTranscricao: !!(curso?.data?.transcript || '').trim(),
+    despesa: despesa?.data || null,
+  };
+}
+
 export async function removerCurso(id) {
   const { error } = await supabase.from('cursos').delete().eq('id', id);
   if (error) throw error;

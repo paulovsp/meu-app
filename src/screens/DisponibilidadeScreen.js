@@ -718,85 +718,117 @@ export default function DisponibilidadeScreen() {
     setSemanasAtivas(slot.recorrencia_semanas_ativas?.length ? slot.recorrencia_semanas_ativas : SEMANAS_CICLO);
   }
 
+  /**
+   * Excluir um horário da lista fazia DUAS coisas e anunciava uma só:
+   * apagava o molde e, em seguida, cancelava todas as sessões futuras
+   * daquele analisante naquele horário — sem que a pergunta mencionasse
+   * isso. Quem só queria parar de gerar sessões novas cancelava, sem
+   * saber, as que já estavam marcadas e combinadas.
+   *
+   * Agora são duas ações separadas, e cada botão faz exatamente o que o
+   * texto dele diz.
+   */
   function confirmarExclusao(slot) {
-    Alert.alert(
-      'Excluir disponibilidade?',
-      `Deseja remover o horário de ${obterDiaLabel(
-        slot.day_of_week
-      )}, das ${slot.start_time} às ${slot.end_time}?`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Excluir',
-          style: 'destructive',
-          onPress: async () => {
-            setExcluindoId(slot.id);
-            try {
-              await deleteAvailabilitySlot(slot.id);
-              // Item 3 (leva pós-v13): excluir o horário recorrente aqui
-              // nunca cancelava compromissos já materializados em
-              // `appointments` — eles ficavam "fantasmas", ainda aparecendo
-              // como agendados na Agenda e no widget da Início mesmo depois
-              // de excluídos daqui. Mesma função de cascata do item 4 (v13).
-              if (slot.patient_id) {
-                await cancelarCompromissosFuturosDoHorario({
-                  patientId: slot.patient_id,
-                  dayOfWeek: slot.day_of_week,
-                  startTime: slot.start_time,
-                });
-              }
-              await carregarSlots();
+    (async () => {
+      const onde = `${obterDiaLabel(slot.day_of_week)}, das ${slot.start_time} às ${slot.end_time}`;
 
-              if (slot.id === slotEditandoId) {
-                limparFormulario();
-              }
-            } catch (e) {
-              Alert.alert('Erro ao excluir', mensagemDeErro(e));
-            } finally {
-              setExcluindoId(null);
-            }
-          },
-        },
-      ]
-    );
+      let futuros = [];
+      if (slot.patient_id) {
+        setExcluindoId(slot.id);
+        try {
+          futuros = await listarCompromissosFuturosDoHorario({
+            patientId: slot.patient_id,
+            dayOfWeek: slot.day_of_week,
+            startTime: slot.start_time,
+          });
+        } catch (_) {
+          // Sem a contagem, o caminho seguro é o que NÃO cancela nada.
+        } finally {
+          setExcluindoId(null);
+        }
+      }
+
+      // Sem sessões marcadas à frente não há escolha a fazer: some o molde
+      // e pronto.
+      if (futuros.length === 0) {
+        const ok = await new Promise((resolve) => {
+          Alert.alert(
+            'Excluir este horário?',
+            `O horário de ${onde} deixa de existir na sua grade.`
+            + '\n\nNão há nenhuma sessão marcada nele daqui pra frente.',
+            [
+              { text: 'Cancelar', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'Excluir', style: 'destructive', onPress: () => resolve(true) },
+            ],
+          );
+        });
+        if (ok) await executarExclusao(slot, false);
+        return;
+      }
+
+      const nome = slot.patient_name || 'este analisante';
+      const quantas = futuros.length === 1
+        ? '1 sessão já marcada'
+        : `${futuros.length} sessões já marcadas`;
+      const datas = futuros
+        .slice(0, 4)
+        .map((a) => a.date.split('-').reverse().join('/'))
+        .join(', ');
+      const eMais = futuros.length > 4 ? ` e mais ${futuros.length - 4}` : '';
+
+      const escolha = await new Promise((resolve) => {
+        Alert.alert(
+          'Excluir o horário e as sessões?',
+          `O horário de ${onde} tem ${quantas} de ${nome}: ${datas}${eMais}.`
+          + '\n\nO horário sai da grade nos dois casos. A diferença é o que'
+          + ' acontece com essas sessões.',
+          [
+            { text: 'Cancelar', style: 'cancel', onPress: () => resolve('cancelar') },
+            { text: 'Manter as sessões', onPress: () => resolve('manter') },
+            { text: `Cancelar as ${futuros.length} também`, style: 'destructive', onPress: () => resolve('cancelar_sessoes') },
+          ],
+          { cancelable: false },
+        );
+      });
+
+      if (escolha === 'cancelar') return;
+      await executarExclusao(slot, escolha === 'cancelar_sessoes');
+    })();
   }
 
-  // ⚠️ item 5: excluir o horário que está sendo editado no momento, sem
-  // precisar rolar até encontrá-lo na lista de baixo.
+  /** `cancelarFuturos` decide se as sessões já marcadas vão junto — é o
+   *  que a pessoa acabou de escolher, e nada além disso acontece. */
+  async function executarExclusao(slot, cancelarFuturos) {
+    setExcluindoId(slot.id);
+    try {
+      await deleteAvailabilitySlot(slot.id);
+      if (cancelarFuturos && slot.patient_id) {
+        await cancelarCompromissosFuturosDoHorario({
+          patientId: slot.patient_id,
+          dayOfWeek: slot.day_of_week,
+          startTime: slot.start_time,
+        });
+      }
+      await carregarSlots();
+      if (slot.id === slotEditandoId) limparFormulario();
+    } catch (e) {
+      Alert.alert('Erro ao excluir', mensagemDeErro(e));
+    } finally {
+      setExcluindoId(null);
+    }
+  }
+
+  // Excluir o horário que está aberto no formulário, sem precisar rolar
+  // até achá-lo na lista de baixo.
+  //
+  // Passa pela MESMA confirmação da lista de propósito: eram dois botões
+  // que faziam a mesma coisa e perguntavam diferente, e o daqui também
+  // cancelava as sessões futuras sem dizer. Um caminho só, uma pergunta só.
   function excluirSlotEmEdicao() {
     if (!slotEditandoId) return;
-
-    Alert.alert(
-      'Excluir horário?',
-      `Deseja remover o horário de ${obterDiaLabel(diaSemana)}, das ${horarioInicio} às ${horarioFim}?`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Excluir',
-          style: 'destructive',
-          onPress: async () => {
-            setExcluindoId(slotEditandoId);
-            try {
-              await deleteAvailabilitySlot(slotEditandoId);
-              // Mesma cascata de confirmarExclusao — ver comentário lá.
-              if (analisanteId) {
-                await cancelarCompromissosFuturosDoHorario({
-                  patientId: analisanteId,
-                  dayOfWeek: diaSemana,
-                  startTime: horarioInicio,
-                });
-              }
-              await carregarSlots();
-              limparFormulario();
-            } catch (e) {
-              Alert.alert('Erro ao excluir', mensagemDeErro(e));
-            } finally {
-              setExcluindoId(null);
-            }
-          },
-        },
-      ]
-    );
+    const slot = slots.find((x) => x.id === slotEditandoId);
+    if (!slot) return;
+    confirmarExclusao(slot);
   }
 
   function salvarEVoltar() {

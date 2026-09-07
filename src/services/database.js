@@ -77,6 +77,40 @@ export async function editarPaciente({
   if (error) throw error;
 }
 
+/**
+ * Quanto dado existe pendurado num analisante.
+ *
+ * Existe para que a confirmação de exclusão possa DIZER o tamanho do que
+ * vai embora, em vez de perguntar "deseja remover?" como se fosse tirar
+ * uma linha de uma lista. Apagar um analisante derruba, em cascata,
+ * sessions, records, transcript_turns, appointments, pagamentos,
+ * relatorios, autorizações, paralisações e toda a elaboração dos núcleos —
+ * anos de trabalho, sem volta.
+ *
+ * `head: true` + `count: 'exact'` conta no servidor e não traz linha
+ * nenhuma; roda só no instante em que alguém pede pra excluir.
+ */
+export async function contarDadosDoPaciente(patientId) {
+  const { supabase } = require('./supabase');
+  const conta = (tabela) => supabase
+    .from(tabela)
+    .select('id', { count: 'exact', head: true })
+    .eq('patient_id', patientId);
+
+  const [sessoes, registros, compromissos, relatorios, pagamentos] = await Promise.all([
+    conta('sessions'), conta('records'), conta('appointments'),
+    conta('relatorios'), conta('pagamentos'),
+  ]);
+
+  return {
+    sessoes: sessoes.count ?? 0,
+    registros: registros.count ?? 0,
+    compromissos: compromissos.count ?? 0,
+    relatorios: relatorios.count ?? 0,
+    pagamentos: pagamentos.count ?? 0,
+  };
+}
+
 // Apaga o paciente e tudo que depende dele (sessions, records,
 // transcript_turns, agenda, financeiro, núcleos/objetivo, relatórios) via
 // `on delete cascade` nas FKs definidas nas migrations do Supabase.

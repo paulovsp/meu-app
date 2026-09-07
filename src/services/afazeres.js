@@ -11,8 +11,8 @@ import { tinta, semantica, acento } from '../theme';
  */
 export const TAMANHOS_AFAZER = {
   p: { fontSize: 13, lineHeight: 20 },
-  m: { fontSize: 15, lineHeight: 23 },
-  g: { fontSize: 18, lineHeight: 26 },
+  m: { fontSize: 14, lineHeight: 21 },
+  g: { fontSize: 15, lineHeight: 22 },
 };
 
 export const CORES_AFAZER = {

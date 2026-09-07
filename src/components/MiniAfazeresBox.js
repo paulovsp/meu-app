@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { papel, tinta, salvia } from '../theme';
-import { listarAfazeres } from '../services/afazeres';
+import { listarAfazeres, estiloDoAfazer } from '../services/afazeres';
 
 const COLORS = {
   surface: '#FFFFFF',
@@ -46,18 +46,20 @@ export default function MiniAfazeresBox({ navigation, altura }) {
           {visiveis.length === 0 ? (
             <Text style={s.vazio}>Nada pendente</Text>
           ) : (
-            // Item 4 (leva pós-v13): numberOfLines={1} cortava o texto do
-            // afazer mesmo quando sobrava espaço vertical abaixo — deixa
-            // até 2 linhas, e adjustsFontSizeToFit encolhe a fonte (até
-            // minimumFontScale) antes de cortar, pra caber por inteiro com
-            // mais destaque em vez de truncar cedo.
+            // O tamanho, o peso e a cor agora são escolha da pessoa, item a
+            // item (migration 0080) — então o widget mostra o que ela
+            // escolheu, e não uma versão neutra do mesmo texto.
+            //
+            // `adjustsFontSizeToFit` saiu junto: ele encolhia cada linha em
+            // função do PRÓPRIO texto, então a linha maior era só a de
+            // texto mais curto — ênfase por acaso. Com tamanho escolhido a
+            // dedo, isso passaria por cima da escolha. O que não couber em
+            // duas linhas é truncado, que é honesto num resumo de quatro.
             visiveis.map((item) => (
               <Text
                 key={item.id}
-                style={s.linha}
+                style={[s.linha, estiloDoAfazer(item)]}
                 numberOfLines={2}
-                adjustsFontSizeToFit
-                minimumFontScale={0.75}
               >
                 • {item.texto}
               </Text>
@@ -115,7 +117,7 @@ const s = StyleSheet.create({
   },
   header: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 10 },
   titulo: { fontSize: 13.5, fontWeight: '500', color: tinta.t900, lineHeight: 18 },
-  linha: { fontSize: 13, fontWeight: '400', color: tinta.t700, marginBottom: 7, lineHeight: 18 },
+  linha: { marginBottom: 7 },
   vazio: { fontSize: 13, color: tinta.t500, fontStyle: 'italic', lineHeight: 19 },
   maisTexto: { fontSize: 11.5, color: tinta.t400, marginTop: 'auto', fontWeight: '500', lineHeight: 16 },
 });

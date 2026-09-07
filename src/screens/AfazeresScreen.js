@@ -2,6 +2,7 @@ import React, { useState, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView,
   ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Animated, PanResponder,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -9,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import CabecalhoTela from '../components/CabecalhoTela';
 import {
   listarAfazeres, adicionarAfazer, alternarAfazer, removerAfazer, reordenarAfazeres,
+  editarAfazer, estiloDoAfazer, TAMANHOS_AFAZER, CORES_AFAZER,
 } from '../services/afazeres';
 import { mensagemDeErro } from '../services/erros';
 
@@ -32,6 +34,16 @@ export default function AfazeresScreen() {
   const [carregando, setCarregando] = useState(true);
   const [texto, setTexto] = useState('');
   const [adicionando, setAdicionando] = useState(false);
+
+  // ── Edição de um afazer ───────────────────────────────────────────────
+  // `editando` guarda o item aberto; os demais campos são o rascunho, pra
+  // que cancelar não deixe rastro no que estava gravado.
+  const [editando, setEditando] = useState(null);
+  const [rascunhoTexto, setRascunhoTexto] = useState('');
+  const [rascunhoTamanho, setRascunhoTamanho] = useState('m');
+  const [rascunhoNegrito, setRascunhoNegrito] = useState(false);
+  const [rascunhoCor, setRascunhoCor] = useState(null);
+  const [salvandoEdicao, setSalvandoEdicao] = useState(false);
 
   // ── Arraste ───────────────────────────────────────────────────────────
   // A linha arrastada flutua atrás do dedo e uma marca mostra onde ela vai
@@ -157,6 +169,45 @@ export default function AfazeresScreen() {
     });
   }
 
+  function abrirEdicao(item) {
+    setEditando(item);
+    setRascunhoTexto(item.texto);
+    setRascunhoTamanho(item.tamanho || 'm');
+    setRascunhoNegrito(!!item.negrito);
+    setRascunhoCor(item.cor || null);
+  }
+
+  async function salvarEdicao() {
+    const texto = rascunhoTexto.trim();
+    if (!texto) {
+      Alert.alert('Texto vazio', 'Escreva o afazer, ou apague-o pela lixeira se não quiser mais.');
+      return;
+    }
+    const alvo = editando;
+    const mudancas = {
+      texto,
+      tamanho: rascunhoTamanho,
+      negrito: rascunhoNegrito,
+      cor: rascunhoCor,
+    };
+
+    // Otimista: a lista já mostra o resultado enquanto grava. Se falhar,
+    // volta ao que era e diz — em vez de fingir que salvou.
+    const anterior = itensRef.current;
+    setItens((atual) => atual.map((i) => (i.id === alvo.id ? { ...i, ...mudancas } : i)));
+    setEditando(null);
+    alturas.current = [];
+    setSalvandoEdicao(true);
+    try {
+      await editarAfazer(alvo.id, mudancas);
+    } catch (err) {
+      setItens(anterior);
+      Alert.alert('Erro ao salvar', mensagemDeErro(err));
+    } finally {
+      setSalvandoEdicao(false);
+    }
+  }
+
   async function handleAdicionar() {
     if (!texto.trim()) return;
     setAdicionando(true);
@@ -236,7 +287,18 @@ export default function AfazeresScreen() {
             />
           </TouchableOpacity>
 
-          <Text style={[s.texto, item.concluido && s.textoConcluido]}>{item.texto}</Text>
+          {/* Tocar no texto abre a edição. É o gesto que a pessoa tenta
+              primeiro, e até aqui não fazia nada. */}
+          <TouchableOpacity
+            style={s.textoArea}
+            onPress={() => abrirEdicao(item)}
+            disabled={arrastandoIndex !== null}
+            activeOpacity={0.6}
+          >
+            <Text style={[s.texto, estiloDoAfazer(item), item.concluido && s.textoConcluido]}>
+              {item.texto}
+            </Text>
+          </TouchableOpacity>
 
           <TouchableOpacity
             style={s.removerBtn}
@@ -283,13 +345,130 @@ export default function AfazeresScreen() {
             ) : (
               <>
                 {itens.length > 1 && (
-                  <Text style={s.dica}>Arraste pela alça à direita para mudar a ordem.</Text>
+                  <Text style={s.dica}>
+                    Toque no texto para editar. Arraste pela alça à direita
+                    para mudar a ordem.
+                  </Text>
                 )}
                 {itens.map(renderLinha)}
               </>
             )}
           </ScrollView>
         )}
+
+        <Modal
+          visible={!!editando}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setEditando(null)}
+        >
+          <KeyboardAvoidingView
+            style={s.modalFundo}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <View style={s.modalCaixa}>
+              <Text style={s.modalTitulo}>Editar afazer</Text>
+
+              {/* O próprio campo é a prévia: o texto aparece já no tamanho,
+                  peso e cor escolhidos, enquanto se digita. Prévia separada
+                  seria uma segunda coisa pra manter em sincronia. */}
+              <TextInput
+                style={[
+                  s.modalInput,
+                  estiloDoAfazer({
+                    tamanho: rascunhoTamanho,
+                    negrito: rascunhoNegrito,
+                    cor: rascunhoCor,
+                  }),
+                ]}
+                value={rascunhoTexto}
+                onChangeText={setRascunhoTexto}
+                multiline
+                autoFocus
+                placeholder="O que precisa ser feito"
+                placeholderTextColor="#A9A29A"
+              />
+
+              <Text style={s.modalRotulo}>Tamanho</Text>
+              <View style={s.modalLinha}>
+                {[['p', 'Pequeno'], ['m', 'Médio'], ['g', 'Grande']].map(([valor, label]) => (
+                  <TouchableOpacity
+                    key={valor}
+                    style={[s.opcao, rascunhoTamanho === valor && s.opcaoAtiva]}
+                    onPress={() => setRascunhoTamanho(valor)}
+                  >
+                    <Text
+                      style={[
+                        { fontSize: TAMANHOS_AFAZER[valor].fontSize },
+                        rascunhoTamanho === valor ? s.opcaoTextoAtivo : s.opcaoTexto,
+                      ]}
+                    >
+                      {label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={s.modalRotulo}>Destaque</Text>
+              <TouchableOpacity
+                style={[s.opcaoNegrito, rascunhoNegrito && s.opcaoAtiva]}
+                onPress={() => setRascunhoNegrito((v) => !v)}
+              >
+                <Text style={[
+                  s.negritoLetra,
+                  rascunhoNegrito ? s.opcaoTextoAtivo : s.opcaoTexto,
+                ]}>
+                  N
+                </Text>
+                <Text style={rascunhoNegrito ? s.opcaoTextoAtivo : s.opcaoTexto}>
+                  {rascunhoNegrito ? 'Negrito ligado' : 'Negrito'}
+                </Text>
+              </TouchableOpacity>
+
+              <Text style={s.modalRotulo}>Cor</Text>
+              <View style={s.modalLinhaCores}>
+                {/* Sem cor é uma escolha, e vem primeiro: a maioria dos
+                    afazeres não precisa de destaque nenhum. */}
+                <TouchableOpacity
+                  style={[s.corBolha, s.corPadrao, !rascunhoCor && s.corSelecionada]}
+                  onPress={() => setRascunhoCor(null)}
+                >
+                  {!rascunhoCor && <Ionicons name="checkmark" size={15} color="#FDFCFA" />}
+                </TouchableOpacity>
+                {Object.entries(CORES_AFAZER).map(([nome, { valor }]) => (
+                  <TouchableOpacity
+                    key={nome}
+                    style={[
+                      s.corBolha,
+                      { backgroundColor: valor },
+                      rascunhoCor === nome && s.corSelecionada,
+                    ]}
+                    onPress={() => setRascunhoCor(nome)}
+                  >
+                    {rascunhoCor === nome && <Ionicons name="checkmark" size={15} color="#FDFCFA" />}
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <View style={s.modalBotoes}>
+                <TouchableOpacity
+                  style={s.modalBtnSecundario}
+                  onPress={() => setEditando(null)}
+                  disabled={salvandoEdicao}
+                >
+                  <Text style={s.modalBtnSecundarioTxt}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[s.modalBtnPrincipal, salvandoEdicao && { opacity: 0.7 }]}
+                  onPress={salvarEdicao}
+                  disabled={salvandoEdicao}
+                >
+                  <Text style={s.modalBtnPrincipalTxt}>Salvar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
 
         <View style={s.addBar}>
           <TextInput
@@ -346,7 +525,56 @@ const s = StyleSheet.create({
     marginBottom: MARGEM_LINHA,
   },
   checkWrap: { padding: 2 },
-  texto: { flex: 1, fontSize: 15, color: COLORS.textDark, lineHeight: 22 },
+  textoArea: { flex: 1, paddingVertical: 2 },
+  texto: { color: COLORS.textDark },
+  modalFundo: {
+    flex: 1, backgroundColor: 'rgba(48,44,40,0.45)',
+    justifyContent: 'center', paddingHorizontal: 22,
+  },
+  modalCaixa: { backgroundColor: '#FFFDF9', borderRadius: 14, padding: 20 },
+  modalTitulo: { fontSize: 17, fontWeight: '600', color: '#302C28', lineHeight: 24, marginBottom: 14 },
+  modalInput: {
+    borderWidth: 1, borderColor: '#E0DAD1', borderRadius: 9,
+    paddingHorizontal: 12, paddingVertical: 10, backgroundColor: '#fff',
+    minHeight: 64, textAlignVertical: 'top',
+  },
+  modalRotulo: {
+    fontSize: 11, fontWeight: '500', letterSpacing: 1.5, textTransform: 'uppercase',
+    color: '#8C857B', lineHeight: 14, marginTop: 18, marginBottom: 8,
+  },
+  modalLinha: { flexDirection: 'row', gap: 8 },
+  modalLinhaCores: { flexDirection: 'row', gap: 10, alignItems: 'center' },
+  opcao: {
+    flex: 1, paddingVertical: 10, borderRadius: 9, alignItems: 'center',
+    justifyContent: 'center', borderWidth: 1, borderColor: '#E0DAD1',
+  },
+  opcaoNegrito: {
+    flexDirection: 'row', alignItems: 'center', gap: 9, alignSelf: 'flex-start',
+    paddingVertical: 10, paddingHorizontal: 16, borderRadius: 9,
+    borderWidth: 1, borderColor: '#E0DAD1',
+  },
+  negritoLetra: { fontSize: 16, fontWeight: '700' },
+  opcaoAtiva: { backgroundColor: COLORS.btnBlue, borderColor: COLORS.btnBlue },
+  opcaoTexto: { color: COLORS.textMid },
+  opcaoTextoAtivo: { color: '#FFFFFF', fontWeight: '500' },
+  corBolha: {
+    width: 34, height: 34, borderRadius: 17,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(48,44,40,0.12)',
+  },
+  corPadrao: { backgroundColor: '#4E4941' },
+  corSelecionada: { borderWidth: 2, borderColor: '#302C28' },
+  modalBotoes: { flexDirection: 'row', gap: 10, marginTop: 22 },
+  modalBtnSecundario: {
+    flex: 1, paddingVertical: 13, borderRadius: 10, alignItems: 'center',
+    borderWidth: 1, borderColor: '#D8D2C8',
+  },
+  modalBtnSecundarioTxt: { color: '#756E66', fontWeight: '500' },
+  modalBtnPrincipal: {
+    flex: 1, paddingVertical: 13, borderRadius: 10, alignItems: 'center',
+    backgroundColor: COLORS.btnBlue,
+  },
+  modalBtnPrincipalTxt: { color: '#fff', fontWeight: '500' },
   textoConcluido: { color: COLORS.textMid, textDecorationLine: 'line-through' },
   removerBtn: { padding: 4 },
   alca: { paddingVertical: 6, paddingLeft: 4, paddingRight: 2 },

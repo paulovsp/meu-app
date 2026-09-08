@@ -236,9 +236,14 @@ export default function NovaSessaoScreen() {
   useEffect(() => {
     if (!paciente) { setAutorizacaoStatus(null); return; }
     let ativo = true;
-    getStatusAutorizacao(paciente.id).then((autorizacao) => {
-      if (ativo) setAutorizacaoStatus(autorizacao?.status || null);
-    });
+    getStatusAutorizacao(paciente.id)
+      .then((autorizacao) => {
+        if (ativo) setAutorizacaoStatus(autorizacao?.status || null);
+      })
+      // Sem rede, o status fica desconhecido — e desconhecido já é tratado
+      // como "não autorizado" pela tela, que é o lado seguro. O que não
+      // pode é virar rejeição não tratada.
+      .catch(() => {});
     return () => { ativo = false; };
   }, [paciente]);
 

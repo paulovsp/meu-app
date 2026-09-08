@@ -26,7 +26,7 @@ import {
   ensureAppointmentsForDate,
   getOrCreateAppointmentForSlot,
   getHorariosLiberadosNoIntervalo,
-  temTranscricaoParaData,
+  temRelatoNaDataEmLote,
   slotAtivoNaData,
 } from '../services/database';
 import { formatarValorMoeda } from '../services/currency';
@@ -162,12 +162,11 @@ export default function AgendaScreen({ navigation }) {
         setAppointments(agendamentosDia || []);
         setLiberados(new Set((liberadosData || []).map((l) => `${l.date}|${l.start_time}`)));
 
+        // Uma consulta para o dia inteiro, não uma por analisante: a versão
+        // anterior baixava o histórico clínico completo de cada um só pra
+        // acender o indicador de "tem relato".
         const patientIdsUnicos = [...new Set(agendamentosDia.map((a) => a.patient_id).filter(Boolean))];
-        const mapa = {};
-        for (const patientId of patientIdsUnicos) {
-          mapa[patientId] = await temTranscricaoParaData(patientId, dataISO);
-        }
-        setTemTranscricaoMap(mapa);
+        setTemTranscricaoMap(await temRelatoNaDataEmLote(patientIdsUnicos, dataISO));
         return;
       }
 

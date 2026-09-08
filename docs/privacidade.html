@@ -260,7 +260,47 @@ anos</strong>. A exclusão da conta no Dr.Sig não
 suspende esse dever: exporte seus registros antes de excluir.
 </div>
 
-<h2>Segurança</h2>
+<h2>Permissões que o app pede no aparelho</h2>
+  <p>O Dr.Sig só pede o que usa, e cada permissão pode ser recusada — o que
+  desativa a função correspondente, não o app.</p>
+  <table>
+    <tr><th>Permissão</th><th>Para quê</th></tr>
+    <tr>
+      <td>Microfone</td>
+      <td>Gravar a sessão ou a aula, quando você inicia uma gravação. O app
+      nunca grava sozinho: a captação começa e termina por comando seu, e no
+      caso da sessão só depois da autorização confirmada do analisante.</td>
+    </tr>
+    <tr>
+      <td>Serviço em primeiro plano</td>
+      <td>Manter a gravação viva quando você bloqueia a tela ou abre outro
+      aplicativo. É o aviso que aparece na barra de notificações enquanto a
+      gravação corre — sem ele, o Android interrompe a captação.</td>
+    </tr>
+    <tr>
+      <td>Notificações</td>
+      <td>Avisar quando uma transcrição fica pronta, quando um pagamento
+      atrasa e quando há sessão a confirmar. Nunca carregam conteúdo
+      clínico.</td>
+    </tr>
+    <tr>
+      <td>Câmera e galeria de fotos</td>
+      <td>Fotografar ou escolher uma imagem para leitura de texto — o
+      documento na confirmação de autorização e o comprovante de pagamento.
+      Também para a foto de perfil e a de capa, se você quiser usá-las. As
+      imagens de documento e de comprovante passam apenas pela memória
+      durante o envio: não são salvas em disco, banco ou armazenamento.</td>
+    </tr>
+    <tr>
+      <td>Biometria (Face ID / impressão digital)</td>
+      <td>Entrar no app sem digitar e-mail e senha, se você ativar. A
+      verificação acontece no próprio aparelho, pelo sistema operacional: o
+      Dr.Sig recebe apenas "confirmado" ou "não confirmado", e em momento
+      algum tem acesso à sua digital ou ao seu rosto.</td>
+    </tr>
+  </table>
+
+  <h2>Segurança</h2>
 <p>
 Autenticação por e-mail e senha, com opção de biometria (Face ID / impressão digital);
 isolamento de dados por conta no próprio banco; conexão criptografada; chaves de API dos

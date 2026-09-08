@@ -149,7 +149,7 @@ export async function getResumoAgendaHoje() {
   const { supabase } = require('./supabase');
   const hoje = new Date();
   const diaSemana = hoje.getDay();
-  const hojeISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+  const hojeISO = dataParaISO(hoje);
   const horaAtual = `${String(hoje.getHours()).padStart(2, '0')}:${String(hoje.getMinutes()).padStart(2, '0')}`;
 
   const { data, error } = await supabase
@@ -1081,26 +1081,55 @@ export async function listarStatusSessoes() {
   const desde = new Date();
   desde.setDate(desde.getDate() - 90);
   const desdeISO = dataParaISO(desde);
+
   const { data, error } = await supabase
     .from('appointments')
     .select(
-      'id, date, start_time, status, patient_id, patients(nome), ' +
-      'sessions(id, transcript, transcricao_status), records(id, content)'
+      'id, date, start_time, status, patient_id, patients(nome), '
+      // `transcript` e `content` NÃO entram aqui de propósito. A versão
+      // anterior os trazia inteiros — 90 dias de transcrições completas —
+      // só para calcular dois booleanos por linha. Numa agenda cheia isso
+      // são megabytes de texto clínico atravessando a rede toda vez que o
+      // Perfil abre, e cresce a cada mês de uso.
+      //
+      // `transcricao_status` fica: é um rótulo curto, e a tela precisa dele.
+      + 'sessions(id, transcricao_status)'
     )
     .neq('status', 'agendado')
     .gte('date', desdeISO)
     .order('date', { ascending: false })
     .order('start_time', { ascending: false });
   if (error) throw error;
-  return (data || []).map((a) => {
+
+  const linhas = data || [];
+  const ids = linhas.map((a) => a.id);
+
+  // "Tem conteúdo?" resolvido no servidor, por filtro: só o vínculo volta,
+  // nunca o texto.
+  const comConteudo = async (tabela, coluna) => {
+    if (ids.length === 0) return new Set();
+    const { data: achados } = await supabase
+      .from(tabela)
+      .select('appointment_id')
+      .in('appointment_id', ids)
+      .not(coluna, 'is', null)
+      .neq(coluna, '');
+    return new Set((achados || []).map((r) => r.appointment_id));
+  };
+
+  const [comTranscricao, comRegistro] = await Promise.all([
+    comConteudo('sessions', 'transcript'),
+    comConteudo('records', 'content'),
+  ]);
+
+  return linhas.map((a) => {
     const sessao = Array.isArray(a.sessions) ? a.sessions[0] : a.sessions;
-    const registros = Array.isArray(a.records) ? a.records : (a.records ? [a.records] : []);
-    // "Tem relato" agora aceita as duas formas: gravação de áudio
-    // transcrita (`sessions.transcript`) OU registro escrito manualmente em
-    // Novo Registro (tipo "Sessão"), vinculado via `records.appointment_id`
+    // "Tem relato" aceita as duas formas: gravação de áudio transcrita
+    // (`sessions.transcript`) OU registro escrito manualmente em Novo
+    // Registro (tipo "Sessão"), vinculado via `records.appointment_id`
     // (migration 0046) — antes só a primeira contava.
-    const temTranscricao = !!(sessao?.transcript || '').trim();
-    const temRegistro = registros.some((r) => !!(r.content || '').trim());
+    const temTranscricao = comTranscricao.has(a.id);
+    const temRegistro = comRegistro.has(a.id);
     return {
       appointmentId: a.id,
       date: a.date,
@@ -1472,14 +1501,56 @@ export async function getAvailabilitySlotByDayAndTime(dayOfWeek, startTime) {
 // então um registro escrito não tirava o aviso "⚠ Nenhum relato..." do
 // DetalheCompromissoScreen nem o indicador da Agenda.
 export async function temTranscricaoParaData(patientId, dataISO) {
-  const [sessoes, registros] = await Promise.all([getSessions(patientId), getRecords(patientId)]);
-  const dataLocalDe = (dataStr) => {
-    const d = new Date(dataStr);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  };
-  const temSessao = sessoes.some((s) => !!(s.transcript || '').trim() && dataLocalDe(s.date) === dataISO);
-  const temRegistro = registros.some((r) => !!(r.content || '').trim() && dataLocalDe(r.date) === dataISO);
-  return temSessao || temRegistro;
+  const mapa = await temRelatoNaDataEmLote([patientId], dataISO);
+  return !!mapa[patientId];
+}
+
+/**
+ * Quais analisantes, entre os informados, já têm relato numa data.
+ *
+ * Existe porque a versão anterior fazia isto por analisante, e cada
+ * chamada baixava o histórico clínico INTEIRO da pessoa — `select('*')` em
+ * `sessions` e `records`, transcrições e registros completos — para
+ * calcular um booleano. Na visão diária da Agenda, com seis analisantes no
+ * dia, eram doze consultas trazendo megabytes de texto para acender seis
+ * indicadores. E piorava a cada mês de uso: o app rápido no primeiro mês
+ * ficaria arrastado no décimo, sem causa aparente.
+ *
+ * Agora são duas consultas para o dia inteiro, e nenhuma delas transporta
+ * o texto: o "tem conteúdo?" é resolvido no servidor por filtro, e só
+ * `patient_id` e `date` voltam.
+ *
+ * A data continua sendo comparada aqui, e não no filtro: `sessions.date` e
+ * `records.date` são timestamptz gravados em UTC, e o dia que interessa é
+ * o local de quem usa. A janela de ±1 dia no servidor é folgada de
+ * propósito — corta o histórico todo sem depender de fuso.
+ */
+export async function temRelatoNaDataEmLote(patientIds, dataISO) {
+  const ids = [...new Set((patientIds || []).filter(Boolean))];
+  if (ids.length === 0 || !dataISO) return {};
+
+  const { supabase } = require('./supabase');
+  const [ano, mes, dia] = dataISO.split('-').map(Number);
+  const inicio = new Date(ano, mes - 1, dia - 1).toISOString();
+  const fim = new Date(ano, mes - 1, dia + 2).toISOString();
+
+  const semTexto = (consulta, coluna) => consulta
+    .in('patient_id', ids)
+    .gte('date', inicio)
+    .lt('date', fim)
+    .not(coluna, 'is', null)
+    .neq(coluna, '');
+
+  const [{ data: sessoes }, { data: registros }] = await Promise.all([
+    semTexto(supabase.from('sessions').select('patient_id, date'), 'transcript'),
+    semTexto(supabase.from('records').select('patient_id, date'), 'content'),
+  ]);
+
+  const mapa = {};
+  for (const linha of [...(sessoes || []), ...(registros || [])]) {
+    if (dataParaISO(new Date(linha.date)) === dataISO) mapa[linha.patient_id] = true;
+  }
+  return mapa;
 }
 
 export async function getPatientById(patientId) {

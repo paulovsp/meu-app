@@ -1147,9 +1147,9 @@ Você pode bloquear a tela ou usar outros apps — a gravação continua.
 
           {!gravando && !transcrevendo && gravacaoAutorizada && (
             <TouchableOpacity
-              style={[s.btnImportar, preparando && { opacity: 0.7 }]}
+              style={[s.btnImportar, preparandoGravacao && { opacity: 0.7 }]}
               onPress={importarAudio}
-              disabled={preparando}
+              disabled={preparandoGravacao}
             >
               <Ionicons name="folder-open-outline" size={17} color="#497363" />
               <Text style={s.btnImportarTexto}>Transcrever um áudio já gravado</Text>

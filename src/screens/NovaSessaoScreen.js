@@ -853,6 +853,13 @@ Você pode fazer a sessão normalmente e gravar pelo aparelho, desde que a chama
   // desde maio de 2022). Quem consegue gravar e o discador do fabricante --
   // entao aqui o app pede o arquivo em vez de tentar gravar.
   const ehTelefone = isOnline && plataforma?.id === 'telefone';
+  // O WhatsApp e o oposto do telefone: aqui o gravador do fabricante nao
+  // serve (ele so alcanca a ligacao da operadora, nao chamada de VoIP), e
+  // gravacao de tela tambem nao -- o AudioPlaybackCapture so captura
+  // USAGE_MEDIA, USAGE_GAME e USAGE_UNKNOWN, e voz de chamada nao e nenhum
+  // dos tres. Sobra o segundo aparelho, e no WhatsApp ele e facil: o app do
+  // computador faz chamada de voz.
+  const ehWhatsapp = isOnline && plataforma?.id === 'whatsapp';
 
   // ── STEP 0: Selecionar paciente ───────────────────────────
   if (step === STEPS.SELECT_PATIENT) {
@@ -1079,6 +1086,13 @@ Nada é gravado por este aparelho, então não há risco de áudio mudo por disp
                 <Text style={s.infoStep}>Ao desligar, volte aqui e toque em <Text style={s.bold}>"Trazer a gravação da ligação"</Text>. O arquivo costuma ficar numa pasta chamada <Text style={s.bold}>Gravações de chamadas</Text>.</Text>
                 <Text style={s.infoStep}>Se o seu aparelho não grava ligações, faça a chamada em <Text style={s.bold}>outro aparelho</Text>, no alto-falante e perto deste, e use a gravação pelo microfone.</Text>
               </>
+            ) : ehWhatsapp ? (
+              <>
+                <Text style={s.infoStep}>Abra o <Text style={s.bold}>WhatsApp no computador</Text> — o aplicativo para Windows ou Mac, ou o web.whatsapp.com. É de lá que a chamada vai sair.</Text>
+                <Text style={s.infoStep}>Toque em <Text style={s.bold}>"Iniciar Gravação"</Text> aqui no celular.</Text>
+                <Text style={s.infoStep}>Ligue para {paciente?.nome} <Text style={s.bold}>pelo computador</Text>, com o som no alto-falante — <Text style={s.bold}>sem fone de ouvido</Text> — e este celular por perto: é por aí que a voz entra na gravação.</Text>
+                <Text style={s.infoStep}>Ao encerrar a chamada, <Text style={s.bold}>volte aqui</Text> e toque em <Text style={s.bold}>"Encerrar Sessão"</Text>.</Text>
+              </>
             ) : isOnline ? (
               <>
                 <Text style={s.infoStep}>Toque em <Text style={s.bold}>"Iniciar Gravação"</Text> abaixo.</Text>
@@ -1115,10 +1129,12 @@ Você pode bloquear a tela ou usar outros apps — a gravação continua.
                 </Text>
               </TouchableOpacity>
             )}
-            {/* Um aviso só, dizendo POR QUE os passos acima mandam a chamada
-                pra outro aparelho: o Android entrega o microfone pro app que
-                está em chamada e silencia o nosso — a gravação sai com a
-                duração certa e sem fala nenhuma. Não tem conserto pelo app. */}
+            {/* Por que os passos acima mandam a chamada pra outro aparelho:
+                o Android entrega o microfone pro app que está em chamada e
+                silencia o nosso, e a gravação sai com a duração certa e sem
+                fala nenhuma. O motivo muda por plataforma, e a saída
+                também, então cada uma diz a sua — um texto generico aqui
+                mandaria metade das pessoas procurar ajuste que não existe. */}
             {ehTelefone ? (
               <>
                 <View style={s.avisoMesmoAparelho}>
@@ -1138,6 +1154,24 @@ Você pode bloquear a tela ou usar outros apps — a gravação continua.
                   </Text>
                 </TouchableOpacity>
               </>
+            ) : ehWhatsapp ? (
+              <View style={s.avisoMesmoAparelho}>
+                <Text style={s.avisoMesmoAparelhoTexto}>
+                  A chamada não pode sair deste mesmo celular: o Android
+                  entrega o microfone ao WhatsApp e a gravação sai muda, com
+                  a duração certa e sem fala nenhuma.
+                  {'\n\n'}
+                  Dois caminhos que parecem resolver e não resolvem: o
+                  gravador de chamadas do seu aparelho só alcança a ligação
+                  comum, não a do WhatsApp; e a gravação de tela não captura
+                  a voz de uma chamada — o Android não deixa nenhum app
+                  chegar nesse áudio.
+                  {'\n\n'}
+                  Sem computador nem segundo aparelho, grave a conversa por
+                  fora e traga o arquivo em "Transcrever um áudio já
+                  gravado", aqui embaixo.
+                </Text>
+              </View>
             ) : isOnline ? (
               <View style={s.avisoMesmoAparelho}>
                 <Text style={s.avisoMesmoAparelhoTexto}>

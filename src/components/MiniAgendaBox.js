@@ -1,13 +1,11 @@
-import React, { useState, useCallback, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
+import {
+  View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, AppState,
+} from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import {
-  getAppointmentsByDate, ensureAppointmentsForDate, getAvailabilitySlots, slotAtivoNaData,
-} from '../services/database';
-import { corTipoEvento, ehTipoGrupo } from '../services/tiposEvento';
+import { getPreviaDaAgenda } from '../services/agendaResumo';
 import { papel, tinta, salvia } from '../theme';
-import { hojeISO } from '../services/validacao';
 
 const COLORS = {
   surface: papel.alto,
@@ -16,16 +14,6 @@ const COLORS = {
   textDark: tinta.t900,
   textMid: tinta.t500,
 };
-
-const COR_LIVRE = '#43A047';
-
-// Primeiro nome (ou o título/"Grupo") — o widget é estreito demais pro nome
-// inteiro.
-function nomeCurto({ tipo, patientNome, titulo, participantes }) {
-  if (tipo === 'outros') return (titulo || 'Outros').split(' ')[0];
-  if (ehTipoGrupo(tipo)) return participantes?.[0]?.nome?.split(' ')[0] || 'Grupo';
-  return (patientNome || 'Livre').split(' ')[0];
-}
 
 /**
  * Prévia do dia (verde = livre, cor do tipo de evento = ocupado), numa
@@ -38,79 +26,67 @@ function nomeCurto({ tipo, patientNome, titulo, participantes }) {
  * interativa da Agenda. Tocar em qualquer lugar do card leva só pra Agenda.
  */
 export default function MiniAgendaBox({ navigation, altura }) {
-  const [itens, setItens] = useState([]);
+  const [previa, setPrevia] = useState(null);
   const [carregando, setCarregando] = useState(true);
   // Sem isso, um toque duplo (comum quando a pessoa não vê nenhum sinal de
-  // que o primeiro toque "pegou" — exatamente o caso do carregando acima,
-  // antes de existir) podia disparar navigation.navigate('Agenda') mais de
-  // uma vez em sequência rápida, empilhando navegação por cima da própria
-  // transição ainda em andamento. Trava no primeiro toque; destrava quando
-  // a Início ganha foco de novo (voltando da Agenda).
+  // que o primeiro toque "pegou") podia disparar navigation.navigate mais
+  // de uma vez em sequência rápida, empilhando navegação por cima da
+  // própria transição. Trava no primeiro toque; destrava quando a Início
+  // ganha foco de novo.
   const navegandoRef = useRef(false);
+  const viradaRef = useRef(null);
+  const montadoRef = useRef(true);
+
+  const carregar = useCallback(async () => {
+    try {
+      const p = await getPreviaDaAgenda(new Date());
+      if (montadoRef.current) setPrevia(p);
+    } catch (_) {
+      if (montadoRef.current) setPrevia({ rotulo: 'Hoje', blocos: [] });
+    } finally {
+      if (montadoRef.current) setCarregando(false);
+    }
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
+      montadoRef.current = true;
       navegandoRef.current = false;
       setCarregando(true);
-      const hoje = new Date();
-      const diaSemana = hoje.getDay();
-      const dataISO = hojeISO();
-
-      // Item 3 (leva pós-v13): appointments só "nasce" quando o dia é
-      // aberto na Agenda de verdade (mesmo gatilho que AgendaScreen.js usa
-      // na visão diária) — sem chamar isso aqui, um dia nunca visitado na
-      // Agenda aparecia vazio no widget mesmo tendo horário marcado.
-      Promise.all([
-        ensureAppointmentsForDate(dataISO, diaSemana).then(() => getAppointmentsByDate(dataISO)),
-        getAvailabilitySlots(),
-      ])
-        .then(([compromissosDia, slots]) => {
-          const compromissos = (compromissosDia || []).filter((c) => c.status !== 'cancelado');
-          const slotsHoje = (slots || []).filter(
-            (s) => s.day_of_week === diaSemana && slotAtivoNaData(s, dataISO)
-          );
-
-          const horariosComSlot = new Set();
-          const lista = [];
-
-          for (const slot of slotsHoje) {
-            const compromisso = compromissos.find((c) => c.start_time === slot.start_time);
-            horariosComSlot.add(slot.start_time);
-            const tipo = compromisso?.tipo || slot.tipo || 'sessao_individual';
-            const ocupado = !!compromisso || !!slot.patient_id || tipo === 'outros' || ehTipoGrupo(tipo);
-            lista.push({
-              key: `slot-${slot.id}`,
-              startTime: slot.start_time,
-              cor: ocupado ? corTipoEvento(tipo) : COR_LIVRE,
-              nome: nomeCurto({
-                tipo,
-                patientNome: compromisso?.patient_nome || slot.patient_name,
-                titulo: compromisso?.titulo || slot.titulo,
-                participantes: compromisso?.participantes || slot.participantes,
-              }),
-            });
-          }
-
-          // Compromissos avulsos (sem horário recorrente por trás) não
-          // aparecem no loop acima — entram à parte, como a Agenda também
-          // faz (renderAgendamentosSemSlot).
-          for (const c of compromissos) {
-            if (horariosComSlot.has(c.start_time)) continue;
-            lista.push({
-              key: `compromisso-${c.id}`,
-              startTime: c.start_time,
-              cor: corTipoEvento(c.tipo),
-              nome: nomeCurto({ tipo: c.tipo, patientNome: c.patient_nome, titulo: c.titulo, participantes: c.participantes }),
-            });
-          }
-
-          lista.sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
-          setItens(lista);
-        })
-        .catch(() => setItens([]))
-        .finally(() => setCarregando(false));
-    }, [])
+      carregar();
+      return () => { montadoRef.current = false; };
+    }, [carregar])
   );
+
+  // Duas coisas mantêm a prévia viva sem ficar consultando à toa:
+  //
+  // 1. Voltar do segundo plano. O celular passa a noite guardado; ao ser
+  //    desbloqueado de manhã, o dia mudou e a prévia precisa mudar junto.
+  //
+  // 2. Um despertador para o instante EXATO da virada — uma hora depois do
+  //    fim do último compromisso. Melhor que perguntar de minuto em minuto:
+  //    dispara uma vez, na hora certa, e só se a tela estiver aberta.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (estado) => {
+      if (estado === 'active') carregar();
+    });
+    return () => sub.remove();
+  }, [carregar]);
+
+  useEffect(() => {
+    clearTimeout(viradaRef.current);
+    const quando = previa?.viradaEm;
+    if (!quando) return undefined;
+    const faltam = new Date(quando).getTime() - Date.now();
+    // `setTimeout` acima de ~24 dias estoura o limite de 32 bits e dispara
+    // na hora; a virada é sempre no mesmo dia, mas o limite fica explícito.
+    if (faltam <= 0 || faltam > 86400000) return undefined;
+    viradaRef.current = setTimeout(carregar, faltam + 1000);
+    return () => clearTimeout(viradaRef.current);
+  }, [previa?.viradaEm, carregar]);
+
+  const itens = previa?.blocos || [];
+  const rotulo = previa?.rotulo || 'Hoje';
 
   function abrirAgenda() {
     if (navegandoRef.current) return;
@@ -127,16 +103,18 @@ export default function MiniAgendaBox({ navigation, altura }) {
           <View style={[s.caixa, altura ? { height: altura } : null]}>
             <View style={s.header}>
               <Ionicons name="calendar-outline" size={16} color={salvia.tinta} />
-              {/* Só "Agenda": o widget é estreito e "Agenda de hoje" era
-                  cortado no meio da palavra em telas menores. */}
               <Text style={s.titulo} numberOfLines={1}>Agenda</Text>
+              {/* O dia mostrado nem sempre é hoje — depois do último
+                  compromisso a prévia salta pro próximo dia com algo. Sem
+                  dizer qual é, a informação vira adivinhação. */}
+              {!carregando && <Text style={s.rotuloDia} numberOfLines={1}>{rotulo}</Text>}
               {carregando && (
                 <ActivityIndicator size="small" color={salvia.tinta} style={s.spinner} />
               )}
             </View>
 
             {carregando && itens.length === 0 ? null : itens.length === 0 ? (
-              <Text style={s.vazio}>Nenhum horário hoje</Text>
+              <Text style={s.vazio}>Nada marcado nas próximas semanas</Text>
             ) : (
               // Barras finas, uma abaixo da outra, dividindo a altura
               // disponível — todas cabem sem rolar, com qualquer quantidade
@@ -202,6 +180,10 @@ const s = StyleSheet.create({
     minHeight: 150,
   },
   header: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 10 },
+  rotuloDia: {
+    fontSize: 11.5, fontWeight: '600', color: tinta.t500, lineHeight: 15,
+    marginLeft: 'auto', letterSpacing: 0.2,
+  },
   titulo: { fontSize: 13.5, fontWeight: '500', color: COLORS.textDark, lineHeight: 18 },
   spinner: { marginLeft: 'auto' },
   vazio: { fontSize: 13, color: COLORS.textMid, fontStyle: 'italic', lineHeight: 19 },

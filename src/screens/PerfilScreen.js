@@ -19,6 +19,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { validarCPF, dataBRParaISO, dataISOParaBR } from '../services/validacao';
 import TelefoneInput from '../components/TelefoneInput';
 import { mensagemDeErro } from '../services/erros';
+import { getStatusAssinatura, reenviarInstrucoesDePlano } from '../services/assinatura';
+import Constants from 'expo-constants';
 import { enviarFotoPerfil, enviarFotoCapa } from '../services/avatar';
 import { exportarDadosUsuario } from '../services/exportacaoDados';
 import {
@@ -41,11 +43,111 @@ function formatarMoedaInteira(valor) {
   });
 }
 
+/**
+ * O estado da assinatura, dito em português.
+ *
+ * Deliberadamente sem preço, sem link de pagamento e sem instrução de
+ * compra: a política do Google Play proíbe isso nas telas do app. Dizer em
+ * que situação a conta está NÃO é instrução de pagamento — é informação de
+ * conta, e é justamente o que faltava. O caminho para pagar continua sendo
+ * o e-mail, e o botão aqui só faz esse e-mail chegar de novo.
+ */
+function CartaoDoPlano({ assinatura, reenviando, onPedirInstrucoes }) {
+  if (!assinatura) {
+    return (
+      <View style={st.planoBox}>
+        <ActivityIndicator color="#497363" />
+      </View>
+    );
+  }
+
+  const { situacao, planoLabel, expiraEm, diasRestantes, cortesia, email } = assinatura;
+
+  const ATIVO = { fundo: '#E2EFE8', borda: '#CBE0D3', tinta: '#44745B' };
+  const AVISO = { fundo: '#F2E9DC', borda: '#E3D5BC', tinta: '#7D6540' };
+  const PARADO = { fundo: '#F1E4E3', borda: '#E3C9C7', tinta: '#975451' };
+  const NEUTRO = { fundo: '#F1EDE5', borda: '#EAE5DC', tinta: '#756E66' };
+
+  const emDias = (n) => (n === 0 ? 'hoje' : n === 1 ? 'amanhã' : `em ${n} dias`);
+
+  const mapa = {
+    ativa: {
+      cor: ATIVO,
+      titulo: cortesia ? 'Acesso liberado' : `Plano ${planoLabel || 'ativo'}`,
+      texto: expiraEm
+        ? `Tudo liberado. Renova ${emDias(diasRestantes)}, em ${dataISOParaBR(expiraEm.slice(0, 10))}.`
+        : 'Tudo liberado.',
+    },
+    vencendo: {
+      cor: AVISO,
+      titulo: `Seu plano vence ${emDias(diasRestantes)}`,
+      texto: 'Depois disso o app deixa de permitir novos registros, sessões e cadastros. O que já está salvo continua seu, e a exportação dos dados continua liberada.',
+    },
+    inadimplente: {
+      cor: AVISO,
+      titulo: 'Pagamento não confirmado',
+      texto: 'Ainda não recebemos a confirmação da última cobrança. O acesso segue por alguns dias enquanto isso se resolve.',
+    },
+    cancelada: {
+      cor: AVISO,
+      titulo: 'Plano cancelado',
+      texto: expiraEm
+        ? `Sem renovação automática. O acesso vale até ${dataISOParaBR(expiraEm.slice(0, 10))}.`
+        : 'Sem renovação automática.',
+    },
+    expirada: {
+      cor: PARADO,
+      titulo: 'Seu plano venceu',
+      texto: 'Criar sessões, registros e cadastros está bloqueado. Nada foi apagado: tudo que você já registrou continua aqui, e você pode exportar seus dados quando quiser.',
+    },
+    nenhuma: {
+      cor: PARADO,
+      titulo: 'Nenhum plano ativo',
+      texto: 'Você pode navegar e ver o que já existe, mas criar sessões, registros e cadastros está bloqueado até escolher um plano.',
+    },
+    indefinida: {
+      cor: NEUTRO,
+      titulo: 'Não deu para conferir agora',
+      texto: 'Sem conexão com o servidor. Isso não afeta seu acesso — é só esta consulta.',
+    },
+  };
+
+  const info = mapa[situacao] || mapa.indefinida;
+  const precisaDoLink = situacao === 'nenhuma' || situacao === 'expirada' || situacao === 'vencendo';
+
+  return (
+    <View style={[st.planoBox, { backgroundColor: info.cor.fundo, borderColor: info.cor.borda }]}>
+      <Text style={[st.planoTitulo, { color: info.cor.tinta }]}>{info.titulo}</Text>
+      <Text style={st.planoTexto}>{info.texto}</Text>
+
+      {precisaDoLink && (
+        <>
+          <TouchableOpacity
+            style={[st.planoBtn, reenviando && { opacity: 0.7 }]}
+            onPress={onPedirInstrucoes}
+            disabled={reenviando}
+          >
+            {reenviando
+              ? <ActivityIndicator size="small" color="#FFFFFF" />
+              : <Text style={st.planoBtnTexto}>Receber o link por e-mail</Text>}
+          </TouchableOpacity>
+          {!!email && (
+            <Text style={st.planoRodape}>Vai para {email}.</Text>
+          )}
+        </>
+      )}
+    </View>
+  );
+}
+
 export default function PerfilScreen({ navigation }) {
   const { session, sairLocalmente } = useAuth();
   const [user, setUser] = useState(null);
   const [carregando, setCarregando] = useState(true);
   const [plano, setPlano] = useState(null);
+  // Situação da assinatura — o app nunca mostrou isso em lugar nenhum.
+  const [assinatura, setAssinatura] = useState(null);
+  const [reenviando, setReenviando] = useState(false);
   const [estatisticas, setEstatisticas] = useState({
     precoMedio: 0, totalAnalisantes: 0, totalSupervisionandos: 0, sessoesSemRelato: 0,
     pagamentosRecebidos: 0, pagamentosTotal: 0, pagamentosStatusCor: 'verde',
@@ -147,6 +249,8 @@ export default function PerfilScreen({ navigation }) {
 
       // Checagem silenciosa de renovação mensal de créditos — se houver
       // renovação pendente, já reflete o saldo/data novos sem recarregar tudo.
+      getStatusAssinatura().then(setAssinatura).catch(() => {});
+
       chamarRenovarCreditos()
         .then((resultado) => {
           if (resultado?.renovado) {
@@ -210,6 +314,22 @@ export default function PerfilScreen({ navigation }) {
       carregar();
     }, [carregar])
   );
+
+  async function pedirInstrucoesDePlano() {
+    setReenviando(true);
+    try {
+      const r = await reenviarInstrucoesDePlano();
+      Alert.alert(
+        'E-mail enviado',
+        `Mandamos o link para escolher seu plano em ${r?.email || 'seu e-mail'}.`
+        + '\n\nEle vale por 1 hora. Confira também a caixa de spam.'
+      );
+    } catch (e) {
+      Alert.alert('Não foi possível enviar', mensagemDeErro(e));
+    } finally {
+      setReenviando(false);
+    }
+  }
 
   async function iniciarCheckoutCreditos(valorBRL) {
     setAbrindoCheckout(true);
@@ -902,22 +1022,39 @@ export default function PerfilScreen({ navigation }) {
               <Text style={st.mensagensLinkText}>Mensagens personalizadas</Text>
             </TouchableOpacity>
 
-            <Text style={st.sectionTitle}>Assinatura</Text>
+            {/* "Assinatura" nesta tela significava duas coisas diferentes:
+                a rubrica desenhada e o plano pago. Cada uma tem nome
+                próprio agora. */}
+            <Text style={st.sectionTitle}>Sua rubrica</Text>
+            <Text style={st.sectionAjuda}>
+              Usada nos recibos e documentos que o app gera.
+            </Text>
             <View style={st.assinaturaBox}>
               {user.assinatura ? (
                 <Image source={{ uri: user.assinatura }} style={st.assinaturaImg} resizeMode="contain" />
               ) : (
-                <Text style={st.assinaturaVazia}>Nenhuma assinatura salva</Text>
+                <Text style={st.assinaturaVazia}>Nenhuma rubrica salva</Text>
               )}
               <TouchableOpacity
                 style={st.assinaturaBtn}
                 onPress={() => navigation.navigate('Assinatura')}
               >
                 <Text style={st.assinaturaBtnTexto}>
-                  {user.assinatura ? 'Editar assinatura' : 'Desenhar assinatura'}
+                  {user.assinatura ? 'Editar rubrica' : 'Desenhar rubrica'}
                 </Text>
               </TouchableOpacity>
             </View>
+
+            {/* O PLANO vem antes dos créditos de propósito: é ele que
+                libera o app. Até aqui não aparecia em lugar nenhum — quem
+                estava sem plano só descobria ao ser barrado, e quem estava
+                prestes a vencer não descobria nunca. */}
+            <Text style={st.sectionTitle}>Seu plano</Text>
+            <CartaoDoPlano
+              assinatura={assinatura}
+              reenviando={reenviando}
+              onPedirInstrucoes={pedirInstrucoesDePlano}
+            />
 
             <Text style={st.sectionTitle}>Créditos de IA</Text>
             <View style={st.infoRow}>
@@ -934,7 +1071,7 @@ export default function PerfilScreen({ navigation }) {
 
             <View style={st.creditosDetalheBox}>
               <View style={st.infoRow}>
-                <Text style={st.infoLabel}>Plano</Text>
+                <Text style={st.infoLabel}>Plano de créditos</Text>
                 <Text style={st.infoValue}>{PLANO_LABEL[user.plano_ia] || 'Nenhum plano definido'}</Text>
               </View>
               <View style={st.infoRow}>
@@ -1178,6 +1315,18 @@ export default function PerfilScreen({ navigation }) {
                 <Text style={st.excluirContaBtnText}>Excluir minha conta</Text>
               )}
             </TouchableOpacity>
+
+            {/* A versão, no rodapé, onde todo app a coloca. Não é enfeite:
+                é a primeira pergunta de qualquer suporte, e desde que o app
+                recebe correções por atualização automática, a versão da loja
+                deixou de contar a história inteira — daí o número do pacote
+                junto. */}
+            <Text style={st.versaoTexto}>
+              Dr.Sig {Constants.expoConfig?.version || ''}
+              {Constants.expoConfig?.android?.versionCode
+                ? ` (${Constants.expoConfig.android.versionCode})`
+                : ''}
+            </Text>
           </>
         )}
       </ScrollView>
@@ -1444,6 +1593,19 @@ const st = StyleSheet.create({
   },
 
   // Assinatura
+  sectionAjuda: { fontSize: 12.5, color: '#8C857B', lineHeight: 18, marginTop: -6, marginBottom: 10 },
+  planoBox: {
+    borderRadius: 12, borderWidth: 1, padding: 15, marginBottom: 6,
+    minHeight: 70, justifyContent: 'center',
+  },
+  planoTitulo: { fontSize: 15.5, fontWeight: '600', lineHeight: 22, marginBottom: 6 },
+  planoTexto: { fontSize: 13.5, color: '#4E4941', lineHeight: 20 },
+  planoBtn: {
+    marginTop: 14, backgroundColor: '#497363', borderRadius: 10,
+    paddingVertical: 12, alignItems: 'center',
+  },
+  planoBtnTexto: { color: '#FFFFFF', fontWeight: '500', fontSize: 14.5, lineHeight: 21 },
+  planoRodape: { fontSize: 12, color: '#756E66', lineHeight: 17, marginTop: 8, textAlign: 'center' },
   assinaturaBox: {
     backgroundColor: '#FDFCFA', borderRadius: 14, padding: 14,
     borderWidth: 1, borderColor: '#EAE5DC', alignItems: 'center', gap: 10,
@@ -1474,6 +1636,7 @@ const st = StyleSheet.create({
   },
   exportarBtnText: { fontSize: 14, color: '#497363', fontWeight: '500', lineHeight: 20 },
   excluirContaBtn: { alignItems: 'center', marginTop: 16, paddingBottom: 8 },
+  versaoTexto: { fontSize: 11.5, color: '#A9A299', textAlign: 'center', marginTop: 18, lineHeight: 16 },
   excluirContaBtnText: { fontSize: 12, color: '#8C857B', fontWeight: '600', textDecorationLine: 'underline', lineHeight: 17 },
 
   // Edit mode

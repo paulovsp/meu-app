@@ -1,0 +1,120 @@
+// Edge Function: reenviar-instrucoes-plano
+//
+// O beco sem saída que esta função existe pra fechar: quem se cadastra e não
+// escolhe um plano na hora fica com a conta em `sem_assinatura`. O app então
+// recusa toda criação — sessão, registro, analisante — com um aviso dizendo
+// que "enviamos um e-mail com os próximos passos". Se esse e-mail foi
+// perdido, apagado ou nunca chegou, não havia NADA a fazer dentro do app: o
+// aviso apontava pra uma mensagem que a pessoa não tem mais.
+//
+// Aqui ela pede o e-mail de novo, do próprio app, e ele chega na hora.
+//
+// O link precisa carregar um token de acesso: a página de planos
+// (docs/escolher-plano.html) lê `#access_token=` do fragmento pra chamar o
+// checkout autenticado. Por isso um magic link do próprio Supabase, gerado
+// no servidor — não dá pra montar isso no cliente sem expor a service role.
+//
+// JWT normal: quem pede é a própria dona da conta, autenticada no app.
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
+const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
+const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!;
+
+const PAGINA_PLANOS = 'https://app.drsig.com.br/escolher-plano.html';
+
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'content-type, authorization, apikey',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json', ...CORS },
+  });
+}
+
+async function enviarEmail(to: string, subject: string, html: string) {
+  const resp = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ from: 'Dr.Sig <naoresponda@drsig.com.br>', to: [to], subject, html }),
+  });
+  if (!resp.ok) throw new Error(`Falha ao enviar e-mail: ${await resp.text()}`);
+}
+
+function corpo(nome: string, link: string) {
+  const saudacao = nome ? `Olá, ${nome}!` : 'Olá!';
+  return `
+    <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #302C28; line-height: 1.55;">
+      <p style="font-size:22px;font-weight:800;font-style:italic;color:#3A5C4F;margin:0 0 4px;">Dr.Sig</p>
+      <p style="font-size:11px;font-weight:700;color:#6B9E8A;letter-spacing:1.5px;text-transform:uppercase;margin:0 0 24px;">O seu assistente clínico</p>
+
+      <h1 style="font-size:20px;margin:0 0 14px;">${saudacao}</h1>
+      <p>Você pediu, pelo app, o link para escolher seu plano. É este:</p>
+
+      <p style="margin:26px 0;">
+        <a href="${link}" style="background:#497363;color:#fff;padding:14px 26px;border-radius:10px;text-decoration:none;display:inline-block;font-weight:700;font-size:15px;">Escolher meu plano</a>
+      </p>
+
+      <p style="font-size:13.5px;color:#756E66;">O link vale por 1 hora e só pode ser usado uma vez. Se expirar, é só pedir outro pelo app, em Meu Perfil.</p>
+      <p style="font-size:13.5px;color:#756E66;">Assim que o pagamento for confirmado, o acesso é liberado sozinho — basta abrir o app de novo.</p>
+
+      <p style="color:#A9A299;font-size:12px;margin-top:28px;">Se não foi você que pediu, ignore este e-mail: nada acontece sem que o link seja aberto.</p>
+    </div>
+  `;
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
+  if (req.method !== 'POST') return json({ error: 'Método não permitido.' }, 405);
+
+  try {
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) return json({ error: 'Não autenticado.' }, 401);
+
+    const supabaseUser = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: userData } = await supabaseUser.auth.getUser();
+    const email = userData?.user?.email;
+    if (!email) return json({ error: 'Sessão inválida.' }, 401);
+
+    const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+
+    const { data: perfil } = await admin
+      .from('profiles')
+      .select('nome')
+      .eq('id', userData.user.id)
+      .maybeSingle();
+
+    // `magiclink` e não `signup`: a conta já está confirmada. O que se quer
+    // é um token de acesso válido chegando na página de planos.
+    const { data: linkData, error: erroLink } = await admin.auth.admin.generateLink({
+      type: 'magiclink',
+      email,
+      options: { redirectTo: PAGINA_PLANOS },
+    });
+    if (erroLink || !linkData?.properties?.action_link) {
+      return json({ error: 'Não foi possível gerar o link. Tente de novo em instantes.' }, 502);
+    }
+
+    await enviarEmail(
+      email,
+      'Dr.Sig — o link para escolher seu plano',
+      corpo(perfil?.nome || '', linkData.properties.action_link),
+    );
+
+    // Devolve o e-mail pra tela poder dizer PARA ONDE mandou — a dúvida
+    // mais comum de quem não recebe é se foi pro endereço certo.
+    return json({ ok: true, email });
+  } catch (err) {
+    return json({ error: String((err as Error)?.message || err) }, 500);
+  }
+});

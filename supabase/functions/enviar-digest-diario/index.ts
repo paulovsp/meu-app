@@ -146,10 +146,10 @@ function montarHtml(
     );
   }
   return `
-    <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1A1A2E;">
+    <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #302C28;">
       <h2>Seu resumo diário — Dr.Sig</h2>
       ${partes.join('')}
-      <p><a href="https://drsig.com.br" style="color:#3D5A80;">Abra o app pra ver os detalhes.</a></p>
+      <p><a href="https://drsig.com.br" style="color:#3A5C4F;">Abra o app pra ver os detalhes.</a></p>
     </div>
   `;
 }

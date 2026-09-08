@@ -94,12 +94,12 @@ Deno.serve(async (req) => {
         to: [email],
         subject: `${nomePsicanalista} está pedindo sua autorização`,
         html: `
-          <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1A1A2E;">
+          <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #302C28;">
             <h2>Autorização de gravação e transcrição</h2>
             <p>Olá, ${primeiroNome}.</p>
             <p><strong>${nomePsicanalista}</strong> está pedindo sua autorização para gravar em áudio e transcrever suas sessões, como parte do seu acompanhamento clínico.</p>
             <p>Clique no link abaixo e escolha se autoriza ou não. Se autorizar, vamos pedir uma foto de um documento com foto (RG, CNH ou passaporte) só pra confirmar que é você — a foto não fica guardada, é usada apenas nessa conferência.</p>
-            <p><a href="${linkConfirmacao}" style="background:#3D5A80;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;display:inline-block;">Responder à solicitação</a></p>
+            <p><a href="${linkConfirmacao}" style="background:#3A5C4F;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;display:inline-block;">Responder à solicitação</a></p>
             <p style="color:#888;font-size:12px;">Se você não é ${primeiroNome} ou não reconhece essa solicitação, ignore este e-mail. O link expira em 48 horas.</p>
           </div>
         `,

@@ -21,7 +21,10 @@ export const TIPOS_EVENTO = [
   },
   {
     valor: 'outros', label: 'Outros', labelCurto: 'Outros',
-    cor: '#3D5A80', grupo: false, temPaciente: false,
+    // Era o azul aposentado da marca antiga (#3D5A80) — o único lugar do
+    // app onde ele ainda pintava algo. Agora é a tinta semântica de
+    // informação do tema, que é a cor do que não é sessão nem supervisão.
+    cor: '#4D6B88', grupo: false, temPaciente: false,
   },
 ];
 

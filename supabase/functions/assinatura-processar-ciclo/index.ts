@@ -112,13 +112,13 @@ async function enviarAvisoRenovacao(email: string, nome: string, plano: string, 
       to: [email],
       subject: 'Sua assinatura do Dr.Sig precisa ser confirmada',
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1A1A2E;">
+        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #302C28;">
           <h2>Seu ciclo ${plano} terminou</h2>
           <p>Olá, ${nome || ''}.</p>
           <p>O período do seu plano ${plano} do Dr.Sig chegou ao fim. Não conseguimos renovar automaticamente
           — confirme sua assinatura mensal, mantendo o valor com desconto de <strong>${formatarMoedaBRL(valorMensal)}/mês</strong>
           (em vez do valor cheio):</p>
-          <p><a href="${CHECKOUT_URL}" style="background:#3D5A80;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;display:inline-block;">Confirmar assinatura</a></p>
+          <p><a href="${CHECKOUT_URL}" style="background:#3A5C4F;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;display:inline-block;">Confirmar assinatura</a></p>
           <p style="color:#888;font-size:12px;">Seu acesso continua ativo por ${CARENCIA_DIAS} dias. Depois disso, sem confirmação, a conta fica sem assinatura ativa — seus dados continuam guardados e você pode retomar quando quiser.</p>
         </div>
       `,

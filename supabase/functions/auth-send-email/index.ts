@@ -103,7 +103,7 @@ function montarLinkConfirmacaoCadastro(tokenHash: string) {
 
 function envelope(tituloInterno: string, corpoHtml: string) {
   return `
-    <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1A1A2E;">
+    <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #302C28;">
       <h2>${tituloInterno}</h2>
       ${corpoHtml}
       <p style="color:#888;font-size:12px;">Se você não reconhece essa solicitação, ignore este e-mail.</p>
@@ -144,14 +144,14 @@ Deno.serve(async (req) => {
       const saudacao = nome ? `Olá, ${nome}!` : 'Olá!';
       subject = 'Bem-vindo(a) ao Dr.Sig — confirme seu cadastro';
       html = `
-        <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #1A1A2E; line-height: 1.55;">
-          <p style="font-size:22px;font-weight:800;font-style:italic;color:#3D5A80;margin:0 0 4px;">Dr.Sig</p>
-          <p style="font-size:11px;font-weight:700;color:#5B7FA6;letter-spacing:1.5px;text-transform:uppercase;margin:0 0 24px;">O seu assistente clínico</p>
+        <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #302C28; line-height: 1.55;">
+          <p style="font-size:22px;font-weight:800;font-style:italic;color:#3A5C4F;margin:0 0 4px;">Dr.Sig</p>
+          <p style="font-size:11px;font-weight:700;color:#6B9E8A;letter-spacing:1.5px;text-transform:uppercase;margin:0 0 24px;">O seu assistente clínico</p>
 
           <h1 style="font-size:20px;margin:0 0 14px;">${saudacao} Seja bem-vindo(a).</h1>
           <p>O Dr.Sig é o consultório digital de quem exerce psicoterapia: organiza a agenda, o prontuário e o financeiro do seu acompanhamento — inclusive de analisantes e supervisionandos — tudo em um único lugar, pensado pra sua rotina clínica.</p>
 
-          <h2 style="font-size:15px;color:#3D5A80;margin:26px 0 10px;">O que você pode fazer no app</h2>
+          <h2 style="font-size:15px;color:#3A5C4F;margin:26px 0 10px;">O que você pode fazer no app</h2>
           <ul style="padding-left:20px;margin:0 0 20px;font-size:14px;">
             <li><strong>Agenda</strong> — horários recorrentes, visão diária e semanal, com zoom pra ajustar o tamanho dos blocos.</li>
             <li><strong>Sessões e prontuário</strong> — registre atendimentos, grave e transcreva sessões automaticamente (com autorização do analisante) e edite anotações com formatação de texto.</li>
@@ -163,7 +163,7 @@ Deno.serve(async (req) => {
             <li><strong>Pagamentos</strong> — controle as despesas administrativas do seu próprio consultório.</li>
           </ul>
 
-          <h2 style="font-size:15px;color:#3D5A80;margin:26px 0 10px;">Planos, sem fidelidade</h2>
+          <h2 style="font-size:15px;color:#3A5C4F;margin:26px 0 10px;">Planos, sem fidelidade</h2>
           <table style="width:100%;border-collapse:collapse;font-size:13.5px;margin-bottom:8px;">
             <tr style="background:#F5F7FA;">
               <td style="padding:8px 10px;border:1px solid #E2E6EC;"><strong>Mensal</strong></td>
@@ -181,11 +181,11 @@ Deno.serve(async (req) => {
           <p style="font-size:12.5px;color:#6B6860;">Cancele quando quiser, sem multa. Pagamento via Mercado Pago (cartão ou Pix).</p>
 
           <p style="text-align:center;margin:28px 0;">
-            <a href="${linkSignup}" style="background:#3D5A80;color:#fff;padding:14px 26px;border-radius:10px;text-decoration:none;display:inline-block;font-weight:700;font-size:15px;">Confirmar minha conta e ver os planos</a>
+            <a href="${linkSignup}" style="background:#3A5C4F;color:#fff;padding:14px 26px;border-radius:10px;text-decoration:none;display:inline-block;font-weight:700;font-size:15px;">Confirmar minha conta e ver os planos</a>
           </p>
           <p style="color:#888;font-size:12.5px;text-align:center;margin-top:-18px;">Esse link expira em algumas horas. Se você não criou essa conta, ignore este e-mail.</p>
 
-          <div style="background:#F5F7FA;border-left:3px solid #3D5A80;padding:14px 16px;border-radius:4px;margin:24px 0;">
+          <div style="background:#F5F7FA;border-left:3px solid #3A5C4F;padding:14px 16px;border-radius:4px;margin:24px 0;">
             <strong style="font-size:14px;">Quer conhecer o app na prática antes de decidir?</strong>
             <p style="margin:8px 0 0;font-size:13.5px;">
               Preparamos uma conta de demonstração já com analisantes, supervisionandos, agenda e sessões de exemplo —
@@ -197,18 +197,18 @@ Deno.serve(async (req) => {
             </p>
           </div>
 
-          <h2 style="font-size:15px;color:#3D5A80;margin:26px 0 10px;">Informações legais</h2>
+          <h2 style="font-size:15px;color:#3A5C4F;margin:26px 0 10px;">Informações legais</h2>
           <p style="font-size:12.5px;color:#6B6860;">
             O Dr.Sig é oferecido por <strong>Dr.Sig Soluções Digitais</strong> (Paulo Von Schwerin Pimentel LTDA,
             CNPJ 68.542.896/0001-74). Leia os
-            <a href="https://app.drsig.com.br/termos.html" style="color:#3D5A80;">Termos de Uso</a> e a
-            <a href="https://app.drsig.com.br/privacidade.html" style="color:#3D5A80;">Política de Privacidade</a>
+            <a href="https://app.drsig.com.br/termos.html" style="color:#3A5C4F;">Termos de Uso</a> e a
+            <a href="https://app.drsig.com.br/privacidade.html" style="color:#3A5C4F;">Política de Privacidade</a>
             antes de usar o app.
           </p>
 
           <p style="font-size:13.5px;margin-top:20px;">
-            Qualquer dúvida, fale com a gente: <a href="mailto:drsig@drsig.com.br" style="color:#3D5A80;">drsig@drsig.com.br</a><br/>
-            Saiba mais em: <a href="${SITE_URL}" style="color:#3D5A80;">drsig.com.br</a>
+            Qualquer dúvida, fale com a gente: <a href="mailto:drsig@drsig.com.br" style="color:#3A5C4F;">drsig@drsig.com.br</a><br/>
+            Saiba mais em: <a href="${SITE_URL}" style="color:#3A5C4F;">drsig.com.br</a>
           </p>
 
           <p style="margin-top:24px;font-style:italic;color:#6B6860;font-size:13px;">— Equipe Dr.Sig<br/>O consultório e a escuta, no mesmo lugar.</p>
@@ -220,7 +220,7 @@ Deno.serve(async (req) => {
         'Confirmação de novo e-mail',
         `
           <p>Falta pouco! Clique no link abaixo pra confirmar seu novo e-mail:</p>
-          <p><a href="${link}" style="background:#3D5A80;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;display:inline-block;">Confirmar</a></p>
+          <p><a href="${link}" style="background:#3A5C4F;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;display:inline-block;">Confirmar</a></p>
         `
       );
     } else if (tipo === 'recovery') {
@@ -229,7 +229,7 @@ Deno.serve(async (req) => {
         'Redefinir sua senha',
         `
           <p>Recebemos um pedido pra redefinir a senha da sua conta no Dr.Sig. Clique no link abaixo pra escolher uma nova senha:</p>
-          <p><a href="${link}" style="background:#3D5A80;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;display:inline-block;">Redefinir senha</a></p>
+          <p><a href="${link}" style="background:#3A5C4F;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;display:inline-block;">Redefinir senha</a></p>
         `
       );
     } else {
@@ -238,7 +238,7 @@ Deno.serve(async (req) => {
         'Confirmação necessária',
         `
           <p>Clique no link abaixo pra continuar:</p>
-          <p><a href="${link}" style="background:#3D5A80;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;display:inline-block;">Continuar</a></p>
+          <p><a href="${link}" style="background:#3A5C4F;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;display:inline-block;">Continuar</a></p>
         `
       );
     }

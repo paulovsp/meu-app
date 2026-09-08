@@ -14,7 +14,9 @@ import { mensagemDeErro } from '../services/erros';
 import MenuLateral from '../components/MenuLateral';
 import CabecalhoTela from '../components/CabecalhoTela';
 import { CLINICA_BUTTONS, ADMIN_BUTTONS } from '../constants/menuBotoes';
-import { hojeISO } from '../services/validacao';
+import {
+  hojeISO, dataISOParaBR, dataBRParaISO, mascararDataBR, interpretarDataDigitada,
+} from '../services/validacao';
 
 const COLORS = {
   bg: '#F7F5F0',
@@ -49,7 +51,8 @@ export default function PagamentosScreen() {
   const [categoria, setCategoria] = useState('outros');
   const [descricao, setDescricao] = useState('');
   const [valor, setValor] = useState('');
-  const [data, setData] = useState(hojeISO());
+  // Guardado como o brasileiro escreve; convertido pra ISO só ao salvar.
+  const [dataBR, setDataBR] = useState(dataISOParaBR(hojeISO()));
   const [recorrente, setRecorrente] = useState(false);
 
   const carregar = useCallback(async () => {
@@ -83,7 +86,7 @@ export default function PagamentosScreen() {
     setCategoria('outros');
     setDescricao('');
     setValor('');
-    setData(hojeISO());
+    setDataBR(dataISOParaBR(hojeISO()));
     setRecorrente(false);
     setModalVisivel(true);
   }
@@ -98,9 +101,16 @@ export default function PagamentosScreen() {
       Alert.alert('Valor inválido', 'Informe um valor maior que zero.');
       return;
     }
+    // A pessoa pode ter digitado a data solta e salvo sem sair do campo —
+    // aí o `onBlur` não chegou a rodar. Interpreta aqui também.
+    const dataISO = dataBRParaISO(interpretarDataDigitada(dataBR) || dataBR);
+    if (!dataISO) {
+      Alert.alert('Data inválida', 'Confira a data da despesa (DD/MM/AAAA).');
+      return;
+    }
     setSalvando(true);
     try {
-      await adicionarDespesa({ categoria, descricao, valor: valorNum, data, recorrente });
+      await adicionarDespesa({ categoria, descricao, valor: valorNum, data: dataISO, recorrente });
       setModalVisivel(false);
       carregar();
     } catch (err) {
@@ -246,12 +256,20 @@ export default function PagamentosScreen() {
               />
 
               <Text style={s.modalLabel}>Data</Text>
+              {/* Era o único campo de data do app em formato ISO, com
+                  teclado alfabético e sem máscara nenhuma — a pessoa tinha
+                  que digitar "2026-09-07" à mão. Agora é igual a todos os
+                  outros: DD/MM/AAAA, teclado numérico, e "2324" vira
+                  02/03/2024 ao sair do campo. */}
               <TextInput
                 style={s.modalInput}
-                value={data}
-                onChangeText={setData}
-                placeholder="AAAA-MM-DD"
+                value={dataBR}
+                onChangeText={(t) => setDataBR(mascararDataBR(t))}
+                onBlur={() => setDataBR((v) => interpretarDataDigitada(v) || v)}
+                placeholder="DD/MM/AAAA"
                 placeholderTextColor="#756E66"
+                keyboardType="numeric"
+                maxLength={10}
               />
 
               <View style={s.recorrenteRow}>

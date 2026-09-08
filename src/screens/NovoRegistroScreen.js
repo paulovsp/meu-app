@@ -20,7 +20,9 @@ import {
   listarPacientes, addRecord, editRecord, getAppointmentByPatientAndDate,
 } from '../services/database';
 import { mensagemDeErro } from '../services/erros';
-import { dataBRParaISO, dataISOParaBR, dataParaISO } from '../services/validacao';
+import {
+  dataBRParaISO, dataISOParaBR, dataParaISO, mascararDataBR, interpretarDataDigitada,
+} from '../services/validacao';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
 
 const MEDIA_IMAGES = ['images'];
@@ -59,16 +61,6 @@ const TIPO_CONTEXTO = {
 const ALTURA_BASE_EDITOR = 150;
 const ALTURA_MAX_EDITOR = ALTURA_BASE_EDITOR * 3;
 
-function formatarDataDigitada(texto, setter) {
-  const numeros = texto.replace(/\D/g, '').slice(0, 8);
-  let formatado = numeros;
-  if (numeros.length > 2 && numeros.length <= 4) {
-    formatado = `${numeros.slice(0, 2)}/${numeros.slice(2)}`;
-  } else if (numeros.length > 4) {
-    formatado = `${numeros.slice(0, 2)}/${numeros.slice(2, 4)}/${numeros.slice(4)}`;
-  }
-  setter(formatado);
-}
 
 function dataDigitadaValida(dataBR) {
   const iso = dataBRParaISO(dataBR);
@@ -420,7 +412,8 @@ export default function NovoRegistroScreen() {
               placeholder="DD/MM/AAAA"
               placeholderTextColor="#A9A299"
               value={dataSessaoRegistro}
-              onChangeText={(t) => formatarDataDigitada(t, setDataSessaoRegistro)}
+              onChangeText={(t) => setDataSessaoRegistro(mascararDataBR(t))}
+              onBlur={() => setDataSessaoRegistro((v) => interpretarDataDigitada(v) || v)}
               keyboardType="numeric"
               maxLength={10}
             />

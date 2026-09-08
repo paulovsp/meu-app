@@ -16,13 +16,17 @@ import {
   MOEDAS, formatarValorMoeda, atualizarCotacao, getCotacaoCacheada, formatarDataCotacao,
 } from '../services/currency';
 import { mensagemDeErro } from '../services/erros';
-import { dataBRParaISO, dataISOParaBR } from '../services/validacao';
+import {
+  dataBRParaISO, dataISOParaBR, mascararDataBR, interpretarDataDigitada, validarCPF,
+} from '../services/validacao';
 import TelefoneInput from '../components/TelefoneInput';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
 import {
   MODOS_DIA_PAGAMENTO, DIAS_FIXOS_SUGERIDOS, rotuloCompetencia, modoParaDiaDigitado,
 } from '../services/competencia';
 import { mascararHorario, normalizarHorario, horarioValido, terminoPadrao } from '../services/horarios';
+import EnderecoPorCep from '../components/EnderecoPorCep';
+import { montarEnderecoCompleto } from '../services/cep';
 
 const DIAS_SEMANA = [
   { valor: 1, label: 'Seg' },
@@ -94,7 +98,18 @@ export default function FormularioAnalisanteScreen() {
   const [valorMensalFixo, setValorMensalFixo] = useState(
     pacienteExistente?.valor_mensal_fixo ? String(pacienteExistente.valor_mensal_fixo).replace('.', ',') : ''
   );
-  const [endereco, setEndereco]   = useState(pacienteExistente?.endereco ?? '');
+  // Endereço em partes (migration 0082) — o CEP preenche quase tudo.
+  // `endereco` continua sendo gravado como linha montada, que é o que a
+  // ficha do analisante mostra.
+  const [endereco, setEndereco]   = useState({
+    cep: pacienteExistente?.cep ?? '',
+    logradouro: pacienteExistente?.logradouro ?? '',
+    numero: pacienteExistente?.numero ?? '',
+    complemento: pacienteExistente?.complemento ?? '',
+    bairro: pacienteExistente?.bairro ?? '',
+    cidade: pacienteExistente?.cidade ?? '',
+    uf: pacienteExistente?.uf ?? '',
+  });
   const [contatoEmergencia, setContatoEmergencia] = useState(pacienteExistente?.contato_emergencia ?? '');
   const [comoChegou, setComoChegou] = useState(pacienteExistente?.como_chegou ?? '');
   const [infoRelevantes, setInfoRelevantes] = useState(pacienteExistente?.info_relevantes ?? '');
@@ -239,14 +254,15 @@ export default function FormularioAnalisanteScreen() {
   }
 
   function formatarDataHorario(texto, id, campo) {
-    const numeros = texto.replace(/\D/g, '').slice(0, 8);
-    let formatado = numeros;
-    if (numeros.length > 2 && numeros.length <= 4) {
-      formatado = `${numeros.slice(0, 2)}/${numeros.slice(2)}`;
-    } else if (numeros.length > 4) {
-      formatado = `${numeros.slice(0, 2)}/${numeros.slice(2, 4)}/${numeros.slice(4)}`;
-    }
-    atualizarHorario(id, campo, formatado);
+    atualizarHorario(id, campo, mascararDataBR(texto));
+  }
+
+  /** Ao sair do campo, o que foi digitado vira data completa — "2324" vira
+   *  02/03/2024. Se não der pra interpretar, o texto fica como está e a
+   *  validação do salvar avisa. */
+  function resolverDataHorario(id, campo, valor) {
+    const pronta = interpretarDataDigitada(valor);
+    if (pronta && pronta !== valor) atualizarHorario(id, campo, pronta);
   }
 
   function alternarSemanaAtivaHorario(id, semana) {
@@ -412,6 +428,20 @@ export default function FormularioAnalisanteScreen() {
       Alert.alert('Campo obrigatório', 'Por favor, informe o nome do analisante.');
       return;
     }
+    // CPF é opcional na ficha — mas se foi preenchido, tem que ser um CPF.
+    // É ele que a autorização de gravação confere contra o documento que o
+    // analisante envia, e é ele que impede alguém de se cadastrar como o
+    // próprio analisante (migration 0076). Um dígito trocado quebra as
+    // duas coisas, e só apareceria lá na frente, sem explicação.
+    if (cpf.trim() && !validarCPF(cpf)) {
+      Alert.alert(
+        'CPF inválido',
+        'Confira o CPF digitado. Ele é usado na autorização de gravação, '
+        + 'onde é comparado com o documento que o analisante envia.'
+      );
+      return;
+    }
+
     const horariosNormalizados = normalizarListaHorarios(horarios);
     if (!validarHorarios(horariosNormalizados)) return;
     if (tipoCobranca === 'mensal_fixo' && !(Number(valorMensalFixo.replace(',', '.')) > 0)) {
@@ -447,7 +477,8 @@ export default function FormularioAnalisanteScreen() {
           horario: resumoHorario,
           preco_sessao: precoValor != null ? String(precoValor) : null,
           preco_moeda: precoMoeda,
-          endereco: endereco.trim() || null,
+          endereco: montarEnderecoCompleto(endereco) || null,
+          ...endereco,
           contato_emergencia: contatoEmergencia.trim() || null,
           como_chegou: comoChegou.trim() || null,
           info_relevantes: infoRelevantes.trim() || null,
@@ -470,7 +501,8 @@ export default function FormularioAnalisanteScreen() {
           horario: resumoHorario,
           preco_sessao: precoValor != null ? String(precoValor) : null,
           preco_moeda: precoMoeda,
-          endereco: endereco.trim() || null,
+          endereco: montarEnderecoCompleto(endereco) || null,
+          ...endereco,
           contato_emergencia: contatoEmergencia.trim() || null,
           como_chegou: comoChegou.trim() || null,
           info_relevantes: infoRelevantes.trim() || null,
@@ -622,6 +654,7 @@ export default function FormularioAnalisanteScreen() {
               placeholderTextColor="#A9A299"
               value={item.recorrencia_data_referencia}
               onChangeText={(t) => formatarDataHorario(t, item.id, 'recorrencia_data_referencia')}
+                      onBlur={() => resolverDataHorario(item.id, 'recorrencia_data_referencia', item.recorrencia_data_referencia)}
               keyboardType="numeric"
               maxLength={10}
             />
@@ -726,7 +759,8 @@ export default function FormularioAnalisanteScreen() {
             placeholder="DD/MM/AAAA"
             placeholderTextColor="#A9A299"
             value={nascimento}
-            onChangeText={(t) => formatarData(t, setNascimento)}
+            onChangeText={(t) => setNascimento(mascararDataBR(t))}
+            onBlur={() => setNascimento((v) => interpretarDataDigitada(v) || v)}
             keyboardType="numeric"
             maxLength={10}
             returnKeyType="next"
@@ -740,7 +774,8 @@ export default function FormularioAnalisanteScreen() {
             placeholder="DD/MM/AAAA"
             placeholderTextColor="#A9A299"
             value={dataInicio}
-            onChangeText={(t) => formatarData(t, setDataInicio)}
+            onChangeText={(t) => setDataInicio(mascararDataBR(t))}
+            onBlur={() => setDataInicio((v) => interpretarDataDigitada(v) || v)}
             keyboardType="numeric"
             maxLength={10}
             returnKeyType="next"
@@ -771,7 +806,8 @@ export default function FormularioAnalisanteScreen() {
                 placeholder="DD/MM/AAAA"
                 placeholderTextColor="#A9A299"
                 value={dataParalizacao}
-                onChangeText={(t) => formatarData(t, setDataParalizacao)}
+                onChangeText={(t) => setDataParalizacao(mascararDataBR(t))}
+              onBlur={() => setDataParalizacao((v) => interpretarDataDigitada(v) || v)}
                 keyboardType="numeric"
                 maxLength={10}
                 returnKeyType="next"
@@ -819,16 +855,10 @@ export default function FormularioAnalisanteScreen() {
 
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Endereço</Text>
-          <TextInput
-            style={[styles.input, styles.inputMultiline]}
-            placeholder="Endereço completo (se presencial)"
-            placeholderTextColor="#A9A299"
-            value={endereco}
-            onChangeText={setEndereco}
-            multiline={true}
-            numberOfLines={3}
-            textAlignVertical="top"
-            returnKeyType="next"
+          <EnderecoPorCep
+            valor={endereco}
+            aoMudar={setEndereco}
+            estilos={{ rotulo: styles.label, campo: styles.input }}
           />
         </View>
 

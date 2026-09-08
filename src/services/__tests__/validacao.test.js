@@ -112,3 +112,79 @@ describe('datas no fuso de quem usa o app', () => {
     expect(diaSemanaDeISO('')).toBeNull();
   });
 });
+
+// ── Interpretar data digitada de qualquer jeito ───────────────────────
+//
+// O app já entendia hora solta ("845" vira 08:45) e telefone. A data era o
+// único campo que exigia digitar tudo, com barras. Estes testes fixam as
+// leituras — inclusive a ambígua, que é a razão de a regra existir.
+describe('interpretarDataDigitada', () => {
+  const { interpretarDataDigitada, mascararDataBR } = require('../validacao');
+  // Sexta, 04/09/2026 — todos os casos "do mês atual" saem daqui.
+  const HOJE = new Date(2026, 8, 4);
+  const ler = (t) => interpretarDataDigitada(t, HOJE);
+
+  it('data completa passa intacta', () => {
+    expect(ler('02/03/2024')).toBe('02/03/2024');
+    expect(ler('02032024')).toBe('02/03/2024');
+  });
+
+  // O caso que motivou a regra: 23 não é dia de um mês 24, então a leitura
+  // seguinte é dia 2, mês 3, ano 24.
+  it('"2324" vira 02/03/2024', () => {
+    expect(ler('2324')).toBe('02/03/2024');
+  });
+
+  it('quatro dígitos que formam dia e mês válidos ficam no ano atual', () => {
+    expect(ler('0203')).toBe('02/03/2026');
+    expect(ler('2512')).toBe('25/12/2026');
+  });
+
+  it('seis dígitos: ano de dois dígitos', () => {
+    expect(ler('020324')).toBe('02/03/2024');
+    expect(ler('311299')).toBe('31/12/1999');
+  });
+
+  it('ano de dois dígitos: 75 é 1975, não 2075', () => {
+    expect(ler('150775')).toBe('15/07/1975');
+  });
+
+  it('dois dígitos são o dia do mês atual', () => {
+    expect(ler('25')).toBe('25/09/2026');
+  });
+
+  it('três dígitos: dia e mês', () => {
+    expect(ler('203')).toBe('02/03/2026');
+    expect(ler('112')).toBe('01/12/2026');
+  });
+
+  // Pela mesma regra do "2324": 9/9/99 é leitura válida de "9999".
+  it('"9999" vira 09/09/1999, pela mesma leitura de "2324"', () => {
+    expect(ler('9999')).toBe('09/09/1999');
+  });
+
+  it('recusa o que não vira data nenhuma', () => {
+    expect(ler('')).toBeNull();
+    expect(ler('abc')).toBeNull();
+    expect(ler('0000')).toBeNull();
+    expect(ler('00')).toBeNull();
+  });
+
+  it('não inventa 31 de fevereiro', () => {
+    expect(ler('31022026')).toBeNull();
+  });
+
+  it('aceita 29 de fevereiro em ano bissexto', () => {
+    expect(ler('29022024')).toBe('29/02/2024');
+    expect(ler('29022026')).toBeNull();
+  });
+
+  it('a máscara só põe as barras, sem interpretar', () => {
+    expect(mascararDataBR('2')).toBe('2');
+    expect(mascararDataBR('23')).toBe('23');
+    expect(mascararDataBR('232')).toBe('23/2');
+    expect(mascararDataBR('2324')).toBe('23/24');
+    expect(mascararDataBR('23092026')).toBe('23/09/2026');
+    expect(mascararDataBR('230920261234')).toBe('23/09/2026');
+  });
+});

@@ -29,7 +29,9 @@ import {
 } from '../services/gravacaoEmBlocos';
 import { mensagemDeErro } from '../services/erros';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
-import { dataBRParaISO, dataISOParaBR } from '../services/validacao';
+import {
+  dataBRParaISO, dataISOParaBR, mascararDataBR, interpretarDataDigitada,
+} from '../services/validacao';
 import { mascararHorario, normalizarHorario } from '../services/horarios';
 import {
   diagnosticarProtecao, impedeGravacaoEmSegundoPlano, CANAL_CURSO,
@@ -54,16 +56,6 @@ const FORMATOS = [
 // PerfilScreen/CadastroScreen — insere as barras enquanto digita, sempre
 // DD/MM/AAAA (esse campo antes aceitava texto livre em AAAA-MM-DD, o único
 // lugar do app fora desse padrão).
-function formatarDataDigitada(texto, setter) {
-  const numeros = texto.replace(/\D/g, '');
-  let formatado = numeros;
-  if (numeros.length >= 3 && numeros.length <= 4) {
-    formatado = `${numeros.slice(0, 2)}/${numeros.slice(2)}`;
-  } else if (numeros.length > 4) {
-    formatado = `${numeros.slice(0, 2)}/${numeros.slice(2, 4)}/${numeros.slice(4, 8)}`;
-  }
-  setter(formatado);
-}
 
 function formatarTempo(seg) {
   const m = Math.floor(seg / 60).toString().padStart(2, '0');
@@ -769,7 +761,8 @@ export default function FormularioCursoScreen() {
         <TextInput
           style={s.input}
           value={data}
-          onChangeText={(t) => formatarDataDigitada(t, setData)}
+          onChangeText={(t) => setData(mascararDataBR(t))}
+          onBlur={() => setData((v) => interpretarDataDigitada(v) || v)}
           placeholder="DD/MM/AAAA"
           placeholderTextColor="#756E66"
           keyboardType="numeric"

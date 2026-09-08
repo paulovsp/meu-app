@@ -15,20 +15,12 @@ import {
 import { formatarValorMoeda, getCotacaoCacheada } from '../services/currency';
 import { solicitarAutorizacao, getStatusAutorizacao } from '../services/autorizacaoGravacao';
 import { mensagemDeErro } from '../services/erros';
-import { dataISOParaBR, dataBRParaISO, calcularAnosEMeses, formatarAnosEMeses } from '../services/validacao';
+import {
+  dataISOParaBR, dataBRParaISO, calcularAnosEMeses, formatarAnosEMeses, mascararDataBR, interpretarDataDigitada,
+} from '../services/validacao';
 
 // ─── Helper: máscara DD/MM/AAAA enquanto digita (mesmo padrão usado no
 // Formulário do Analisante) ─────────────────────────────
-function formatarDataDigitada(texto, setter) {
-  const numeros = texto.replace(/\D/g, '');
-  let formatado = numeros;
-  if (numeros.length >= 3 && numeros.length <= 4) {
-    formatado = `${numeros.slice(0, 2)}/${numeros.slice(2)}`;
-  } else if (numeros.length > 4) {
-    formatado = `${numeros.slice(0, 2)}/${numeros.slice(2, 4)}/${numeros.slice(4, 8)}`;
-  }
-  setter(formatado);
-}
 
 // ─── Helper: remove tags HTML ──────────────────────────
 function stripHtml(html) {
@@ -802,7 +794,8 @@ export default function DetalheAnalisanteScreen() {
             <TextInput
               style={styles.modalInput}
               value={dataInicioEdicao}
-              onChangeText={(t) => formatarDataDigitada(t, setDataInicioEdicao)}
+              onChangeText={(t) => setDataInicioEdicao(mascararDataBR(t))}
+              onBlur={() => setDataInicioEdicao((v) => interpretarDataDigitada(v) || v)}
               placeholder="DD/MM/AAAA"
               keyboardType="numeric"
               maxLength={10}
@@ -812,7 +805,8 @@ export default function DetalheAnalisanteScreen() {
             <TextInput
               style={styles.modalInput}
               value={dataFimEdicao}
-              onChangeText={(t) => formatarDataDigitada(t, setDataFimEdicao)}
+              onChangeText={(t) => setDataFimEdicao(mascararDataBR(t))}
+              onBlur={() => setDataFimEdicao((v) => interpretarDataDigitada(v) || v)}
               placeholder="DD/MM/AAAA (vazio = em aberto)"
               keyboardType="numeric"
               maxLength={10}

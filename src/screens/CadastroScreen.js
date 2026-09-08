@@ -8,7 +8,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../services/supabase';
-import { validarCPF, dataBRParaISO, parseTelefone } from '../services/validacao';
+import {
+  validarCPF, dataBRParaISO, parseTelefone, mascararDataBR, interpretarDataDigitada,
+} from '../services/validacao';
 import SeletorCidadeEstado from '../components/SeletorCidadeEstado';
 import TelefoneInput from '../components/TelefoneInput';
 
@@ -71,16 +73,6 @@ export default function CadastroScreen({ navigation }) {
     setCpf(formatado);
   }
 
-  function formatarData(texto) {
-    const numeros = texto.replace(/\D/g, '');
-    let formatado = numeros;
-    if (numeros.length >= 3 && numeros.length <= 4) {
-      formatado = `${numeros.slice(0, 2)}/${numeros.slice(2)}`;
-    } else if (numeros.length > 4) {
-      formatado = `${numeros.slice(0, 2)}/${numeros.slice(2, 4)}/${numeros.slice(4, 8)}`;
-    }
-    setDataNascimento(formatado);
-  }
 
   async function handleCriarConta() {
     const nomeTrim = nome.trim();
@@ -266,7 +258,8 @@ export default function CadastroScreen({ navigation }) {
           <TextInput
             style={s.input}
             value={dataNascimento}
-            onChangeText={formatarData}
+            onChangeText={(t) => setDataNascimento(mascararDataBR(t))}
+            onBlur={() => setDataNascimento((v) => interpretarDataDigitada(v) || v)}
             keyboardType="numeric"
             placeholder="00/00/0000"
             placeholderTextColor="#756E66"

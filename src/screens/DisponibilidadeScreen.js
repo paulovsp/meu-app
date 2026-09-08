@@ -36,7 +36,9 @@ import {
 import { mensagemDeErro } from '../services/erros';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
 import { TIPOS_EVENTO, infoTipoEvento, corTipoEvento, ehTipoGrupo, tipoTemPacienteUnico } from '../services/tiposEvento';
-import { dataBRParaISO, dataISOParaBR, diaSemanaDeISO } from '../services/validacao';
+import {
+  dataBRParaISO, dataISOParaBR, diaSemanaDeISO, mascararDataBR, interpretarDataDigitada,
+} from '../services/validacao';
 import {
   mascararHorario, normalizarHorario, horarioValido, horarioParaMinutos, terminoPadrao,
   DURACAO_PADRAO_SESSAO_MIN,
@@ -54,16 +56,6 @@ const DIAS = [
   { value: 6, label: 'Sábado' },
 ];
 
-function formatarData(texto, setter) {
-  const numeros = texto.replace(/\D/g, '').slice(0, 8);
-  let formatado = numeros;
-  if (numeros.length > 2 && numeros.length <= 4) {
-    formatado = `${numeros.slice(0, 2)}/${numeros.slice(2)}`;
-  } else if (numeros.length > 4) {
-    formatado = `${numeros.slice(0, 2)}/${numeros.slice(2, 4)}/${numeros.slice(4)}`;
-  }
-  setter(formatado);
-}
 
 function dataValida(dataBR) {
   const iso = dataBRParaISO(dataBR);
@@ -898,7 +890,8 @@ export default function DisponibilidadeScreen() {
               <Text style={styles.label}>Data</Text>
               <TextInput
                 value={dataAvulsa}
-                onChangeText={(texto) => formatarData(texto, setDataAvulsa)}
+                onChangeText={(texto) => setDataAvulsa(mascararDataBR(texto))}
+                onBlur={() => setDataAvulsa((v) => interpretarDataDigitada(v) || v)}
                 placeholder="DD/MM/AAAA"
                 keyboardType="numeric"
                 maxLength={10}
@@ -952,7 +945,8 @@ export default function DisponibilidadeScreen() {
                   <Text style={styles.label}>Data da 1ª sessão</Text>
                   <TextInput
                     value={dataReferencia}
-                    onChangeText={(texto) => formatarData(texto, setDataReferencia)}
+                    onChangeText={(texto) => setDataReferencia(mascararDataBR(texto))}
+                    onBlur={() => setDataReferencia((v) => interpretarDataDigitada(v) || v)}
                     placeholder="DD/MM/AAAA"
                     keyboardType="numeric"
                     maxLength={10}

@@ -16,7 +16,9 @@ import {
 } from '../services/database';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { validarCPF, dataBRParaISO, dataISOParaBR } from '../services/validacao';
+import {
+  validarCPF, dataBRParaISO, dataISOParaBR, mascararDataBR, interpretarDataDigitada,
+} from '../services/validacao';
 import TelefoneInput from '../components/TelefoneInput';
 import { mensagemDeErro } from '../services/erros';
 import { getStatusAssinatura, reenviarInstrucoesDePlano } from '../services/assinatura';
@@ -29,6 +31,7 @@ import {
 } from '../services/creditosIA';
 import { excluirConta, alterarEmailLogin, alterarSenha } from '../services/conta';
 import SeletorCidadeEstado from '../components/SeletorCidadeEstado';
+import EnderecoPorCep from '../components/EnderecoPorCep';
 import {
   biometriaDisponivelNoAparelho, loginBiometricoEstaAtivo,
   ativarLoginBiometrico, desativarLoginBiometrico,
@@ -186,6 +189,12 @@ export default function PerfilScreen({ navigation }) {
   const cpfEditavel = !cpfSalvo.replace(/\D/g, '');
   const [dataNascimento, setDataNascimento] = useState('');
   const [cidade, setCidade] = useState('');
+  // Endereço em partes. As colunas existem desde a migration 0008 e o app
+  // nunca as coletou — só cidade/UF, usadas no recibo fiscal. Agora o CEP
+  // preenche o resto, e o recibo pode passar a trazer o endereço completo.
+  const [endereco, setEndereco] = useState({
+    cep: '', logradouro: '', numero: '', complemento: '', bairro: '',
+  });
   const [uf, setUf] = useState('');
   const [seletorCidadeAberto, setSeletorCidadeAberto] = useState(false);
   const [crp, setCrp] = useState('');
@@ -231,6 +240,10 @@ export default function PerfilScreen({ navigation }) {
       setCpfSalvo(u.cpf || '');
       setDataNascimento(dataISOParaBR(u.data_nascimento));
       setCidade(u.cidade || '');
+      setEndereco({
+        cep: u.cep || '', logradouro: u.logradouro || '', numero: u.numero || '',
+        complemento: u.complemento || '', bairro: u.bairro || '',
+      });
       setUf(u.uf || '');
       setCrp(u.crp || '');
       setEmail(u.email || '');
@@ -516,16 +529,6 @@ export default function PerfilScreen({ navigation }) {
     setCpf(formatado);
   }
 
-  function formatarData(texto, setter) {
-    const numeros = texto.replace(/\D/g, '');
-    let formatado = numeros;
-    if (numeros.length >= 3 && numeros.length <= 4) {
-      formatado = `${numeros.slice(0, 2)}/${numeros.slice(2)}`;
-    } else if (numeros.length > 4) {
-      formatado = `${numeros.slice(0, 2)}/${numeros.slice(2, 4)}/${numeros.slice(4, 8)}`;
-    }
-    setter(formatado);
-  }
 
   async function salvar() {
     // Nome e CPF não aparecem mais como campo editável — o banco recusa a
@@ -572,6 +575,11 @@ export default function PerfilScreen({ navigation }) {
         data_nascimento: dataNascimentoISO,
         cidade: cidade.trim() || null,
         uf: uf.trim() || null,
+        cep: endereco.cep?.trim() || null,
+        logradouro: endereco.logradouro?.trim() || null,
+        numero: endereco.numero?.trim() || null,
+        complemento: endereco.complemento?.trim() || null,
+        bairro: endereco.bairro?.trim() || null,
         crp: crp.trim(),
         telefone: telefoneTrim,
         pix_key: pixKey.trim() || null,
@@ -886,7 +894,8 @@ export default function PerfilScreen({ navigation }) {
             <TextInput
               style={st.input}
               value={dataNascimento}
-              onChangeText={(t) => formatarData(t, setDataNascimento)}
+              onChangeText={(t) => setDataNascimento(mascararDataBR(t))}
+              onBlur={() => setDataNascimento((v) => interpretarDataDigitada(v) || v)}
               keyboardType="numeric"
               placeholder="00/00/0000"
               maxLength={10}
@@ -906,6 +915,20 @@ export default function PerfilScreen({ navigation }) {
                 setUf(u);
                 setSeletorCidadeAberto(false);
               }}
+            />
+
+            {/* O CEP preenche rua e bairro, e também a cidade — que
+                continua no seletor acima, pra não haver dois lugares
+                dizendo a mesma coisa. Sobra número e complemento. */}
+            <EnderecoPorCep
+              valor={endereco}
+              aoMudar={(v) => {
+                setEndereco(v);
+                if (v.cidade) setCidade(v.cidade);
+                if (v.uf) setUf(v.uf);
+              }}
+              mostrarCidadeUf={false}
+              estilos={{ rotulo: st.label, campo: st.input }}
             />
 
             <Text style={st.label}>CRP</Text>

@@ -23,6 +23,7 @@ export async function inserirPaciente({
   horario, preco_sessao, preco_moeda, modalidade, endereco,
   contato_emergencia, como_chegou, info_relevantes, dia_pagamento, tipo_cobranca,
   valor_mensal_fixo, eh_analisante, eh_supervisionando,
+  cep, logradouro, numero, complemento, bairro, cidade, uf,
 }) {
   const { supabase } = require('./supabase');
   const userId = await getUserId();
@@ -34,6 +35,12 @@ export async function inserirPaciente({
       telefone: telefone || null, email: email || null, cpf: cpf || null,
       horario: horario || null, preco_sessao: preco_sessao || null, preco_moeda: preco_moeda || 'BRL',
       modalidade: modalidade || null, endereco: endereco || null,
+      // As partes do endereço (migration 0082) andam junto com a linha
+      // montada: `endereco` continua sendo o que a ficha mostra, e as
+      // partes é que permitem reabrir o formulário já preenchido.
+      cep: cep || null, logradouro: logradouro || null, numero: numero || null,
+      complemento: complemento || null, bairro: bairro || null,
+      cidade: cidade || null, uf: uf || null,
       contato_emergencia: contato_emergencia || null, como_chegou: como_chegou || null,
       info_relevantes: info_relevantes || null, dia_pagamento: dia_pagamento || null,
       tipo_cobranca: tipo_cobranca || 'mensal',
@@ -57,6 +64,7 @@ export async function editarPaciente({
   horario, preco_sessao, preco_moeda, modalidade, endereco,
   contato_emergencia, como_chegou, info_relevantes, dia_pagamento, tipo_cobranca,
   valor_mensal_fixo, eh_analisante, eh_supervisionando,
+  cep, logradouro, numero, complemento, bairro, cidade, uf,
 }) {
   const { supabase } = require('./supabase');
   const { error } = await supabase
@@ -66,6 +74,12 @@ export async function editarPaciente({
       telefone: telefone || null, email: email || null, cpf: cpf || null,
       horario: horario || null, preco_sessao: preco_sessao || null, preco_moeda: preco_moeda || 'BRL',
       modalidade: modalidade || null, endereco: endereco || null,
+      // As partes do endereço (migration 0082) andam junto com a linha
+      // montada: `endereco` continua sendo o que a ficha mostra, e as
+      // partes é que permitem reabrir o formulário já preenchido.
+      cep: cep || null, logradouro: logradouro || null, numero: numero || null,
+      complemento: complemento || null, bairro: bairro || null,
+      cidade: cidade || null, uf: uf || null,
       contato_emergencia: contato_emergencia || null, como_chegou: como_chegou || null,
       info_relevantes: info_relevantes || null, dia_pagamento: dia_pagamento || null,
       tipo_cobranca: tipo_cobranca || 'mensal',

@@ -32,17 +32,13 @@ import {
   nomeExibicaoCompromisso, perguntarPagamentoSessao, perguntarCheckin, perguntarTipoNaoRealizada,
 } from '../services/checkinCompromisso';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { dataBRParaISO, dataISOParaBR } from '../services/validacao';
+import {
+  dataBRParaISO, dataISOParaBR, mascararDataBR, interpretarDataDigitada,
+} from '../services/validacao';
 import {
   mascararHorario, normalizarHorario, horarioValido, horarioParaMinutos, terminoPadrao,
 } from '../services/horarios';
 
-function mascararDataBR(texto) {
-  const n = texto.replace(/\D/g, '').slice(0, 8);
-  if (n.length > 4) return `${n.slice(0, 2)}/${n.slice(2, 4)}/${n.slice(4)}`;
-  if (n.length > 2) return `${n.slice(0, 2)}/${n.slice(2)}`;
-  return n;
-}
 
 function dataBRValida(dataBR) {
   const iso = dataBRParaISO(dataBR);
@@ -652,6 +648,7 @@ Nenhum relato ou transcrição foi adicionado para esta sessão ainda.
               style={styles.modalInput}
               value={novaData}
               onChangeText={(t) => setNovaData(mascararDataBR(t))}
+              onBlur={() => setNovaData((v) => interpretarDataDigitada(v) || v)}
               placeholder="DD/MM/AAAA"
               placeholderTextColor="#A9A29A"
               keyboardType="number-pad"

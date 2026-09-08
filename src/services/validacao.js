@@ -122,6 +122,85 @@ export function diaSemanaDeISO(dataISO) {
   return d ? d.getDay() : null;
 }
 
+/**
+ * Máscara de data enquanto se digita: só põe as barras, sem inventar nada.
+ *
+ * Estava copiada em cinco arquivos, com cinco nomes e pequenas diferenças
+ * — cada um com o seu jeito de tratar o 3º dígito. Agora é uma só.
+ */
+export function mascararDataBR(texto) {
+  const n = String(texto || '').replace(/\D/g, '').slice(0, 8);
+  if (n.length > 4) return `${n.slice(0, 2)}/${n.slice(2, 4)}/${n.slice(4)}`;
+  if (n.length > 2) return `${n.slice(0, 2)}/${n.slice(2)}`;
+  return n;
+}
+
+function ehDataReal(d, m, a) {
+  if (!(a >= 1900 && a <= 2200)) return false;
+  if (!(m >= 1 && m <= 12)) return false;
+  const data = new Date(a, m - 1, d);
+  return data.getFullYear() === a && data.getMonth() === m - 1 && data.getDate() === d;
+}
+
+/** Ano de dois dígitos: 75 é 1975, 26 é 2026. A fronteira é dez anos à
+ *  frente de hoje — depois disso é passado (data de nascimento). */
+function anoDeDoisDigitos(aa, hoje) {
+  const seculo = Math.floor(hoje.getFullYear() / 100) * 100;
+  const limite = (hoje.getFullYear() % 100) + 10;
+  return aa <= limite ? seculo + aa : seculo - 100 + aa;
+}
+
+/**
+ * O que a pessoa quis dizer com o que digitou.
+ *
+ * Digitar data é o campo mais chato de qualquer formulário, e o app já
+ * fazia isso com hora ("845" vira 08:45) e com telefone. Faltava a data.
+ *
+ * A regra tenta as leituras possíveis e fica com a PRIMEIRA que dá uma
+ * data real — é o que resolve o caso ambíguo. "2324" lido como dia 23 do
+ * mês 24 não existe; relido como dia 2, mês 3, ano 24, vira 02/03/2024,
+ * que é o que a pessoa quis dizer.
+ *
+ * Devolve "DD/MM/AAAA" ou null quando não dá pra decidir — e null nunca
+ * apaga o que a pessoa escreveu: quem chama mantém o texto e deixa a
+ * validação do salvar avisar.
+ */
+export function interpretarDataDigitada(texto, hoje = new Date()) {
+  const n = String(texto || '').replace(/\D/g, '');
+  if (!n) return null;
+
+  const anoAtual = hoje.getFullYear();
+  const mesAtual = hoje.getMonth() + 1;
+  const fmt = (d, m, a) => `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${a}`;
+
+  // Cada leitura possível, da mais literal para a mais interpretada.
+  const leituras = [];
+  const num = (i, tam) => Number(n.slice(i, i + tam));
+
+  if (n.length === 8) leituras.push([num(0, 2), num(2, 2), num(4, 4)]);
+  if (n.length === 7) leituras.push([num(0, 1), num(1, 2), num(3, 4)]);
+  if (n.length === 6) leituras.push([num(0, 2), num(2, 2), anoDeDoisDigitos(num(4, 2), hoje)]);
+  if (n.length === 5) {
+    leituras.push([num(0, 1), num(1, 2), anoDeDoisDigitos(num(3, 2), hoje)]);
+    leituras.push([num(0, 2), num(2, 1), anoDeDoisDigitos(num(3, 2), hoje)]);
+  }
+  if (n.length === 4) {
+    leituras.push([num(0, 2), num(2, 2), anoAtual]);                       // 0203 -> 02/03
+    leituras.push([num(0, 1), num(1, 1), anoDeDoisDigitos(num(2, 2), hoje)]); // 2324 -> 02/03/2024
+  }
+  if (n.length === 3) {
+    leituras.push([num(0, 1), num(1, 2), anoAtual]);   // 203 -> 02/03
+    leituras.push([num(0, 2), num(2, 1), anoAtual]);   // 203 -> 20/03
+  }
+  if (n.length === 2) leituras.push([num(0, 2), mesAtual, anoAtual]);
+  if (n.length === 1) leituras.push([num(0, 1), mesAtual, anoAtual]);
+
+  for (const [d, m, a] of leituras) {
+    if (ehDataReal(d, m, a)) return fmt(d, m, a);
+  }
+  return null;
+}
+
 /** "25/07/2026" -> "2026-07-25". Retorna null se a data estiver incompleta. */
 export function dataBRParaISO(dataBR) {
   const partes = (dataBR || '').split('/');

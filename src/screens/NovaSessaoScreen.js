@@ -630,6 +630,20 @@ Dá pra resolver agora, em poucos toques.`,
     }
   }
 
+  /** Abre o discador do aparelho. É lá que mora o ajuste de gravação de
+   *  chamadas nos fabricantes que oferecem o recurso — o Android não expõe
+   *  um atalho direto pra essa tela, então isto é o mais perto que dá. */
+  async function abrirAppTelefone() {
+    try {
+      await Linking.openURL('tel:');
+    } catch (_) {
+      Alert.alert(
+        'Não consegui abrir',
+        'Abra o app Telefone do seu celular e procure por "Gravação de chamadas" nos ajustes dele.'
+      );
+    }
+  }
+
   /** Transcrever um áudio que já existe no aparelho, em vez de gravar na
    *  hora — sessão gravada por outro aparelho, gravação exportada de uma
    *  chamada, etc. Daqui pra frente é o mesmo caminho da gravação. */
@@ -832,6 +846,13 @@ Você pode fazer a sessão normalmente e gravar pelo aparelho, desde que a chama
   const { turns: turnsPreview, contagem } = calcularContagem(transcricao);
 
   const isOnline = tipo === 'online';
+  // A ligacao comum e o unico caso em que o microfone deste celular nao
+  // resolve de jeito nenhum: o Android reserva o audio da chamada ao app de
+  // telefone que veio no aparelho (VOICE_CALL exige permissao de sistema, e
+  // a saida por servico de acessibilidade e proibida pela politica da Play
+  // desde maio de 2022). Quem consegue gravar e o discador do fabricante --
+  // entao aqui o app pede o arquivo em vez de tentar gravar.
+  const ehTelefone = isOnline && plataforma?.id === 'telefone';
 
   // ── STEP 0: Selecionar paciente ───────────────────────────
   if (step === STEPS.SELECT_PATIENT) {
@@ -1051,7 +1072,14 @@ Nada é gravado por este aparelho, então não há risco de áudio mudo por disp
           )}
 
           <View style={s.infoBox}>
-            {isOnline ? (
+            {ehTelefone ? (
+              <>
+                <Text style={s.infoStep}>Antes de discar, ligue a <Text style={s.bold}>gravação de chamadas</Text> no app Telefone do seu celular, se ele tiver esse recurso.</Text>
+                <Text style={s.infoStep}>Faça a sessão por telefone <Text style={s.bold}>normalmente</Text>. Não precisa deixar este app aberto.</Text>
+                <Text style={s.infoStep}>Ao desligar, volte aqui e toque em <Text style={s.bold}>"Trazer a gravação da ligação"</Text>. O arquivo costuma ficar numa pasta chamada <Text style={s.bold}>Gravações de chamadas</Text>.</Text>
+                <Text style={s.infoStep}>Se o seu aparelho não grava ligações, faça a chamada em <Text style={s.bold}>outro aparelho</Text>, no alto-falante e perto deste, e use a gravação pelo microfone.</Text>
+              </>
+            ) : isOnline ? (
               <>
                 <Text style={s.infoStep}>Toque em <Text style={s.bold}>"Iniciar Gravação"</Text> abaixo.</Text>
                 <Text style={s.infoStep}>Faça a chamada pelo <Text style={s.bold}>{plataforma?.label}</Text> em <Text style={s.bold}>outro aparelho</Text> — computador, tablet ou um segundo celular.</Text>
@@ -1091,7 +1119,26 @@ Você pode bloquear a tela ou usar outros apps — a gravação continua.
                 pra outro aparelho: o Android entrega o microfone pro app que
                 está em chamada e silencia o nosso — a gravação sai com a
                 duração certa e sem fala nenhuma. Não tem conserto pelo app. */}
-            {isOnline && (
+            {ehTelefone ? (
+              <>
+                <View style={s.avisoMesmoAparelho}>
+                  <Text style={s.avisoMesmoAparelhoTexto}>
+                    O Dr.Sig não consegue gravar a ligação por conta própria.
+                    O Android reserva o áudio da chamada ao app de telefone
+                    que veio no aparelho, e nenhum outro aplicativo alcança
+                    esse áudio — não é limitação deste app, e não há ajuste
+                    que resolva. Por isso quem grava é o seu app Telefone, e
+                    o arquivo vem para cá depois.
+                  </Text>
+                </View>
+                <TouchableOpacity style={s.linkProtecao} onPress={abrirAppTelefone}>
+                  <Ionicons name="call-outline" size={15} color="#B36B00" />
+                  <Text style={s.linkProtecaoTexto}>
+                    Abrir o app Telefone — a gravação fica nos ajustes dele
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ) : isOnline ? (
               <View style={s.avisoMesmoAparelho}>
                 <Text style={s.avisoMesmoAparelhoTexto}>
                   Se a chamada acontecer neste mesmo celular, o Android
@@ -1100,7 +1147,7 @@ Você pode bloquear a tela ou usar outros apps — a gravação continua.
                   {saidaSemTranscricaoDoProvedor()}
                 </Text>
               </View>
-            )}
+            ) : null}
           </View>
 
           {transcrevendo ? (
@@ -1134,18 +1181,43 @@ Você pode bloquear a tela ou usar outros apps — a gravação continua.
               </TouchableOpacity>
             </View>
           ) : !gravando ? (
-            <TouchableOpacity
-              style={[s.btnIniciar, preparandoGravacao && { opacity: 0.7 }]}
-              disabled={preparandoGravacao}
-              onPress={iniciarGravacao}
-            >
-              {preparandoGravacao
-                ? <ActivityIndicator color="#fff" />
-                : <Text style={s.btnIniciarText}>Iniciar Gravação</Text>}
-            </TouchableOpacity>
+            <>
+              {/* Na ligação por telefone a ordem se inverte: trazer o
+                  arquivo é o caminho que funciona, gravar pelo microfone é
+                  a saída de quem tem um segundo aparelho. Deixar "Iniciar
+                  Gravação" em destaque aqui seria oferecer primeiro o que
+                  vai sair mudo. */}
+              {ehTelefone && (
+                <TouchableOpacity
+                  style={[s.btnIniciar, s.btnComIcone, preparandoGravacao && { opacity: 0.7 }]}
+                  onPress={importarAudio}
+                  disabled={preparandoGravacao}
+                >
+                  <Ionicons name="folder-open-outline" size={18} color="#fff" />
+                  <Text style={s.btnIniciarText}>Trazer a gravação da ligação</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={[
+                  s.btnIniciar,
+                  ehTelefone && s.btnIniciarSecundario,
+                  preparandoGravacao && { opacity: 0.7 },
+                ]}
+                disabled={preparandoGravacao}
+                onPress={iniciarGravacao}
+              >
+                {preparandoGravacao
+                  ? <ActivityIndicator color={ehTelefone ? '#497363' : '#fff'} />
+                  : (
+                    <Text style={ehTelefone ? s.btnIniciarSecundarioTexto : s.btnIniciarText}>
+                      {ehTelefone ? 'Gravar pelo microfone deste celular' : 'Iniciar Gravação'}
+                    </Text>
+                  )}
+              </TouchableOpacity>
+            </>
           ) : null}
 
-          {!gravando && !transcrevendo && gravacaoAutorizada && (
+          {!gravando && !transcrevendo && gravacaoAutorizada && !ehTelefone && (
             <TouchableOpacity
               style={[s.btnImportar, preparandoGravacao && { opacity: 0.7 }]}
               onPress={importarAudio}
@@ -1383,6 +1455,12 @@ const s = StyleSheet.create({
 
   btnIniciar:      { backgroundColor: '#497363', borderRadius: 14, padding: 18, alignItems: 'center', marginBottom: 14, elevation: 3 },
   btnIniciarText:  { color: '#fff', fontSize: 17, fontWeight: '500' },
+  btnComIcone:     { flexDirection: 'row', gap: 9 },
+  btnIniciarSecundario: {
+    backgroundColor: '#FDFCFA', borderWidth: 1, borderColor: '#C6D6CE',
+    elevation: 0, paddingVertical: 15,
+  },
+  btnIniciarSecundarioTexto: { color: '#497363', fontSize: 15, fontWeight: '600', lineHeight: 22 },
   linkProtecao: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
   linkProtecaoTexto: { flex: 1, fontSize: 12.5, color: '#B36B00', lineHeight: 18, fontWeight: '600' },
   gravandoSemProtecao: { fontSize: 12.5, color: '#7A5250', lineHeight: 19, textAlign: 'center', marginTop: 6, fontWeight: '600' },

@@ -33,6 +33,11 @@ import { excluirConta, alterarEmailLogin, alterarSenha } from '../services/conta
 import SeletorCidadeEstado from '../components/SeletorCidadeEstado';
 import EnderecoPorCep from '../components/EnderecoPorCep';
 import {
+  diagnosticoDeNotificacoes, pedirPermissaoDeNotificacao,
+  abrirConfiguracoesDeNotificacao,
+} from '../services/notificacoes';
+import { registrarPushToken } from '../services/pushToken';
+import {
   biometriaDisponivelNoAparelho, loginBiometricoEstaAtivo,
   ativarLoginBiometrico, desativarLoginBiometrico,
 } from '../services/biometria';
@@ -151,6 +156,9 @@ export default function PerfilScreen({ navigation }) {
   // Situação da assinatura — o app nunca mostrou isso em lugar nenhum.
   const [assinatura, setAssinatura] = useState(null);
   const [reenviando, setReenviando] = useState(false);
+  // Estado real das notificações no sistema. Sem isto, os interruptores
+  // abaixo prometiam avisos que o Android podia estar descartando.
+  const [notifSistema, setNotifSistema] = useState(null);
   const [estatisticas, setEstatisticas] = useState({
     precoMedio: 0, totalAnalisantes: 0, totalSupervisionandos: 0, sessoesSemRelato: 0,
     pagamentosRecebidos: 0, pagamentosTotal: 0, pagamentosStatusCor: 'verde',
@@ -263,6 +271,7 @@ export default function PerfilScreen({ navigation }) {
       // Checagem silenciosa de renovação mensal de créditos — se houver
       // renovação pendente, já reflete o saldo/data novos sem recarregar tudo.
       getStatusAssinatura().then(setAssinatura).catch(() => {});
+      diagnosticoDeNotificacoes().then(setNotifSistema).catch(() => {});
 
       chamarRenovarCreditos()
         .then((resultado) => {
@@ -327,6 +336,23 @@ export default function PerfilScreen({ navigation }) {
       carregar();
     }, [carregar])
   );
+
+  async function liberarNotificacoes() {
+    const estado = await pedirPermissaoDeNotificacao();
+    if (estado === 'liberadas') {
+      // Permissão nova: o token de push só existe depois dela.
+      await registrarPushToken();
+      setNotifSistema(await diagnosticoDeNotificacoes());
+      return;
+    }
+    // Já negada antes: o Android não pergunta de novo, só as configurações
+    // resolvem. Levar direto lá é o que evita a caça ao ajuste.
+    await abrirConfiguracoesDeNotificacao();
+  }
+
+  async function abrirAjusteDoCanal(canalId) {
+    await abrirConfiguracoesDeNotificacao(canalId);
+  }
 
   async function pedirInstrucoesDePlano() {
     setReenviando(true);
@@ -1194,10 +1220,73 @@ export default function PerfilScreen({ navigation }) {
             </TouchableOpacity>
 
             <Text style={st.sectionTitle}>Notificações</Text>
+
+            {/* Interruptor ligado não serve de nada se o Android está
+                descartando o aviso. Antes isso era invisível: a permissão
+                era pedida uma vez, negada em silêncio, e a tela seguia
+                prometendo. */}
+            {notifSistema?.estado === 'bloqueadas' && (
+              <View style={st.notifAviso}>
+                <Text style={st.notifAvisoTitulo}>O celular está bloqueando os avisos</Text>
+                <Text style={st.notifAvisoTexto}>
+                  As opções da coluna "Celular" não funcionam enquanto o
+                  Android não liberar as notificações do Dr.Sig.
+                </Text>
+                <TouchableOpacity style={st.notifAvisoBtn} onPress={liberarNotificacoes}>
+                  <Text style={st.notifAvisoBtnTexto}>Abrir a configuração do Android</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {notifSistema?.estado === 'nao_pedidas' && (
+              <View style={st.notifAviso}>
+                <Text style={st.notifAvisoTitulo}>Falta liberar no celular</Text>
+                <Text style={st.notifAvisoTexto}>
+                  O Android ainda não autorizou o Dr.Sig a mostrar avisos.
+                </Text>
+                <TouchableOpacity style={st.notifAvisoBtn} onPress={liberarNotificacoes}>
+                  <Text style={st.notifAvisoBtnTexto}>Liberar notificações</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Caso que engana: permissão concedida, e mesmo assim um tipo
+                de aviso não aparece porque aquela categoria foi silenciada
+                — em geral ao deslizar uma notificação pro lado e escolher
+                "não mostrar mais deste tipo". */}
+            {notifSistema?.canaisSilenciados?.length > 0 && (
+              <View style={st.notifAviso}>
+                <Text style={st.notifAvisoTitulo}>
+                  {notifSistema.canaisSilenciados.length === 1
+                    ? 'Um tipo de aviso está silenciado'
+                    : 'Alguns tipos de aviso estão silenciados'}
+                </Text>
+                <Text style={st.notifAvisoTexto}>
+                  {notifSistema.canaisSilenciados.map((c) => c.nome).join(', ')}
+                  {' — silenciado(s) nas configurações do Android. O aviso de '}
+                  gravação é o que mantém a captação viva com o app em
+                  segundo plano.
+                </Text>
+                {notifSistema.canaisSilenciados.map((c) => (
+                  <TouchableOpacity
+                    key={c.id}
+                    style={st.notifAvisoBtn}
+                    onPress={() => abrirAjusteDoCanal(c.id)}
+                  >
+                    <Text style={st.notifAvisoBtnTexto}>Reativar “{c.nome}”</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
             <View style={st.notifMatrizCard}>
               <View style={st.notifMatrizHeader}>
                 <Text style={st.notifMatrizHeaderTipo} />
-                <Text style={st.notifMatrizHeaderCanal}>App</Text>
+                {/* Era "App", e a coluna É a notificação do Android — a
+                    que aparece na barra do celular. O rótulo fazia parecer
+                    que só havia aviso dentro do app e e-mail, quando o
+                    aviso do sistema já existia o tempo todo. */}
+                <Text style={st.notifMatrizHeaderCanal}>Celular</Text>
                 <Text style={st.notifMatrizHeaderCanal}>E-mail</Text>
               </View>
 
@@ -1428,6 +1517,17 @@ const st = StyleSheet.create({
     borderWidth: 1, borderColor: '#EAE5DC',
   },
   trocarSenhaBtnText: { fontSize: 15, fontWeight: '500', color: '#497363', lineHeight: 22 },
+  notifAviso: {
+    backgroundColor: '#F2E9DC', borderColor: '#E3D5BC', borderWidth: 1,
+    borderRadius: 12, padding: 15, marginBottom: 12,
+  },
+  notifAvisoTitulo: { fontSize: 14.5, fontWeight: '600', color: '#7D6540', lineHeight: 21, marginBottom: 5 },
+  notifAvisoTexto: { fontSize: 13, color: '#4E4941', lineHeight: 19 },
+  notifAvisoBtn: {
+    marginTop: 12, backgroundColor: '#7D6540', borderRadius: 9,
+    paddingVertical: 11, alignItems: 'center',
+  },
+  notifAvisoBtnTexto: { color: '#FFFFFF', fontWeight: '500', fontSize: 14, lineHeight: 20 },
   notifMatrizCard: {
     backgroundColor: '#FDFCFA', borderRadius: 14, marginBottom: 20,
     borderWidth: 1, borderColor: '#EAE5DC', overflow: 'hidden',

@@ -5,35 +5,37 @@ import { Ionicons } from '@expo/vector-icons';
 import { papel, tinta, salvia } from '../theme';
 import { listarAfazeres, estiloDoAfazer } from '../services/afazeres';
 
-const COLORS = {
-  surface: '#FFFFFF',
-  borderAzul: '#497363',
-  textDark: '#302C28',
-  textMid: '#756E66',
-};
-
-// Espaço que a linha "+N mais" ocupa quando precisa existir. Entra na
-// conta só quando de fato sobrar afazer de fora — senão roubaria altura
-// de um item que caberia.
+// Espaço da linha "+N mais", contado só quando ela vai de fato existir —
+// senão roubaria altura de um afazer que caberia.
 const ALTURA_MAIS = 22;
+// Respiro entre um afazer e o seguinte (o `marginBottom` de `s.linha`).
+// Entra na conta porque a altura medida de cada item já o inclui.
+const ESPACO_ENTRE = 6;
 
 export default function MiniAfazeresBox({ navigation, altura }) {
   const [itens, setItens] = useState([]);
 
-  // ── Quantos cabem, de verdade ─────────────────────────────────────────
-  // Antes era um teto fixo de 4 linhas, e sobrava metade do cartão vazio —
-  // ou faltava espaço, quando os afazeres eram longos. Agora o cartão se
-  // mede, mede cada item e mostra quantos couberem, de cima para baixo.
+  // ── Quanto cabe, de verdade ───────────────────────────────────────────
+  // A regra: enquanto tudo couber, cada afazer ocupa quantas linhas
+  // precisar — sem teto artificial. Só quando algo fica de fora é que o
+  // último visível é cortado, com reticências, em três linhas; e em duas,
+  // se três não couberem.
   //
-  // `null` = ainda medindo. Nessa passagem todos são renderizados (dentro
-  // de um contêiner que corta o excedente, então nada vaza) só para que
-  // cada um informe a própria altura; a passagem seguinte já corta no
-  // número certo.
+  // Para isso é preciso a altura NATURAL de cada item, sem limite de
+  // linhas. Daí as duas passagens: a primeira renderiza todos sem corte
+  // algum, dentro de um contêiner que esconde o excedente, só para que
+  // cada um informe quanto ocupa; a segunda já sai no formato final.
+  //
+  // `plano === null` é a primeira passagem.
+  const [plano, setPlano] = useState(null);
   const [alturaLista, setAlturaLista] = useState(0);
-  const [quantosCabem, setQuantosCabem] = useState(null);
   const alturasRef = useRef({});
   const itensRef = useRef([]);
+  const alturaListaRef = useRef(0);
+  const planoRef = useRef(null);
   itensRef.current = itens;
+  alturaListaRef.current = alturaLista;
+  planoRef.current = plano;
 
   useFocusEffect(
     useCallback(() => {
@@ -43,44 +45,74 @@ export default function MiniAfazeresBox({ navigation, altura }) {
     }, [])
   );
 
-  // Lista nova, medidas velhas não valem mais.
+  // Lista nova: medidas antigas não valem mais, e tudo é medido de novo.
   useEffect(() => {
     alturasRef.current = {};
-    setQuantosCabem(null);
+    setPlano(null);
   }, [itens]);
+
+  /** Quantos itens INTEIROS cabem em `disponivel`, e quanto sobra depois. */
+  function encaixarInteiros(lista, disponivel) {
+    let soma = 0;
+    let completos = 0;
+    for (const item of lista) {
+      const h = alturasRef.current[item.id];
+      if (soma + h > disponivel) break;
+      soma += h;
+      completos += 1;
+    }
+    return { completos, sobra: disponivel - soma };
+  }
+
+  /** O plano de exibição para uma altura disponível. */
+  function montarPlano(lista, disponivel) {
+    const { completos, sobra } = encaixarInteiros(lista, disponivel);
+    if (completos >= lista.length) {
+      return { completos, truncado: null, restantes: 0 };
+    }
+
+    // Sobrou espaço depois dos inteiros: cabe o começo do próximo, cortado.
+    const proximo = lista[completos];
+    const lh = estiloDoAfazer(proximo).lineHeight;
+    let truncado = null;
+    if (sobra >= 3 * lh + ESPACO_ENTRE) truncado = { id: proximo.id, linhas: 3 };
+    else if (sobra >= 2 * lh + ESPACO_ENTRE) truncado = { id: proximo.id, linhas: 2 };
+
+    const mostrados = completos + (truncado ? 1 : 0);
+    return { completos, truncado, restantes: lista.length - mostrados };
+  }
 
   function recalcular() {
     const lista = itensRef.current;
-    if (!alturaLista || lista.length === 0) return;
+    const disponivel = alturaListaRef.current;
+    if (!disponivel || lista.length === 0) return;
     if (lista.some((i) => alturasRef.current[i.id] == null)) return;
 
-    const cabemEm = (disponivel) => {
-      let soma = 0;
-      let k = 0;
-      for (const i of lista) {
-        const h = alturasRef.current[i.id];
-        if (soma + h > disponivel) break;
-        soma += h;
-        k += 1;
-      }
-      return k;
-    };
+    // Primeiro sem reservar nada: no caso feliz tudo cabe e não existe
+    // "+N mais" nenhum para acomodar.
+    const cheio = montarPlano(lista, disponivel);
+    if (cheio.restantes === 0) {
+      setPlano(cheio);
+      return;
+    }
 
-    let k = cabemEm(alturaLista);
-    // Sobrou item de fora: a linha "+N mais" passa a existir e precisa de
-    // altura, então a conta é refeita com ela descontada.
-    if (k < lista.length) k = cabemEm(alturaLista - ALTURA_MAIS);
-    // Um afazer sozinho e mais alto que o cartão ainda aparece, cortado —
-    // melhor que um cartão vazio dizendo "+1 mais".
-    setQuantosCabem(Math.max(k, 1));
+    // Vai sobrar gente de fora: a linha "+N mais" passa a existir e precisa
+    // do espaço dela antes de decidir o corte.
+    const comAviso = montarPlano(lista, disponivel - ALTURA_MAIS);
+    // Se descontar o aviso o tornou desnecessário, ele não existe — e aí
+    // vale o plano cheio, que aproveita melhor o espaço.
+    setPlano(comAviso.restantes === 0 ? cheio : comAviso);
   }
 
   function medirLista(e) {
     const h = e.nativeEvent.layout.height;
-    if (h !== alturaLista) setAlturaLista(h);
+    if (h !== alturaListaRef.current) setAlturaLista(h);
   }
 
   function medirItem(id, e) {
+    // Só a passagem de medição vale: depois de decidido os itens já estão
+    // cortados, e guardar essas alturas envenenaria a conta seguinte.
+    if (planoRef.current !== null) return;
     const h = e.nativeEvent.layout.height;
     if (alturasRef.current[id] === h) return;
     alturasRef.current[id] = h;
@@ -89,8 +121,11 @@ export default function MiniAfazeresBox({ navigation, altura }) {
 
   useEffect(recalcular, [alturaLista, itens]);
 
-  const visiveis = quantosCabem == null ? itens : itens.slice(0, quantosCabem);
-  const restantes = itens.length - visiveis.length;
+  const medindo = plano === null;
+  const visiveis = medindo
+    ? itens
+    : itens.slice(0, plano.completos + (plano.truncado ? 1 : 0));
+  const restantes = medindo ? 0 : plano.restantes;
 
   return (
     // Moldura tripla: fina · grossa (3 dp ≈ 0,5 mm) · fina.
@@ -102,36 +137,43 @@ export default function MiniAfazeresBox({ navigation, altura }) {
       <View style={s.molduraCentral}>
         <View style={s.molduraInterna}>
           <View style={[s.caixa, altura ? { height: altura } : null]}>
-          <View style={s.header}>
-            <Ionicons name="checkbox-outline" size={16} color={salvia.tinta} />
-            <Text style={s.titulo}>Afazeres</Text>
-          </View>
-
-          {visiveis.length === 0 && quantosCabem != null ? (
-            <Text style={s.vazio}>Nada pendente</Text>
-          ) : (
-            <View style={s.lista} onLayout={medirLista}>
-            {/* Tamanho, peso e cor são escolha da pessoa, item a item
-                (migration 0080) — o widget mostra o que ela escolheu, não
-                uma versão neutra do mesmo texto.
-
-                `adjustsFontSizeToFit` saiu junto: encolhia cada linha em
-                função do PRÓPRIO texto, então a linha maior era só a de
-                texto mais curto — ênfase por acaso. Com tamanho escolhido
-                a dedo, atropelaria a escolha. */}
-            {visiveis.map((item) => (
-              // O marcador vive DENTRO do mesmo Text do texto, e é por isso
-              // que ele aparece só na primeira linha: o que quebra para a
-              // linha de baixo é texto puro, encostado na margem, sem
-              // recuo pendurado embaixo do ponto.
-              <View key={item.id} onLayout={(e) => medirItem(item.id, e)}>
-                <Text style={[s.linha, estiloDoAfazer(item)]} numberOfLines={2}>
-                  • {item.texto}
-                </Text>
-              </View>
-            ))}
+            <View style={s.header}>
+              <Ionicons name="checkbox-outline" size={16} color={salvia.tinta} />
+              <Text style={s.titulo}>Afazeres</Text>
             </View>
-          )}
+
+            {itens.length === 0 ? (
+              <Text style={s.vazio}>Nada pendente</Text>
+            ) : (
+              <View style={s.lista} onLayout={medirLista}>
+                {/* Tamanho, peso e cor são escolha da pessoa, item a item
+                    (migration 0080) — o widget mostra o que ela escolheu,
+                    não uma versão neutra do mesmo texto. */}
+                {visiveis.map((item) => {
+                  // Sem limite de linhas enquanto tudo couber. O corte só
+                  // acontece no último visível, quando algo ficou de fora.
+                  const corte = !medindo && plano.truncado?.id === item.id
+                    ? plano.truncado.linhas
+                    : undefined;
+                  return (
+                    // O marcador vive DENTRO do mesmo Text do texto, e é
+                    // por isso que aparece só na primeira linha: o que
+                    // quebra para baixo é texto puro, encostado na margem,
+                    // sem recuo pendurado embaixo do ponto.
+                    <View key={item.id} onLayout={(e) => medirItem(item.id, e)}>
+                      <Text
+                        style={[s.linha, estiloDoAfazer(item)]}
+                        numberOfLines={corte}
+                        ellipsizeMode="tail"
+                      >
+                        • {item.texto}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+
             {restantes > 0 && <Text style={s.maisTexto}>+{restantes} mais</Text>}
           </View>
         </View>
@@ -176,19 +218,19 @@ const s = StyleSheet.create({
     backgroundColor: papel.alto,
     borderRadius: 12,
     padding: 12,
-    // altura agora é fixa (não só um mínimo) e o conteúdo é cortado — a
-    // Início não rola mais (item 2), então este widget nunca pode crescer
-    // além do espaço reservado pra ele.
+    // altura é fixa (não só um mínimo) e o conteúdo é cortado — a Início
+    // não rola, então este widget nunca pode crescer além do espaço
+    // reservado pra ele.
     overflow: 'hidden',
     minHeight: 150,
   },
   header: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 10 },
   titulo: { fontSize: 13.5, fontWeight: '500', color: tinta.t900, lineHeight: 18 },
-  // `flex: 1` faz a lista ocupar toda a altura que sobra do cabeçalho —
-  // é o que acaba com o vão morto no pé do cartão. `overflow: hidden`
-  // segura o excedente durante a passagem de medição.
+  // `flex: 1` faz a lista ocupar toda a altura que sobra do cabeçalho — é
+  // o que acaba com o vão morto no pé do cartão. `overflow: hidden` segura
+  // o excedente durante a passagem de medição.
   lista: { flex: 1, overflow: 'hidden' },
-  linha: { marginBottom: 6 },
+  linha: { marginBottom: ESPACO_ENTRE },
   vazio: { fontSize: 13, color: tinta.t500, fontStyle: 'italic', lineHeight: 19 },
   maisTexto: { fontSize: 11.5, color: tinta.t400, marginTop: 4, fontWeight: '500', lineHeight: 16 },
 });

@@ -27,7 +27,7 @@ import { enviarFotoPerfil, enviarFotoCapa } from '../services/avatar';
 import { exportarDadosUsuario } from '../services/exportacaoDados';
 import {
   formatarSaldoBRL, chamarRenovarCreditos, PLANOS_CREDITO_MENSAL_BRL, PLANO_LABEL,
-  PACOTES_CREDITO_AVULSO_BRL, criarCheckoutCreditos,
+  PACOTES_CREDITO_AVULSO, bonusDoPacote,
 } from '../services/creditosIA';
 import { excluirConta, alterarEmailLogin, alterarSenha } from '../services/conta';
 import SeletorCidadeEstado from '../components/SeletorCidadeEstado';
@@ -361,29 +361,39 @@ export default function PerfilScreen({ navigation }) {
     }
   }
 
-  async function iniciarCheckoutCreditos(valorBRL) {
+  async function abrirPagamentoPix(pacote) {
     setAbrindoCheckout(true);
     try {
-      const initPoint = await criarCheckoutCreditos(valorBRL);
-      if (initPoint) await Linking.openURL(initPoint);
+      await Linking.openURL(pacote.link);
     } catch (e) {
-      Alert.alert('Erro ao gerar link de pagamento', mensagemDeErro(e));
+      Alert.alert('Não consegui abrir o pagamento', mensagemDeErro(e));
+      return;
     } finally {
       setAbrindoCheckout(false);
     }
+    // Dito depois de abrir, não antes: quem toca no valor quer pagar, e
+    // um aviso no caminho vira obstáculo. Aqui ele chega quando importa —
+    // ao voltar pro app, procurando o saldo novo.
+    Alert.alert(
+      'Guarde o comprovante',
+      `Assim que o Pix de R$ ${pacote.valorBRL} for confirmado, `
+      + `R$ ${pacote.creditoBRL} entram no seu saldo. `
+      + 'O crédito não aparece na mesma hora — se demorar, é só falar com a gente com o comprovante em mãos.'
+    );
   }
 
   function abrirRecargaCreditos() {
     Alert.alert(
       'Adicionar créditos',
-      'Escolha o valor da recarga — você será levada ao checkout do Mercado Pago.',
+      'Pagamento por Pix, sem taxa nenhuma. Cada pacote credita mais do que custa:',
       [
-        ...PACOTES_CREDITO_AVULSO_BRL.map((valor) => ({
-          text: `R$ ${valor}`,
-          onPress: () => iniciarCheckoutCreditos(valor),
+        ...PACOTES_CREDITO_AVULSO.map((pacote) => ({
+          text: `R$ ${pacote.valorBRL} → R$ ${pacote.creditoBRL} (+${bonusDoPacote(pacote)}%)`,
+          onPress: () => abrirPagamentoPix(pacote),
         })),
         { text: 'Cancelar', style: 'cancel' },
-      ]
+      ],
+      { cancelable: false },
     );
   }
 

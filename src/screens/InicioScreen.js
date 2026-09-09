@@ -316,15 +316,21 @@ export default function InicioScreen({ navigation }) {
                       resolve();
                     },
                   },
-                ]
+                ],
+                { cancelable: false },
               );
             })
           : undefined,
         // Ao navegar pra gravar/escrever, não insiste no resto da fila em
         // cima da tela nova — o resto continua 'agendado' e volta a ser
         // perguntado na próxima vez que a Início ganhar foco.
+        //
+        // "Fechar" NÃO para a fila. Recusar-se a responder sobre uma
+        // sessão não diz nada sobre as outras, e antes dizia: fechar a
+        // primeira engolia todas as seguintes em silêncio, sem nenhum
+        // sinal de que existiam. Quem quiser sair de vez sai da tela.
         aoConcluir: (info) => {
-          if (navegouPraRelato || info?.fechado) {
+          if (navegouPraRelato) {
             processandoCheckinRef.current = false;
             resolveFila();
             return;

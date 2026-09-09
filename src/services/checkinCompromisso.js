@@ -66,7 +66,8 @@ export function perguntarPagamentoSessao(compromisso) {
             }
           },
         },
-      ]
+      ],
+      { cancelable: false },
     );
   });
 }
@@ -92,7 +93,8 @@ function perguntarPagamentoParticipante(compromisso, participante) {
             }
           },
         },
-      ]
+      ],
+      { cancelable: false },
     );
   });
 }
@@ -139,7 +141,8 @@ function perguntarPresencaEPagamentoGrupo(compromisso) {
               processar(indice + 1);
             },
           },
-        ]
+        ],
+        { cancelable: false },
       );
     }
     processar(0);
@@ -184,7 +187,8 @@ export function perguntarTipoNaoRealizada(compromisso, aoConcluir) {
         },
       },
       { text: 'Fechar', style: 'cancel', onPress: () => aoConcluir?.({ fechado: true }) },
-    ]
+    ],
+    { cancelable: false },
   );
 }
 
@@ -222,6 +226,7 @@ export function perguntarCheckin(compromisso, { aoRealizada, aoConcluir } = {}) 
         },
       },
       { text: 'Fechar', style: 'cancel', onPress: () => aoConcluir?.({ fechado: true }) },
-    ]
+    ],
+    { cancelable: false },
   );
 }

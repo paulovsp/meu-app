@@ -752,6 +752,7 @@ export default function DisponibilidadeScreen() {
               { text: 'Cancelar', style: 'cancel', onPress: () => resolve(false) },
               { text: 'Excluir', style: 'destructive', onPress: () => resolve(true) },
             ],
+            { cancelable: false },
           );
         });
         if (ok) await executarExclusao(slot, false);

@@ -12,6 +12,9 @@ import { processarEnviosFiscaisAutomaticos } from '../services/fiscalAutomatico'
 import { obterRecebimentosAtrasados, verificarEEnviarAlertaAtraso } from '../services/alertaAtraso';
 import { horarioJaPassou } from '../services/compromissoStatus';
 import { perguntarCheckin } from '../services/checkinCompromisso';
+import {
+  obterTranscricoesConcluidas, marcarTranscricoesAvisadas, resumirTranscricoes,
+} from '../services/avisoTranscricao';
 import { useSwipeHorizontal } from '../hooks/useSwipeHorizontal';
 import { registrarPushToken } from '../services/pushToken';
 import { supabase } from '../services/supabase';
@@ -349,14 +352,8 @@ export default function InicioScreen({ navigation }) {
   async function perguntarCheckinsPendentes() {
     if (processandoCheckinRef.current) return;
     try {
-      // Lido aqui (e não do state `user`, que carrega em paralelo neste
-      // mesmo efeito e ainda pode estar nulo na primeira passagem).
-      const { data: prefs } = await supabase
-        .from('profiles')
-        .select('notif_registro_push')
-        .eq('id', session.user.id)
-        .maybeSingle();
-      perguntarRelatoRef.current = prefs?.notif_registro_push !== false;
+      const prefs = await lerPreferenciasDeAviso();
+      perguntarRelatoRef.current = prefs.registro;
 
       const candidatos = await listarCompromissosAguardandoCheckin();
       const pendentes = candidatos.filter((c) => horarioJaPassou(c.date, c.end_time));
@@ -372,10 +369,39 @@ export default function InicioScreen({ navigation }) {
   // foco de novo, senão vira um popup irritante toda hora que se volta
   // pra Início vindo de outra tela).
   const avisoAtrasoMostradoRef = useRef(false);
+  const avisoTranscricaoMostradoRef = useRef(false);
 
+  // Preferências dos avisos que acontecem DENTRO do app — a coluna "App"
+  // da matriz do Perfil. Lidas aqui, e não do state `user`, que carrega em
+  // paralelo neste mesmo efeito e ainda pode estar nulo na primeira
+  // passagem.
+  //
+  // `notif_registro_app` substituiu `notif_registro_push` na migration
+  // 0083 (aquela coluna nunca foi push — sempre foi este popup). A leitura
+  // aceita as duas enquanto houver perfil que só tem a antiga.
+  async function lerPreferenciasDeAviso() {
+    const { data } = await supabase
+      .from('profiles')
+      .select('notif_registro_app, notif_registro_push, notif_atraso_app, notif_transcricao_app')
+      .eq('id', session.user.id)
+      .maybeSingle();
+    const registroApp = data?.notif_registro_app;
+    return {
+      registro: registroApp === null || registroApp === undefined
+        ? data?.notif_registro_push !== false
+        : registroApp !== false,
+      atraso: data?.notif_atraso_app !== false,
+      transcricao: data?.notif_transcricao_app !== false,
+    };
+  }
+
+  // Antes este popup aparecia sempre, sem consultar preferência nenhuma:
+  // desligar "Recebimento em atraso" silenciava o push e o e-mail, e o
+  // aviso da tela continuava vindo.
   async function avisarRecebimentosAtrasados() {
     if (avisoAtrasoMostradoRef.current) return;
     try {
+      if (!(await lerPreferenciasDeAviso()).atraso) return;
       const atrasados = await obterRecebimentosAtrasados();
       if (atrasados.length === 0) return;
       avisoAtrasoMostradoRef.current = true;
@@ -389,6 +415,32 @@ export default function InicioScreen({ navigation }) {
       );
     } catch (e) {
       console.error('Falha ao verificar recebimentos atrasados:', e?.message || e);
+    }
+  }
+
+  // Canal "App" de "Transcrição pronta": quem tem o push desligado (ou a
+  // permissão do Android negada) não ficava sabendo que a transcrição
+  // terminou — a sessão ficava pronta e só se descobria por acaso.
+  async function avisarTranscricoesProntas() {
+    if (avisoTranscricaoMostradoRef.current) return;
+    try {
+      if (!(await lerPreferenciasDeAviso()).transcricao) return;
+      const itens = await obterTranscricoesConcluidas();
+      if (itens.length === 0) return;
+      avisoTranscricaoMostradoRef.current = true;
+      await marcarTranscricoesAvisadas();
+      const { titulo, mensagem } = resumirTranscricoes(itens);
+      Alert.alert(titulo, mensagem, [
+        { text: 'Depois' },
+        {
+          text: itens.length === 1 ? 'Abrir' : 'Ver sessões',
+          onPress: () => (itens.length === 1
+            ? navigation.navigate('SessionDetail', { sessionId: itens[0].id })
+            : navigation.navigate('SessoesStatus')),
+        },
+      ], { cancelable: false });
+    } catch (e) {
+      console.error('Falha ao avisar transcrições prontas:', e?.message || e);
     }
   }
 
@@ -411,6 +463,7 @@ export default function InicioScreen({ navigation }) {
       (async () => {
         await perguntarCheckinsPendentes();
         await avisarRecebimentosAtrasados();
+        await avisarTranscricoesProntas();
       })();
       let cancelado = false;
       supabase

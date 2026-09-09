@@ -181,16 +181,24 @@ Deno.serve(async (req) => {
     // que é outro assunto.
     const { data: perfis, error } = await supabaseAdmin
       .from('profiles')
-      .select('id, email, nome, notif_atraso_email, notif_registro_email, notif_sessao_email')
+      .select('id, email, nome, expo_push_token, notif_atraso_email, '
+        + 'notif_registro_email, notif_sessao_email, notif_sessao_push')
       .in('assinatura_status', ['ativa', 'cortesia']);
     if (error) throw error;
 
     for (const perfil of perfis || []) {
       try {
+        // O push de "sessão aguardando confirmação" sai daqui porque o
+        // número já é calculado pro e-mail — mandar de outro lugar seria
+        // varrer a agenda duas vezes por dia pelo mesmo dado.
+        const sessaoPush = perfil.notif_sessao_push === true && !!perfil.expo_push_token;
+        const sessaoEmail = perfil.notif_sessao_email === true;
         const prefs = {
           atraso: perfil.notif_atraso_email !== false,
           registro: perfil.notif_registro_email !== false,
-          sessao: perfil.notif_sessao_email === true,
+          // Precisa ser calculado se QUALQUER um dos dois canais quer o
+          // número — senão ligar só o push não traria nada pra notificar.
+          sessao: sessaoEmail || sessaoPush,
         };
         if (!prefs.atraso && !prefs.registro && !prefs.sessao) {
           resultado.semNadaAvisar++;
@@ -204,6 +212,29 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        if (sessaoPush && aguardandoConfirmacao > 0 && !ensaio) {
+          try {
+            await fetch('https://exp.host/--/api/v2/push/send', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                to: perfil.expo_push_token,
+                title: aguardandoConfirmacao === 1
+                  ? 'Uma sessão esperando confirmação'
+                  : `${aguardandoConfirmacao} sessões esperando confirmação`,
+                body: 'Abra o Dr.Sig para confirmar se aconteceram.',
+              }),
+            });
+          } catch (_) { /* push é o canal descartável: o e-mail ainda vai */ }
+        }
+
+        // O e-mail tem interruptor próprio: ligar só o push não deve
+        // passar a mandar e-mail junto.
+        if (!prefs.atraso && !prefs.registro && !sessaoEmail) {
+          resultado.semNadaAvisar++;
+          continue;
+        }
+
         if (ensaio) {
           const secoes: string[] = [];
           if (aguardandoConfirmacao > 0) secoes.push(`aguardando confirmação: ${aguardandoConfirmacao}`);
@@ -212,7 +243,7 @@ Deno.serve(async (req) => {
           resultado.ensaio.push({
             para: perfil.email,
             secoes,
-            html: montarHtml(atrasados, sessoesSemRelato, aguardandoConfirmacao),
+            html: montarHtml(atrasados, sessoesSemRelato, sessaoEmail ? aguardandoConfirmacao : 0),
           });
           continue;
         }
@@ -224,7 +255,7 @@ Deno.serve(async (req) => {
             from: 'Dr.Sig <naoresponda@drsig.com.br>',
             to: [perfil.email],
             subject: 'Seu resumo diário',
-            html: montarHtml(atrasados, sessoesSemRelato, aguardandoConfirmacao),
+            html: montarHtml(atrasados, sessoesSemRelato, sessaoEmail ? aguardandoConfirmacao : 0),
           }),
         });
         if (!resp.ok) {

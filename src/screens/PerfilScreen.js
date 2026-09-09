@@ -171,13 +171,10 @@ export default function PerfilScreen({ navigation }) {
   const [bioProcessando, setBioProcessando] = useState(false);
   const [enviandoFoto, setEnviandoFoto] = useState(false);
   const [enviandoCapa, setEnviandoCapa] = useState(false);
-  const [notifTranscricaoPush, setNotifTranscricaoPush] = useState(true);
-  const [notifTranscricaoEmail, setNotifTranscricaoEmail] = useState(false);
-  const [notifAtrasoEmail, setNotifAtrasoEmail] = useState(true);
-  const [notifAtrasoPush, setNotifAtrasoPush] = useState(false);
-  const [notifSessaoEmail, setNotifSessaoEmail] = useState(false);
-  const [notifRegistroPush, setNotifRegistroPush] = useState(true);
-  const [notifRegistroEmail, setNotifRegistroEmail] = useState(true);
+  // Um objeto em vez de um useState por interruptor: com três canais são
+  // dez preferências, e a matriz passou a ser desenhada a partir de
+  // LINHAS_NOTIF em vez de doze blocos de JSX quase iguais.
+  const [notif, setNotif] = useState(PADRAO_NOTIF);
   const [notifSalvando, setNotifSalvando] = useState(null);
   const [exportando, setExportando] = useState(false);
   const [excluindoConta, setExcluindoConta] = useState(false);
@@ -260,13 +257,7 @@ export default function PerfilScreen({ navigation }) {
       setContadorNome(u.contador_nome || '');
       setContadorEmail(u.contador_email || '');
       setContadorTelefone(u.contador_telefone || '');
-      setNotifTranscricaoPush(u.notif_transcricao_push !== false);
-      setNotifTranscricaoEmail(u.notif_transcricao_email === true);
-      setNotifAtrasoEmail(u.notif_atraso_email !== false);
-      setNotifAtrasoPush(u.notif_atraso_push === true);
-      setNotifSessaoEmail(u.notif_sessao_email === true);
-      setNotifRegistroPush(u.notif_registro_push !== false);
-      setNotifRegistroEmail(u.notif_registro_email !== false);
+      setNotif(lerPreferencias(u));
 
       // Checagem silenciosa de renovação mensal de créditos — se houver
       // renovação pendente, já reflete o saldo/data novos sem recarregar tudo.
@@ -465,16 +456,16 @@ export default function PerfilScreen({ navigation }) {
 
 
 
-  async function alternarNotif(campo, valor, setter) {
+  async function alternarNotif(campo, valor) {
     setNotifSalvando(campo);
-    setter(valor);
+    setNotif((atual) => ({ ...atual, [campo]: valor }));
     const { error } = await supabase
       .from('profiles')
       .update({ [campo]: valor })
       .eq('id', session.user.id);
     setNotifSalvando(null);
     if (error) {
-      setter(!valor);
+      setNotif((atual) => ({ ...atual, [campo]: !valor }));
       Alert.alert('Erro', 'Não foi possível salvar a preferência.');
     }
   }
@@ -1282,130 +1273,34 @@ export default function PerfilScreen({ navigation }) {
             <View style={st.notifMatrizCard}>
               <View style={st.notifMatrizHeader}>
                 <Text style={st.notifMatrizHeaderTipo} />
-                {/* Era "App", e a coluna É a notificação do Android — a
-                    que aparece na barra do celular. O rótulo fazia parecer
-                    que só havia aviso dentro do app e e-mail, quando o
-                    aviso do sistema já existia o tempo todo. */}
+                <Text style={st.notifMatrizHeaderCanal}>App</Text>
                 <Text style={st.notifMatrizHeaderCanal}>Celular</Text>
                 <Text style={st.notifMatrizHeaderCanal}>E-mail</Text>
               </View>
 
-              <View style={st.notifMatrizLinha}>
-                <View style={st.notifMatrizTipo}>
-                  <Text style={st.bioLabel}>Transcrição pronta</Text>
-                  <Text style={st.bioSub}>Quando a transcrição de uma sessão terminar (ou falhar).</Text>
-                </View>
-                <View style={st.notifMatrizCanalCol}>
-                  {notifSalvando === 'notif_transcricao_push' ? (
-                    <ActivityIndicator color="#497363" />
-                  ) : (
-                    <Switch
-                      value={notifTranscricaoPush}
-                      onValueChange={(v) => alternarNotif('notif_transcricao_push', v, setNotifTranscricaoPush)}
+              {LINHAS_NOTIF.map((linha, i) => (
+                <View
+                  key={linha.titulo}
+                  style={[
+                    st.notifMatrizLinha,
+                    i === LINHAS_NOTIF.length - 1 && st.notifMatrizLinhaUltima,
+                  ]}
+                >
+                  <View style={st.notifMatrizTipo}>
+                    <Text style={st.bioLabel}>{linha.titulo}</Text>
+                    <Text style={st.bioSub}>{linha.sub}</Text>
+                  </View>
+                  {['app', 'push', 'email'].map((canal) => (
+                    <CelulaDeNotificacao
+                      key={canal}
+                      campo={linha[canal]}
+                      ligado={notif[linha[canal]]}
+                      salvando={notifSalvando === linha[canal]}
+                      aoMudar={alternarNotif}
                     />
-                  )}
+                  ))}
                 </View>
-                <View style={st.notifMatrizCanalCol}>
-                  {notifSalvando === 'notif_transcricao_email' ? (
-                    <ActivityIndicator color="#497363" />
-                  ) : (
-                    <Switch
-                      value={notifTranscricaoEmail}
-                      onValueChange={(v) => alternarNotif('notif_transcricao_email', v, setNotifTranscricaoEmail)}
-                    />
-                  )}
-                </View>
-              </View>
-
-              <View style={st.notifMatrizLinha}>
-                <View style={st.notifMatrizTipo}>
-                  <Text style={st.bioLabel}>Recebimento em atraso</Text>
-                  <Text style={st.bioSub}>Quando um pagamento mensal passar do vencimento.</Text>
-                </View>
-                <View style={st.notifMatrizCanalCol}>
-                  {notifSalvando === 'notif_atraso_push' ? (
-                    <ActivityIndicator color="#497363" />
-                  ) : (
-                    <Switch
-                      value={notifAtrasoPush}
-                      onValueChange={(v) => alternarNotif('notif_atraso_push', v, setNotifAtrasoPush)}
-                    />
-                  )}
-                </View>
-                <View style={st.notifMatrizCanalCol}>
-                  {notifSalvando === 'notif_atraso_email' ? (
-                    <ActivityIndicator color="#497363" />
-                  ) : (
-                    <Switch
-                      value={notifAtrasoEmail}
-                      onValueChange={(v) => alternarNotif('notif_atraso_email', v, setNotifAtrasoEmail)}
-                    />
-                  )}
-                </View>
-              </View>
-
-              <View style={st.notifMatrizLinha}>
-                <View style={st.notifMatrizTipo}>
-                  <Text style={st.bioLabel}>Sessão feita / paga</Text>
-                  <Text style={st.bioSub}>
-                    Pergunta, ao abrir o app, se as sessões que já passaram
-                    aconteceram — e se foram pagas, na cobrança por sessão.
-                  </Text>
-                </View>
-                <View style={st.notifMatrizCanalCol}>
-                  {/* Sem interruptor de propósito: este é o único ponto do app
-                      onde um compromisso passado deixa de ser "agendado".
-                      Desligar pararia cobrança, financeiro, fiscal e a
-                      contagem de sessões sem relato. */}
-                  <Switch
-                    value
-                    disabled
-                    onValueChange={() => {}}
-                  />
-                  <Text style={st.notifFixo}>sempre</Text>
-                </View>
-                <View style={st.notifMatrizCanalCol}>
-                  {notifSalvando === 'notif_sessao_email' ? (
-                    <ActivityIndicator color="#497363" />
-                  ) : (
-                    <Switch
-                      value={notifSessaoEmail}
-                      onValueChange={(v) => alternarNotif('notif_sessao_email', v, setNotifSessaoEmail)}
-                    />
-                  )}
-                </View>
-              </View>
-
-              <View style={[st.notifMatrizLinha, st.notifMatrizLinhaUltima]}>
-                <View style={st.notifMatrizTipo}>
-                  <Text style={st.bioLabel}>Incluir registro</Text>
-                  <Text style={st.bioSub}>
-                    Oferece adicionar o relato logo depois de confirmar a
-                    sessão. Desligado, o app só deixa de perguntar — as
-                    sessões sem relato continuam sendo contadas na Início.
-                  </Text>
-                </View>
-                <View style={st.notifMatrizCanalCol}>
-                  {notifSalvando === 'notif_registro_push' ? (
-                    <ActivityIndicator color="#497363" />
-                  ) : (
-                    <Switch
-                      value={notifRegistroPush}
-                      onValueChange={(v) => alternarNotif('notif_registro_push', v, setNotifRegistroPush)}
-                    />
-                  )}
-                </View>
-                <View style={st.notifMatrizCanalCol}>
-                  {notifSalvando === 'notif_registro_email' ? (
-                    <ActivityIndicator color="#497363" />
-                  ) : (
-                    <Switch
-                      value={notifRegistroEmail}
-                      onValueChange={(v) => alternarNotif('notif_registro_email', v, setNotifRegistroEmail)}
-                    />
-                  )}
-                </View>
-              </View>
+              ))}
             </View>
 
             <TouchableOpacity style={st.exportarBtn} onPress={exportarDados} disabled={exportando}>
@@ -1505,6 +1400,109 @@ export default function PerfilScreen({ navigation }) {
   );
 }
 
+// ─── Matriz de notificações ───────────────────────────────────────────
+// Três canais, e cada um é uma coisa mesmo: 'app' é o aviso ao abrir o
+// aplicativo, 'push' é a notificação do Android (que depende da permissão
+// do sistema), 'email' é o e-mail. Antes eram duas colunas e a primeira
+// fazia coisa diferente em cada linha — em "Incluir registro" ela nem push
+// era, só ligava o popup interno.
+//
+// 'sempre' = canal obrigatório, sem interruptor. null = não se aplica.
+const LINHAS_NOTIF = [
+  {
+    titulo: 'Transcrição pronta',
+    sub: 'Quando a transcrição de uma sessão terminar (ou falhar).',
+    app: 'notif_transcricao_app',
+    push: 'notif_transcricao_push',
+    email: 'notif_transcricao_email',
+  },
+  {
+    titulo: 'Recebimento em atraso',
+    sub: 'Quando um pagamento mensal passar do vencimento.',
+    app: 'notif_atraso_app',
+    push: 'notif_atraso_push',
+    email: 'notif_atraso_email',
+  },
+  {
+    titulo: 'Sessão feita / paga',
+    sub: 'Pergunta, ao abrir o app, se as sessões que já passaram aconteceram '
+      + '— e se foram pagas, na cobrança por sessão.',
+    // Sem interruptor de propósito: é o único ponto do app onde um
+    // compromisso passado deixa de ser "agendado". Desligar pararia
+    // cobrança, financeiro, fiscal e a contagem de sessões sem relato.
+    app: 'sempre',
+    push: 'notif_sessao_push',
+    email: 'notif_sessao_email',
+  },
+  {
+    titulo: 'Incluir registro',
+    sub: 'Oferece adicionar o relato logo depois de confirmar a sessão. '
+      + 'Desligado, o app só deixa de perguntar — as sessões sem relato '
+      + 'continuam sendo contadas na Início.',
+    app: 'notif_registro_app',
+    // Não se aplica: é uma pergunta que só faz sentido dentro do fluxo, na
+    // hora de confirmar a sessão. Notificação do celular chegaria fora dele.
+    push: null,
+    email: 'notif_registro_email',
+  },
+];
+
+// Ligado por padrão, salvo os que incomodam sem ser pedidos.
+const DESLIGADO_POR_PADRAO = [
+  'notif_transcricao_email',
+  'notif_atraso_push',
+  'notif_sessao_push',
+  'notif_sessao_email',
+];
+
+const PADRAO_NOTIF = Object.fromEntries(
+  LINHAS_NOTIF.flatMap((l) => [l.app, l.push, l.email])
+    .filter((c) => c && c !== 'sempre')
+    .map((c) => [c, !DESLIGADO_POR_PADRAO.includes(c)])
+);
+
+function lerPreferencias(perfil) {
+  const lidas = {};
+  for (const campo of Object.keys(PADRAO_NOTIF)) {
+    lidas[campo] = perfil[campo] === undefined || perfil[campo] === null
+      ? PADRAO_NOTIF[campo]
+      : perfil[campo] === true;
+  }
+  // `notif_registro_push` nunca foi push — sempre controlou o popup interno
+  // (migration 0083 renomeou pra _app). Quem trocou a preferência antes da
+  // migration tem o valor só na coluna antiga; sem isto, ela voltaria
+  // ligada sozinha na primeira vez que abrisse o Perfil.
+  if (perfil.notif_registro_app === null && perfil.notif_registro_push === false) {
+    lidas.notif_registro_app = false;
+  }
+  return lidas;
+}
+
+function CelulaDeNotificacao({ campo, ligado, salvando, aoMudar }) {
+  if (!campo) {
+    return (
+      <View style={st.notifMatrizCanalCol}>
+        <Text style={st.notifNaoSeAplica}>—</Text>
+      </View>
+    );
+  }
+  if (campo === 'sempre') {
+    return (
+      <View style={st.notifMatrizCanalCol}>
+        <Switch value disabled onValueChange={() => {}} />
+        <Text style={st.notifFixo}>sempre</Text>
+      </View>
+    );
+  }
+  return (
+    <View style={st.notifMatrizCanalCol}>
+      {salvando
+        ? <ActivityIndicator color="#497363" />
+        : <Switch value={!!ligado} onValueChange={(v) => aoMudar(campo, v)} />}
+    </View>
+  );
+}
+
 const st = StyleSheet.create({
   bioRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
@@ -1537,7 +1535,7 @@ const st = StyleSheet.create({
   },
   notifMatrizHeaderTipo: { flex: 1 },
   notifMatrizHeaderCanal: {
-    width: 64, textAlign: 'center', fontSize: 11, fontWeight: '500', color: '#8C857B',
+    width: 58, textAlign: 'center', fontSize: 10.5, fontWeight: '500', color: '#8C857B',
   },
   notifMatrizLinha: {
     flexDirection: 'row', alignItems: 'center',
@@ -1546,8 +1544,9 @@ const st = StyleSheet.create({
   },
   notifMatrizLinhaUltima: { borderBottomWidth: 0 },
   notifMatrizTipo: { flex: 1, paddingRight: 8 },
-  notifMatrizCanalCol: { width: 64, alignItems: 'center' },
+  notifMatrizCanalCol: { width: 58, alignItems: 'center' },
   notifFixo: { fontSize: 10.5, color: '#8C857B', marginTop: 3, lineHeight: 14 },
+  notifNaoSeAplica: { fontSize: 15, color: '#C6C0B6', lineHeight: 22 },
   modalOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'center', alignItems: 'center', padding: 24,

@@ -23,38 +23,15 @@ export const PLANO_LABEL = {
   anual: 'Anual',
 };
 
-// Recarga avulsa: link de pagamento do BTG, Pix, sem taxa.
-//
-// Cada pacote credita mais do que custa — o bônus cresce com o valor, e é
-// o que o Pix sem taxa permite devolver. `creditoBRL` é o que entra no
-// saldo; `valorBRL` é o que sai do bolso.
-//
-// ATENÇÃO ao mexer: `link` e `valorBRL` têm que casar. Um link trocado faz
-// alguém pagar R$ 100 e receber R$ 25. O valor aparece no botão E na
-// página do BTG, então a divergência fica visível antes de pagar — mas o
-// lugar de acertar é aqui.
-export const PACOTES_CREDITO_AVULSO = [
-  { valorBRL: 20,  creditoBRL: 25,  link: 'https://links.btgpactual.com/S4TyflcSY6EuiRk' },
-  { valorBRL: 50,  creditoBRL: 70,  link: 'https://links.btgpactual.com/zqdayH1bEaMeneV' },
-  { valorBRL: 100, creditoBRL: 150, link: 'https://links.btgpactual.com/fwW-N42ZC1yaUSd' },
-];
+// Espelha VALORES_PERMITIDOS_BRL de supabase/functions/mercadopago-criar-checkout-creditos
+// — só pra montar as opções no app; a validação de verdade é sempre no
+// servidor, não confia em nada que vier do cliente.
+export const PACOTES_CREDITO_AVULSO_BRL = [20, 50, 100];
 
-/** Quanto o pacote devolve a mais, em %, pra dizer isso na tela sem que
- *  ninguém tenha que fazer a conta de cabeça. */
-export function bonusDoPacote({ valorBRL, creditoBRL }) {
-  return Math.round(((creditoBRL - valorBRL) / valorBRL) * 100);
-}
-
-/**
- * Cria a cobrança Pix de uma recarga e devolve o que a tela precisa mostrar:
- * o copia-e-cola, a imagem do QR code e o `txId` pra acompanhar.
- *
- * O valor e o crédito não são decididos aqui — o servidor recalcula pela
- * sua própria tabela. Mandar `creditoBRL` daqui seria pedir pra alguém
- * editar a requisição e receber R$ 150 por R$ 1.
- */
-export async function criarCobrancaPix(valorBRL) {
-  const { data, error } = await supabase.functions.invoke('btg-criar-cobranca', {
+/** Pede um link de checkout do Mercado Pago pra recarga avulsa de créditos
+ * de IA — o usuário abre esse link (Linking.openURL) pra pagar. */
+export async function criarCheckoutCreditos(valorBRL) {
+  const { data, error } = await supabase.functions.invoke('mercadopago-criar-checkout-creditos', {
     body: { valorBRL },
   });
   if (error) {
@@ -65,36 +42,7 @@ export async function criarCobrancaPix(valorBRL) {
     } catch (_) {}
     throw new Error(mensagem);
   }
-  if (data?.error) throw new Error(data.error);
-  return data;
-}
-
-/** Estado atual de uma recarga. A tela consulta de tempos em tempos até
- *  virar 'paga' — quem muda esse status é o webhook do BTG, não o app. */
-export async function estadoDaRecarga(txId) {
-  const { data, error } = await supabase
-    .from('recargas_credito')
-    .select('status, credito_brl, valor_pago_brl, pago_em')
-    .eq('tx_id', txId)
-    .maybeSingle();
-  if (error) throw error;
-  return data;
-}
-
-/** Só para a administração da Dr.Sig: devolve a URL onde a conta do BTG é
- *  autorizada. Sem essa conexão, nenhuma recarga consegue ser criada. */
-export async function urlConexaoBtg() {
-  const { data, error } = await supabase.functions.invoke('btg-oauth-iniciar', { body: {} });
-  if (error) {
-    let mensagem = error.message;
-    try {
-      const corpo = await error.context?.json();
-      if (corpo?.error) mensagem = corpo.error;
-    } catch (_) {}
-    throw new Error(mensagem);
-  }
-  if (data?.error) throw new Error(data.error);
-  return data?.url;
+  return data?.initPoint;
 }
 
 export function usdParaBRL(valorUSD) {

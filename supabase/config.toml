@@ -17,21 +17,6 @@ verify_jwt = false
 [functions.auth-send-email]
 verify_jwt = false
 
-[functions.btg-criar-assinatura]
-verify_jwt = true
-
-[functions.btg-criar-cobranca]
-verify_jwt = true
-
-[functions.btg-oauth-callback]
-verify_jwt = false
-
-[functions.btg-oauth-iniciar]
-verify_jwt = true
-
-[functions.btg-webhook]
-verify_jwt = false
-
 [functions.confirmar-autorizacao]
 verify_jwt = false
 

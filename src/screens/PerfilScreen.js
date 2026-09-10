@@ -27,7 +27,7 @@ import { enviarFotoPerfil, enviarFotoCapa } from '../services/avatar';
 import { exportarDadosUsuario } from '../services/exportacaoDados';
 import {
   formatarSaldoBRL, chamarRenovarCreditos, PLANOS_CREDITO_MENSAL_BRL, PLANO_LABEL,
-  PACOTES_CREDITO_AVULSO, bonusDoPacote, urlConexaoBtg,
+  PACOTES_CREDITO_AVULSO_BRL, criarCheckoutCreditos,
 } from '../services/creditosIA';
 import { excluirConta, alterarEmailLogin, alterarSenha } from '../services/conta';
 import SeletorCidadeEstado from '../components/SeletorCidadeEstado';
@@ -361,42 +361,30 @@ export default function PerfilScreen({ navigation }) {
     }
   }
 
-  // Os três links fixos do BTG saíram daqui. Eles cobravam, mas o banco
-  // não tinha como dizer QUEM pagou — o link era o mesmo pra todo mundo, e
-  // o saldo ficava parado esperando conferência à mão. Agora cada recarga
-  // vira uma cobrança própria, com QR code próprio, e o crédito entra
-  // sozinho quando o BTG avisa que o Pix caiu.
-  function abrirRecargaCreditos() {
-    Alert.alert(
-      'Adicionar créditos',
-      'Pagamento por Pix, sem taxa nenhuma. Cada pacote credita mais do que custa:',
-      [
-        ...PACOTES_CREDITO_AVULSO.map((pacote) => ({
-          text: `R$ ${pacote.valorBRL} → R$ ${pacote.creditoBRL} (+${bonusDoPacote(pacote)}%)`,
-          onPress: () => navigation.navigate('RecargaCreditos', {
-            valorBRL: pacote.valorBRL,
-            creditoBRL: pacote.creditoBRL,
-          }),
-        })),
-        { text: 'Cancelar', style: 'cancel' },
-      ],
-      { cancelable: false },
-    );
-  }
-
-  // Só pra administração da Dr.Sig: é a conta da empresa que recebe os Pix
-  // de todo mundo, não a de cada usuária. Sem esta conexão, nenhuma recarga
-  // consegue ser criada.
-  async function conectarContaBtg() {
+  async function iniciarCheckoutCreditos(valorBRL) {
     setAbrindoCheckout(true);
     try {
-      const url = await urlConexaoBtg();
-      if (url) await Linking.openURL(url);
+      const initPoint = await criarCheckoutCreditos(valorBRL);
+      if (initPoint) await Linking.openURL(initPoint);
     } catch (e) {
-      Alert.alert('Não consegui abrir a conexão', mensagemDeErro(e));
+      Alert.alert('Erro ao gerar link de pagamento', mensagemDeErro(e));
     } finally {
       setAbrindoCheckout(false);
     }
+  }
+
+  function abrirRecargaCreditos() {
+    Alert.alert(
+      'Adicionar créditos',
+      'Escolha o valor da recarga — você será levada ao checkout do Mercado Pago.',
+      [
+        ...PACOTES_CREDITO_AVULSO_BRL.map((valor) => ({
+          text: `R$ ${valor}`,
+          onPress: () => iniciarCheckoutCreditos(valor),
+        })),
+        { text: 'Cancelar', style: 'cancel' },
+      ]
+    );
   }
 
   // useFocusEffect (e não useEffect de montagem): a biometria pode ser
@@ -1152,22 +1140,6 @@ export default function PerfilScreen({ navigation }) {
                   <Text style={st.assinaturaBtnTexto}>Adicionar créditos</Text>
                 )}
               </TouchableOpacity>
-
-              {/* Só pra administração: é a conta da empresa que recebe os
-                  Pix de todas as recargas. Enquanto ela não estiver
-                  conectada, "Adicionar créditos" falha na hora de gerar a
-                  cobrança — e o erro apareceria pra usuária, sem que ela
-                  pudesse fazer nada a respeito. */}
-              {user.is_admin === true && (
-                <TouchableOpacity
-                  style={st.conexaoBtgBtn}
-                  onPress={conectarContaBtg}
-                  disabled={abrindoCheckout}
-                >
-                  <Ionicons name="link-outline" size={15} color="#7D6540" />
-                  <Text style={st.conexaoBtgTexto}>Conectar a conta do BTG</Text>
-                </TouchableOpacity>
-              )}
             </View>
 
             <Text style={st.sectionTitle}>Contador</Text>
@@ -1543,12 +1515,6 @@ const st = StyleSheet.create({
     borderWidth: 1, borderColor: '#EAE5DC',
   },
   trocarSenhaBtnText: { fontSize: 15, fontWeight: '500', color: '#497363', lineHeight: 22 },
-  conexaoBtgBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
-    marginTop: 10, paddingVertical: 11, borderRadius: 10,
-    borderWidth: 1, borderColor: '#E3D5BC', backgroundColor: '#F2E9DC',
-  },
-  conexaoBtgTexto: { color: '#7D6540', fontSize: 13.5, fontWeight: '600', lineHeight: 20 },
   notifAviso: {
     backgroundColor: '#F2E9DC', borderColor: '#E3D5BC', borderWidth: 1,
     borderRadius: 12, padding: 15, marginBottom: 12,

@@ -14,24 +14,32 @@
 // o pagamento imediato chega como `instant-collections.paid` (igual a uma
 // cobrança Pix comum) e cada recorrência como `automatic-pix.scheduling-paid`.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { chamarBtg, tokenValido, admin } from '../_shared/btg.ts';
+import {
+  chamarBtg, tokenValido, admin, criarLinkDeCartao, contaDaEmpresa,
+  comAcrescimoDeCartao, ACRESCIMO_CARTAO,
+} from '../_shared/btg.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
+const PIX_KEY = Deno.env.get('BTG_PIX_KEY')!;
 
-// ⚠️ ÚNICO ponto desta integração que não veio da documentação oficial.
-// As fichas técnicas do BTG deram os escopos, os eventos e o formato do
-// payload; a página de referência que traz o caminho do endpoint não abre
-// (a documentação deles é uma SPA que redireciona). Se o BTG responder 404
-// aqui, é esta linha que está errada — nada mais.
-const CAMINHO_AUTORIZACAO = '/banking/collections/automatic-pix/authorizations';
+// Confirmado na referência oficial. Note o `/flow` no fim e o singular em
+// `authorization`: é a rota da jornada, não um CRUD de autorizações.
+const CAMINHO_AUTORIZACAO = '/banking/collections/automatic-pix/authorization/flow';
+
+// A primeira cobrança da recorrência não pode ser hoje: o BTG exige pelo
+// menos 3 dias de intervalo. Quem cobra na hora é o `immediatePix` — é essa
+// a divisão de trabalho da jornada 3.
+const DIAS_MINIMOS_ATE_A_PRIMEIRA = 3;
 
 // Espelha PLANOS de src/services/planos.js. O valor NUNCA vem do cliente:
 // bastaria editar a requisição pra assinar o anual por um real.
+// `periodo` usa o enum do BTG: ANNUALLY, MONTHLY, QUARTERLY, SEMIANNUAL,
+// WEEKLY. Não é ANNUAL.
 const PLANOS: Record<string, { valorBRL: number; meses: number; periodo: string }> = {
   mensal: { valorBRL: 89, meses: 1, periodo: 'MONTHLY' },
   semestral: { valorBRL: 414, meses: 6, periodo: 'SEMIANNUAL' },
-  anual: { valorBRL: 588, meses: 12, periodo: 'ANNUAL' },
+  anual: { valorBRL: 588, meses: 12, periodo: 'ANNUALLY' },
 };
 
 const CORS = {
@@ -52,12 +60,16 @@ function soDigitos(v: unknown) {
 }
 
 /** AAAA-MM-DD somando meses, sem estourar em fim de mês. */
-function emMeses(meses: number): string {
-  const d = new Date();
+function emMeses(meses: number, base = new Date()): string {
+  const d = new Date(base);
   const dia = d.getDate();
   d.setMonth(d.getMonth() + meses);
   if (d.getDate() < dia) d.setDate(0); // 31/01 + 1 mês vira 28/02, não 03/03
   return d.toISOString().slice(0, 10);
+}
+
+function emDias(dias: number): Date {
+  return new Date(Date.now() + dias * 86400_000);
 }
 
 Deno.serve(async (req) => {
@@ -80,7 +92,48 @@ Deno.serve(async (req) => {
     const config = PLANOS[plano];
     if (!config) return json({ error: 'Plano inválido.' }, 400);
 
+    // 'pix' é recorrente de verdade; 'cartao' é um link por ciclo, com o
+    // acréscimo da adquirência repassado — e dito na tela antes da escolha.
+    const forma = corpo?.forma === 'cartao' ? 'cartao' : 'pix';
+
     const db = admin();
+
+    if (forma === 'cartao') {
+      const valorComTaxa = comAcrescimoDeCartao(config.valorBRL);
+      const { data: linhaCartao, error: erroCartao } = await db
+        .from('assinaturas_btg')
+        .insert({
+          user_id: userId,
+          plano,
+          forma: 'cartao',
+          valor_plano_brl: config.valorBRL,
+          valor_cobrado_brl: valorComTaxa,
+          taxa_percentual: ACRESCIMO_CARTAO * 100,
+        })
+        .select().single();
+      if (erroCartao) throw erroCartao;
+
+      const link = await criarLinkDeCartao({
+        nome: `Dr.Sig ${plano} — ${linhaCartao.external_id}`,
+        valorBRL: valorComTaxa,
+      });
+      if (!link.linkUrl) {
+        return json({ error: 'O BTG não devolveu o link de pagamento.' }, 502);
+      }
+      await db.from('assinaturas_btg').update({
+        payment_link_id: link.id,
+        link_url: link.linkUrl,
+      }).eq('id', linhaCartao.id);
+
+      return json({
+        externalId: linhaCartao.external_id,
+        forma: 'cartao',
+        linkUrl: link.linkUrl,
+        valorBRL: valorComTaxa,
+        valorPlanoBRL: config.valorBRL,
+        plano,
+      });
+    }
 
     // O Pix Automático exige identificar o pagador: é o app do banco DELE
     // que vai mostrar a autorização pra aprovar.
@@ -128,6 +181,17 @@ Deno.serve(async (req) => {
     if (erroInsert) throw erroInsert;
 
     const sessao = await tokenValido();
+
+    const conta = await contaDaEmpresa(sessao);
+    if (!conta?.number) {
+      return json({ error: 'Não consegui identificar a conta que recebe no BTG.' }, 502);
+    }
+
+    // A recorrência começa no primeiro vencimento DEPOIS da carência do
+    // BTG; o ciclo de hoje é o `immediatePix`, cobrado na hora.
+    const primeira = emDias(DIAS_MINIMOS_ATE_A_PRIMEIRA + 1);
+    const inicial = emMeses(config.meses, primeira);
+
     const autorizacao = await chamarBtg(CAMINHO_AUTORIZACAO, {
       method: 'POST',
       body: JSON.stringify({
@@ -135,21 +199,31 @@ Deno.serve(async (req) => {
         // pagamento à pessoa sem depender de casar e-mail.
         externalId: linha.external_id,
         period: config.periodo,
-        // Três tentativas em sete dias antes de desistir do ciclo.
+        // Três tentativas em sete dias antes de desistir do ciclo. É o que
+        // segura a assinatura quando a conta está vazia no vencimento.
         retryPolicy: 'ACCEPT_3R_7D',
         amount: config.valorBRL,
-        initialDate: new Date().toISOString().slice(0, 10),
-        // Sem fidelidade: um ano de recorrência, renovado enquanto a
+        initialDate: inicial,
+        // Sem fidelidade: dois anos de horizonte, renovado enquanto a
         // assinatura seguir ativa. `assinatura-processar-ciclo` acompanha.
-        finalDate: emMeses(12),
-        useLineOfCredit: true,
-        activation: { journeyType: 'JOURNEY_3' },
+        finalDate: emMeses(24),
+        account: { number: conta.number, branch: conta.branch },
         link: {
           contract: String(linha.external_id),
+          description: `Dr.Sig — plano ${plano}`,
           debtor: { taxId: cpf, name: perfil.nome, personType: 'F' },
         },
+        // A metade "jornada 3": o pagamento de hoje, por QR code, junto da
+        // autorização da recorrência. Uma leitura só resolve as duas.
+        immediatePix: {
+          pixKey: PIX_KEY,
+          amount: config.valorBRL,
+          allowCustomerChangeValue: false,
+          expiresIn: 3600,
+          description: `Dr.Sig — plano ${plano}`,
+        },
       }),
-    }, sessao);
+    }, sessao, 'banking');
 
     const emv = autorizacao?.qrCodeInfo?.emv ?? null;
     const qrCodeUrl = autorizacao?.location?.url ?? null;

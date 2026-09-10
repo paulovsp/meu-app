@@ -423,6 +423,43 @@
     });
   }
 
+  /**
+   * Traduz o que o Mercado Pago devolve quando um campo do cartão não
+   * passa na validação.
+   *
+   * Ele rejeita com uma LISTA de erros, e cada mensagem vem em inglês e no
+   * vocabulário da API: "cardNumber should be a number.", "securityCode
+   * should be of length 3". Ninguém preenchendo um cartão sabe o que é
+   * `cardNumber`. E como vem lista, mostrar só o primeiro faz a pessoa
+   * corrigir um campo, tentar de novo, e descobrir o próximo — um por vez.
+   * Aqui vira português, e os problemas aparecem todos juntos.
+   */
+  function mensagemDoErroDeCartao(err) {
+    const porCampo = [
+      { chave: 'cardnumber', texto: 'Confira o número do cartão.' },
+      { chave: 'expiration', texto: 'Confira a validade do cartão.' },
+      { chave: 'securitycode', texto: 'Confira o código de segurança (CVV).' },
+      { chave: 'cardholdername', texto: 'Confira o nome como está impresso no cartão.' },
+      { chave: 'identification', texto: 'Confira o CPF do titular do cartão.' },
+    ];
+
+    const lista = Array.isArray(err) ? err : (err && Array.isArray(err.cause) ? err.cause : null);
+    if (lista && lista.length) {
+      const vistos = [];
+      lista.forEach(function (item) {
+        const texto = String((item && (item.message || item.description)) || '').toLowerCase();
+        porCampo.forEach(function (campo) {
+          if (texto.indexOf(campo.chave) !== -1 && vistos.indexOf(campo.texto) === -1) {
+            vistos.push(campo.texto);
+          }
+        });
+      });
+      if (vistos.length) return vistos.join(' ');
+    }
+
+    return (err && err.message) || 'Não foi possível confirmar. Confira os dados do cartão.';
+  }
+
   async function pagar(mp, plano) {
     const botao = document.getElementById('btn-pagar');
     const titular = document.getElementById('titular').value.trim();
@@ -452,9 +489,7 @@
       const r = await chamarFuncao({ plano: plano.id, cardTokenId: token.id });
       renderSucesso(plano, r.status);
     } catch (err) {
-      // Erro de validação dos campos vem como lista, não como mensagem.
-      const daLista = err && err.length && err[0] && err[0].message;
-      mostrarErro(daLista || err.message || 'Não foi possível confirmar. Confira os dados do cartão.');
+      mostrarErro(mensagemDoErroDeCartao(err));
       botao.disabled = false;
       botao.textContent = 'Assinar — ' + plano.preco + plano.periodo;
     }

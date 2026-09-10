@@ -20,6 +20,10 @@ coluna seria um endpoint aberto, e não existe nenhuma assim.
 |---|---|---|
 | `assinatura-processar-ciclo` | `--no-verify-jwt` | segredo de cron (`x-cron-secret`) |
 | `auth-send-email` | `--no-verify-jwt` | assinatura do hook do Supabase (Standard Webhooks) |
+| `btg-criar-cobranca` | padrão | JWT da usuária, vindo do app |
+| `btg-oauth-callback` | `--no-verify-jwt` | `state` assinado por HMAC |
+| `btg-oauth-iniciar` | padrão | JWT da usuária + `profiles.is_admin` — a conta do BTG é da empresa, não de cada usuária |
+| `btg-webhook` | `--no-verify-jwt` | o `txId` só credita se existir em `recargas_credito`, gravado quando NÓS criamos a cobrança |
 | `confirmar-autorizacao` | `--no-verify-jwt` | token de uso único na URL — a página do analisante chama sem cabeçalho nenhum |
 | `curso-transcrever-webhook` | `--no-verify-jwt` | segredo em `x-webhook-secret` (AssemblyAI) |
 | `curso-transcrever` | padrão | JWT da usuária, vindo do app |

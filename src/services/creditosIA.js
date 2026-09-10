@@ -45,6 +45,58 @@ export function bonusDoPacote({ valorBRL, creditoBRL }) {
   return Math.round(((creditoBRL - valorBRL) / valorBRL) * 100);
 }
 
+/**
+ * Cria a cobrança Pix de uma recarga e devolve o que a tela precisa mostrar:
+ * o copia-e-cola, a imagem do QR code e o `txId` pra acompanhar.
+ *
+ * O valor e o crédito não são decididos aqui — o servidor recalcula pela
+ * sua própria tabela. Mandar `creditoBRL` daqui seria pedir pra alguém
+ * editar a requisição e receber R$ 150 por R$ 1.
+ */
+export async function criarCobrancaPix(valorBRL) {
+  const { data, error } = await supabase.functions.invoke('btg-criar-cobranca', {
+    body: { valorBRL },
+  });
+  if (error) {
+    let mensagem = error.message;
+    try {
+      const corpo = await error.context?.json();
+      if (corpo?.error) mensagem = corpo.error;
+    } catch (_) {}
+    throw new Error(mensagem);
+  }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+
+/** Estado atual de uma recarga. A tela consulta de tempos em tempos até
+ *  virar 'paga' — quem muda esse status é o webhook do BTG, não o app. */
+export async function estadoDaRecarga(txId) {
+  const { data, error } = await supabase
+    .from('recargas_credito')
+    .select('status, credito_brl, valor_pago_brl, pago_em')
+    .eq('tx_id', txId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+/** Só para a administração da Dr.Sig: devolve a URL onde a conta do BTG é
+ *  autorizada. Sem essa conexão, nenhuma recarga consegue ser criada. */
+export async function urlConexaoBtg() {
+  const { data, error } = await supabase.functions.invoke('btg-oauth-iniciar', { body: {} });
+  if (error) {
+    let mensagem = error.message;
+    try {
+      const corpo = await error.context?.json();
+      if (corpo?.error) mensagem = corpo.error;
+    } catch (_) {}
+    throw new Error(mensagem);
+  }
+  if (data?.error) throw new Error(data.error);
+  return data?.url;
+}
+
 export function usdParaBRL(valorUSD) {
   return (valorUSD || 0) * TAXA_REFERENCIA_USD_BRL;
 }

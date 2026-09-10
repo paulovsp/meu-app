@@ -35,13 +35,17 @@
   .plano[aria-checked="true"] .marca span { opacity: 1; }
 
   .plano-conteudo { flex: 1 1 auto; min-width: 0; }
+  /* Os filhos do cartão são <span> (um <button> não pode conter <div>), e
+     span é inline por padrão — sem isto o nome do plano e a descrição saem
+     grudados: "MensalCobrado todo mês". */
   .selo {
-    display: inline-block; background: #3A5C4F; color: #fff; font-size: 10px; font-weight: 700;
+    display: block; width: fit-content;
+    background: #3A5C4F; color: #fff; font-size: 10px; font-weight: 700;
     padding: 3px 8px; border-radius: 20px; text-transform: uppercase; letter-spacing: .03em;
     white-space: nowrap; margin-bottom: 6px;
   }
-  .plano-nome { font-size: 15.5px; font-weight: 700; }
-  .plano-detalhe { font-size: 12.5px; color: #6B6860; margin-top: 3px; }
+  .plano-nome { display: block; font-size: 15.5px; font-weight: 700; }
+  .plano-detalhe { display: block; font-size: 12.5px; color: #6B6860; margin-top: 3px; }
   .plano-preco { flex-shrink: 0; text-align: right; font-size: 18px; font-weight: 800; color: #3A5C4F; white-space: nowrap; }
   .plano-preco small { display: block; font-size: 11.5px; font-weight: 600; color: #6B6860; }
 

@@ -18,8 +18,13 @@ const CLIENT_SECRET = Deno.env.get('BTG_CLIENT_SECRET')!;
 // de ambiente — e evita alguém editar a constante errada na pressa.
 export const API_BASE = Deno.env.get('BTG_API_BASE')
   ?? 'https://api.sandbox.empresas.btgpactual.com';
+// Cada ambiente tem SEU servidor de identidade. Um app criado no sandbox
+// não existe pro BTG Id de produção — a resposta é AppNotFoundError, que
+// parece problema de Client ID e não é.
+//   sandbox    https://id.sandbox.btgpactual.com
+//   producao   https://id.btgpactual.com
 export const ID_BASE = Deno.env.get('BTG_ID_BASE')
-  ?? 'https://id.btgpactual.com';
+  ?? 'https://id.sandbox.btgpactual.com';
 
 export const REDIRECT_URI = Deno.env.get('BTG_OAUTH_REDIRECT_URI')
   ?? 'https://app.drsig.com.br/btg-conectado.html';

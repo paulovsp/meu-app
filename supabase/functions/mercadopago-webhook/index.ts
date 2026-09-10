@@ -165,6 +165,42 @@ async function aplicarAssinaturaPorId(
   }
   if (estado.assinatura_status === 'ativa') patch.assinatura_renovacao_notificada_em = null;
   await supabaseAdmin.from('profiles').update(patch).eq('id', userId);
+
+  // O brinde do primeiro mês. Estava só no caminho por e-mail — e este,
+  // por id, é agora o único que roda. Sem isto a assinatura ativava e o
+  // saldo ficava zerado, sem nada explicando por quê.
+  if (estado.assinatura_status !== 'ativa' || !estado.assinatura_plano) return;
+  const creditoUsd = creditoMensalUsd(estado.assinatura_plano);
+  if (creditoUsd == null) return;
+
+  const { data: perfil } = await supabaseAdmin
+    .from('profiles')
+    .select('creditos_ia, proxima_renovacao_credito')
+    .eq('id', userId)
+    .maybeSingle();
+  if (!perfil) return;
+
+  // Só credita ao ENTRAR em ativa. O Mercado Pago reenvia a notificação de
+  // uma assinatura já autorizada; sem esta guarda, cada reenvio somaria um
+  // mês de brinde. `proxima_renovacao_credito` já preenchida significa que
+  // o ciclo de crédito desta assinatura já começou.
+  if (perfil.proxima_renovacao_credito) return;
+
+  const proxima = new Date();
+  proxima.setUTCMonth(proxima.getUTCMonth() + 1);
+  await supabaseAdmin.from('profiles').update({
+    creditos_ia: Number(perfil.creditos_ia ?? 0) + creditoUsd,
+    proxima_renovacao_credito: proxima.toISOString().slice(0, 10),
+  }).eq('id', userId);
+
+  await supabaseAdmin.from('uso_ia').insert({
+    user_id: userId,
+    tipo: 'renovacao',
+    provedor: 'sistema',
+    modelo: `plano_${estado.assinatura_plano}`,
+    unidades: null,
+    custo_estimado: -creditoUsd,
+  });
 }
 
 function parseReferenciaAssinatura(externalReference: string): { plano: Plano; userId: string } | null {

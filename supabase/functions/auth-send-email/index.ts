@@ -95,6 +95,18 @@ function montarLinkVerificacao(tokenHash: string, tipo: string, redirectTo: stri
 // (confirmar-cadastro.html) que exige um clique de verdade num botão —
 // só DEPOIS desse clique é que o token é enviado pro Supabase (via POST,
 // não GET, também mais resistente a pré-carregamento automático).
+// A recuperação de senha tinha o MESMO defeito que o cadastro já teve, e
+// mais um. O mesmo: apontava pro GET /auth/v1/verify, que os scanners de
+// e-mail seguem sozinhos, consumindo o token de uso único antes da pessoa
+// clicar. O a mais: o redirect_to só era incluído se viesse preenchido, e
+// sem ele o Supabase mandava a pessoa pra URL padrão do projeto — nunca
+// pra tela de escolher a senha nova. Na prática, o link nunca funcionou.
+function montarLinkRedefinirSenha(tokenHash: string) {
+  const url = new URL('https://app.drsig.com.br/redefinir-senha.html');
+  url.searchParams.set('token_hash', tokenHash);
+  return url.toString();
+}
+
 function montarLinkConfirmacaoCadastro(tokenHash: string) {
   const url = new URL('https://app.drsig.com.br/confirmar-cadastro.html');
   url.searchParams.set('token_hash', tokenHash);
@@ -224,12 +236,13 @@ Deno.serve(async (req) => {
         `
       );
     } else if (tipo === 'recovery') {
+      const linkSenha = montarLinkRedefinirSenha(emailData?.token_hash);
       subject = 'Redefinição de senha — Dr.Sig';
       html = envelope(
         'Redefinir sua senha',
         `
           <p>Recebemos um pedido pra redefinir a senha da sua conta no Dr.Sig. Clique no link abaixo pra escolher uma nova senha:</p>
-          <p><a href="${link}" style="background:#3A5C4F;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;display:inline-block;">Redefinir senha</a></p>
+          <p><a href="${linkSenha}" style="background:#3A5C4F;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;display:inline-block;">Redefinir senha</a></p>
         `
       );
     } else {

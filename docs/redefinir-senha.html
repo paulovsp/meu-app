@@ -141,22 +141,38 @@
 
 <script>
   // Chave pública (anon), a mesma já embutida no bundle do app — segura pra
-  // expor num site estático. O access_token de recuperação vem no fragmento
-  // da URL (#access_token=...&type=recovery), colocado ali pelo próprio
-  // /auth/v1/verify do Supabase depois que o link do e-mail é clicado; por
-  // ser fragmento (#), nunca é enviado a nenhum servidor, só o JS local lê.
+  // expor num site estático.
+  //
+  // O token chega em `?token_hash=`, e é esta página que o troca por uma
+  // sessão — só depois do clique em "Salvar nova senha". Antes o link do
+  // e-mail ia direto pro /auth/v1/verify do Supabase, e scanners de
+  // segurança de e-mail seguiam o link sozinhos, queimando o token de uso
+  // único antes de a pessoa clicar. Scanner não executa JavaScript.
   const SUPABASE_URL = 'https://iahtyvqjgukdgrftpyxm.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_GEYLOEfzFHU0zkdpJCNDVw_cVbO_rS6';
 
-  function lerParametrosHash() {
-    const hash = window.location.hash.replace(/^#/, '');
-    return new URLSearchParams(hash);
-  }
+  // Aceita também o formato antigo (#access_token=...), pra não quebrar um
+  // e-mail que já esteja na caixa de entrada de alguém.
+  const params = new URLSearchParams(window.location.search);
+  const doHash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  const tokenHash = params.get('token_hash');
+  let accessToken = doHash.get('access_token');
+  const tipo = doHash.get('type');
+  const erroUrl = doHash.get('error_description') || doHash.get('error');
 
-  const params = lerParametrosHash();
-  const accessToken = params.get('access_token');
-  const tipo = params.get('type');
-  const erroUrl = params.get('error_description') || params.get('error');
+  /** Troca o token de uso único por uma sessão. Só roda no clique. */
+  async function trocarTokenPorSessao() {
+    const resp = await fetch(SUPABASE_URL + '/auth/v1/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
+      body: JSON.stringify({ type: 'recovery', token_hash: tokenHash }),
+    });
+    const dados = await resp.json();
+    if (!resp.ok || !dados.access_token) {
+      throw new Error('Este link já foi usado ou expirou. Peça um novo em "Esqueci minha senha".');
+    }
+    return dados.access_token;
+  }
 
   const telaForm = document.getElementById('tela-form');
   const telaErro = document.getElementById('tela-erro');
@@ -169,7 +185,7 @@
     erroForm.classList.add('visivel');
   }
 
-  if (!accessToken || erroUrl || tipo !== 'recovery') {
+  if ((!accessToken && !tokenHash) || erroUrl || (accessToken && tipo !== 'recovery')) {
     telaForm.style.display = 'none';
     telaErro.style.display = 'block';
   } else {
@@ -195,6 +211,11 @@
       btnSalvar.textContent = 'Salvando...';
 
       try {
+        // A troca do token acontece AQUI, e não ao abrir a página: é o que
+        // impede um scanner de e-mail de queimar o token de uso único
+        // antes de a pessoa chegar a digitar a senha.
+        if (!accessToken) accessToken = await trocarTokenPorSessao();
+
         const resp = await fetch(SUPABASE_URL + '/auth/v1/user', {
           method: 'PUT',
           headers: {

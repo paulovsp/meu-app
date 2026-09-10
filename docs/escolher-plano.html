@@ -443,7 +443,10 @@
       { chave: 'identification', texto: 'Confira o CPF do titular do cartão.' },
     ];
 
-    const lista = Array.isArray(err) ? err : (err && Array.isArray(err.cause) ? err.cause : null);
+    // Não usa Array.isArray: o SDK do Mercado Pago às vezes rejeita com um
+    // objeto parecido com lista (tem `length` e índices), e não com um
+    // Array de verdade — a checagem estrita deixava passar direto.
+    const lista = (err && err.length && err[0]) ? err : (err && err.cause && err.cause.length ? err.cause : null);
     if (lista && lista.length) {
       const vistos = [];
       lista.forEach(function (item) {

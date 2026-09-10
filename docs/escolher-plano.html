@@ -10,43 +10,54 @@
   .card { max-width: 560px; margin: 0 auto; background: #fff; border-radius: 20px; padding: 28px 22px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); }
   h1 { font-size: 21px; margin: 0 0 8px; }
   .lede { color: #6B6860; font-size: 14px; margin: 0 0 24px; }
-  .planos { display: flex; flex-direction: column; gap: 14px; }
+  .planos { display: flex; flex-direction: column; gap: 12px; }
+
+  /* O plano é um botão de escolha, não de compra: selecionar não leva a
+     lugar nenhum. Por isso ele se comporta como rádio — inclusive pro
+     teclado e pro leitor de tela. */
   .plano {
-    border: 2px solid #E8E4DD; border-radius: 16px; padding: 16px 18px;
-    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 14px;
-    cursor: pointer; background: #FAFBFC; transition: border-color .15s, background .15s;
+    border: 2px solid #E8E4DD; border-radius: 16px; padding: 15px 16px;
+    display: flex; align-items: center; gap: 14px;
+    cursor: pointer; background: #FAFBFC; width: 100%; text-align: left;
+    font: inherit; color: inherit;
+    transition: border-color .15s, background .15s;
   }
-  .plano:hover { border-color: #3A5C4F; background: #F5F7FA; }
-  .plano.destaque { border-color: #3A5C4F; background: #F0F4F8; }
-  .plano-nome { font-size: 15.5px; font-weight: 700; color: #302C28; }
+  .plano:hover { border-color: #B9C6C0; }
+  .plano:focus-visible { outline: 3px solid #3A5C4F; outline-offset: 2px; }
+  .plano[aria-checked="true"] { border-color: #3A5C4F; background: #F0F4F8; }
+
+  .marca {
+    flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%;
+    border: 2px solid #C6C1B8; display: flex; align-items: center; justify-content: center;
+  }
+  .plano[aria-checked="true"] .marca { border-color: #3A5C4F; background: #3A5C4F; }
+  .marca span { width: 8px; height: 8px; border-radius: 50%; background: #fff; opacity: 0; }
+  .plano[aria-checked="true"] .marca span { opacity: 1; }
+
+  .plano-conteudo { flex: 1 1 auto; min-width: 0; }
   .selo {
     display: inline-block; background: #3A5C4F; color: #fff; font-size: 10px; font-weight: 700;
     padding: 3px 8px; border-radius: 20px; text-transform: uppercase; letter-spacing: .03em;
     white-space: nowrap; margin-bottom: 6px;
   }
-  .plano-preco-btn { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; margin-left: auto; }
-  .plano-preco { font-size: 18px; font-weight: 800; color: #3A5C4F; white-space: nowrap; text-align: right; }
-  .plano-preco small { font-size: 11.5px; font-weight: 600; color: #6B6860; }
+  .plano-nome { font-size: 15.5px; font-weight: 700; }
   .plano-detalhe { font-size: 12.5px; color: #6B6860; margin-top: 3px; }
-  .plano-conteudo { flex: 1 1 130px; min-width: 0; }
-  .btn-assinar {
-    background: #3A5C4F; color: #fff; border: none; border-radius: 10px;
-    padding: 9px 14px; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; flex-shrink: 0;
-  }
-  .btn-assinar:disabled { opacity: 0.6; cursor: default; }
+  .plano-preco { flex-shrink: 0; text-align: right; font-size: 18px; font-weight: 800; color: #3A5C4F; white-space: nowrap; }
+  .plano-preco small { display: block; font-size: 11.5px; font-weight: 600; color: #6B6860; }
+
   .btn-grande {
     background: #3A5C4F; color: #fff; border: none; border-radius: 12px; width: 100%;
-    padding: 15px 18px; font-size: 15.5px; font-weight: 700; cursor: pointer;
+    padding: 15px 18px; font-size: 15.5px; font-weight: 700; cursor: pointer; margin-top: 20px;
   }
-  .btn-grande:disabled { opacity: 0.6; cursor: default; }
+  .btn-grande:disabled { background: #C6C1B8; cursor: default; }
   .rodape { margin-top: 26px; text-align: center; }
   .rodape a { color: #6B6860; font-size: 13.5px; text-decoration: underline; }
-  .depois { margin-top: 26px; padding-top: 20px; border-top: 1px solid #EFECE7; text-align: center; }
-  .depois p { font-size: 13px; color: #8A857D; margin: 0; }
+  .depois { margin-top: 24px; padding-top: 18px; border-top: 1px solid #EFECE7; }
+  .depois p { font-size: 12.5px; color: #8A857D; margin: 0; }
   .erro { background: #FCEBEA; color: #C0392B; padding: 12px 14px; border-radius: 10px; font-size: 13.5px; margin-bottom: 20px; display: none; }
   .aviso-sem-token { text-align: center; padding: 20px 0; }
   .aviso-sem-token p { color: #6B6860; font-size: 14.5px; }
-  .nota { font-size: 12px; color: #A5A19A; margin-top: 22px; line-height: 1.6; }
+  .nota { font-size: 12px; color: #A5A19A; margin-top: 20px; line-height: 1.6; }
   .carregando-tela { text-align: center; padding: 60px 0; color: #6B6860; }
 </style>
 </head>
@@ -59,6 +70,7 @@
   const SUPABASE_URL = 'https://iahtyvqjgukdgrftpyxm.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_GEYLOEfzFHU0zkdpJCNDVw_cVbO_rS6';
   const FUNCAO_URL = SUPABASE_URL + '/functions/v1/mercadopago-criar-checkout-assinatura';
+  const CHAVE_SESSAO = 'drsig.sessao-planos';
   const card = document.getElementById('card');
 
   // ─── As duas portas de entrada desta tela ───────────────────────────
@@ -80,8 +92,44 @@
   // recuperação de senha; este era o terceiro do mesmo jeito.
   const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
   const params = new URLSearchParams(window.location.search);
-  let accessToken = hashParams.get('access_token');
   const tokenHash = params.get('token_hash');
+  let accessToken = hashParams.get('access_token');
+
+  // ─── Por que a sessão fica guardada aqui ────────────────────────────
+  //
+  // O token do e-mail é de USO ÚNICO. Antes, quem tocasse num plano ia
+  // pro Mercado Pago e, ao voltar pra comparar com outro, encontrava
+  // "este link expirou" — o token já tinha sido gasto na entrada. A única
+  // saída era pedir outro e-mail pra cada plano que quisesse olhar.
+  //
+  // Guardar a sessão resolve: o token é gasto uma vez, e a partir daí a
+  // página se abre sozinha enquanto a sessão valer. Fica no localStorage
+  // deste navegador, com validade própria, e some quando expira. É a
+  // mesma coisa que o app faz com o login — e some junto com os dados do
+  // site se a pessoa limpar o navegador.
+  function guardarSessao(token, expiraEmSegundos) {
+    try {
+      const validade = Date.now() + (Number(expiraEmSegundos) || 3600) * 1000;
+      localStorage.setItem(CHAVE_SESSAO, JSON.stringify({ token: token, validade: validade }));
+    } catch (_) { /* navegador sem storage: a página só não lembra */ }
+  }
+
+  function lerSessaoGuardada() {
+    try {
+      const bruto = localStorage.getItem(CHAVE_SESSAO);
+      if (!bruto) return null;
+      const dados = JSON.parse(bruto);
+      // Uma margem de um minuto: token que vence no meio do checkout é
+      // pior do que token que a página considera vencido um pouco antes.
+      if (!dados || !dados.token || dados.validade < Date.now() + 60000) {
+        localStorage.removeItem(CHAVE_SESSAO);
+        return null;
+      }
+      return dados.token;
+    } catch (_) {
+      return null;
+    }
+  }
 
   const PLANOS = [
     {
@@ -91,13 +139,15 @@
     {
       id: 'semestral', nome: 'Semestral', preco: 'R$ 414', periodo: '/6 meses',
       detalhe: 'Equivale a R$ 69/mês. Cobrado de 6 em 6 meses.',
-      destaque: true, selo: 'Mais escolhido',
+      selo: 'Mais escolhido',
     },
     {
       id: 'anual', nome: 'Anual', preco: 'R$ 588', periodo: '/ano',
       detalhe: 'Equivale a R$ 49/mês — melhor preço. Cobrado uma vez por ano.',
     },
   ];
+
+  let planoEscolhido = null;
 
   function render(html) {
     card.innerHTML = html;
@@ -129,7 +179,9 @@
       '<p class="lede">Confirme que é você para continuar.</p>' +
       '<div class="erro" id="erro"></div>' +
       '<button class="btn-grande" id="btn-entrar">Continuar</button>' +
-      '<p class="nota">Este link vale por 1 hora e só pode ser usado uma vez.</p>'
+      '<p class="nota">Este link vale por 1 hora e só pode ser usado uma vez. Depois de entrar, ' +
+      'esta página continua aberta neste navegador durante esse período — dá para comparar os ' +
+      'planos e voltar sem precisar de um link novo.</p>'
     );
 
     document.getElementById('btn-entrar').addEventListener('click', async function () {
@@ -149,6 +201,7 @@
           );
         }
         accessToken = dados.access_token;
+        guardarSessao(dados.access_token, dados.expires_in);
         renderPlanos();
       } catch (err) {
         mostrarErro(err.message || 'Não foi possível continuar. Tente de novo.');
@@ -161,17 +214,15 @@
   function renderPlanos() {
     const cartoes = PLANOS.map(function (p) {
       return (
-        '<div class="plano' + (p.destaque ? ' destaque' : '') + '" data-plano="' + p.id + '">' +
-        '<div class="plano-conteudo">' +
-        (p.selo ? '<div class="selo">' + p.selo + '</div>' : '') +
-        '<div class="plano-nome">' + p.nome + '</div>' +
-        '<div class="plano-detalhe">' + p.detalhe + '</div>' +
-        '</div>' +
-        '<div class="plano-preco-btn">' +
-        '<div class="plano-preco">' + p.preco + '<br/><small>' + p.periodo + '</small></div>' +
-        '<button class="btn-assinar" data-plano-btn="' + p.id + '">Assinar</button>' +
-        '</div>' +
-        '</div>'
+        '<button type="button" class="plano" role="radio" aria-checked="false" data-plano="' + p.id + '">' +
+        '<span class="marca" aria-hidden="true"><span></span></span>' +
+        '<span class="plano-conteudo">' +
+        (p.selo ? '<span class="selo">' + p.selo + '</span>' : '') +
+        '<span class="plano-nome">' + p.nome + '</span>' +
+        '<span class="plano-detalhe">' + p.detalhe + '</span>' +
+        '</span>' +
+        '<span class="plano-preco">' + p.preco + '<small>' + p.periodo + '</small></span>' +
+        '</button>'
       );
     }).join('');
 
@@ -181,27 +232,48 @@
       'Muda só de quanto em quanto tempo a cobrança acontece — e quanto mais longo o ciclo, ' +
       'menor o preço por mês.</p>' +
       '<div class="erro" id="erro"></div>' +
-      '<div class="planos">' + cartoes + '</div>' +
-      '<div class="depois"><p>Se preferir decidir depois, é só fechar esta página. ' +
-      'Você entra no app normalmente e vê tudo que já registrou — só criar sessões, ' +
-      'registros e cadastros fica bloqueado até escolher um plano. O link para voltar aqui ' +
-      'fica em <strong>Meu Perfil &rsaquo; Seu plano</strong>.</p></div>' +
+      '<div class="planos" role="radiogroup" aria-label="Planos disponíveis">' + cartoes + '</div>' +
+      '<button class="btn-grande" id="btn-assinar" disabled>Selecione um plano acima</button>' +
+      '<div class="depois"><p>Se preferir decidir depois, é só fechar esta página. Você entra no ' +
+      'app normalmente e vê tudo que já registrou — só criar sessões, registros e cadastros fica ' +
+      'bloqueado até escolher um plano. O link para voltar aqui fica em ' +
+      '<strong>Meu Perfil &rsaquo; Seu plano</strong>.</p></div>' +
       '<p class="nota">Pagamento pelo Mercado Pago, em cartão de crédito. Assinatura recorrente ' +
       'no Mercado Pago só existe em cartão — Pix não faz cobrança automática, e um plano que ' +
       'vence sozinho no meio do seu trabalho não é um plano. Sem fidelidade: você cancela quando ' +
       'quiser, pelo Mercado Pago ou falando com a gente, e usa até o fim do período já pago.</p>'
     );
 
-    document.querySelectorAll('[data-plano-btn]').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        iniciarCheckout(btn.getAttribute('data-plano-btn'), btn);
+    const botaoAssinar = document.getElementById('btn-assinar');
+
+    document.querySelectorAll('[data-plano]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        planoEscolhido = el.getAttribute('data-plano');
+        document.querySelectorAll('[data-plano]').forEach(function (outro) {
+          outro.setAttribute('aria-checked', String(outro === el));
+        });
+        const p = PLANOS.find(function (x) { return x.id === planoEscolhido; });
+        botaoAssinar.disabled = false;
+        botaoAssinar.textContent = 'Assinar o plano ' + p.nome + ' — ' + p.preco + p.periodo;
       });
     });
+
+    botaoAssinar.addEventListener('click', function () {
+      if (planoEscolhido) iniciarCheckout(planoEscolhido, botaoAssinar);
+    });
+
+    // Volta com a escolha anterior já marcada: quem foi olhar o Mercado
+    // Pago e voltou não recomeça do zero.
+    if (planoEscolhido) {
+      const anterior = document.querySelector('[data-plano="' + planoEscolhido + '"]');
+      if (anterior) anterior.click();
+    }
   }
 
-  async function iniciarCheckout(plano, btnClicado) {
-    document.querySelectorAll('[data-plano-btn]').forEach(function (b) { b.disabled = true; });
-    btnClicado.textContent = 'Abrindo pagamento…';
+  async function iniciarCheckout(plano, botao) {
+    botao.disabled = true;
+    const rotulo = botao.textContent;
+    botao.textContent = 'Abrindo pagamento…';
     try {
       const resp = await fetch(FUNCAO_URL, {
         method: 'POST',
@@ -219,12 +291,19 @@
       window.location.href = dados.initPoint;
     } catch (err) {
       mostrarErro(err.message || 'Erro ao iniciar o pagamento. Tente novamente.');
-      document.querySelectorAll('[data-plano-btn]').forEach(function (b) { b.disabled = false; });
-      btnClicado.textContent = 'Assinar';
+      botao.disabled = false;
+      botao.textContent = rotulo;
     }
   }
 
+  const sessaoGuardada = lerSessaoGuardada();
   if (accessToken) {
+    // Chegou de confirmar-cadastro.html: guarda pra sobreviver ao ir e
+    // voltar do Mercado Pago. O token do Supabase dura 1 hora.
+    guardarSessao(accessToken, 3600);
+    renderPlanos();
+  } else if (sessaoGuardada) {
+    accessToken = sessaoGuardada;
     renderPlanos();
   } else if (tokenHash) {
     renderTrocaDeToken();

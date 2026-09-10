@@ -19,6 +19,7 @@
 // perfil, grava em `pagamentos_pendentes` (ver migration 0026), consultada
 // no cadastro.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { creditoMensalUsd } from '../_shared/creditoDoPlano.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -225,17 +226,29 @@ async function aplicarNaContaOuPendente(
   if (estado.assinatura_status === 'ativa') patch.assinatura_renovacao_notificada_em = null;
   await supabaseAdmin.from('profiles').update(patch).eq('id', perfil.id);
 
-  if (valorPagoBRL > 0) {
-    const creditoUsd = valorPagoBRL / TAXA_REFERENCIA_USD_BRL;
+  // O crédito da assinatura é o BRINDE MENSAL do plano — R$ 5, 7 ou 10 —,
+  // não o valor pago. Creditava `valorPagoBRL` inteiro: quem assinasse o
+  // anual levava R$ 588 de crédito de uma vez, quase cinquenta vezes o
+  // combinado.
+  //
+  // Aqui entra só o primeiro mês; os seguintes vêm de `renovar-creditos`,
+  // que recupera os meses pendentes a cada abertura do app.
+  const creditoUsd = creditoMensalUsd(estado.assinatura_plano);
+  if (valorPagoBRL > 0 && creditoUsd != null) {
+    const proxima = new Date();
+    proxima.setUTCMonth(proxima.getUTCMonth() + 1);
     await supabaseAdmin
       .from('profiles')
-      .update({ creditos_ia: Number(perfil.creditos_ia) + creditoUsd })
+      .update({
+        creditos_ia: Number(perfil.creditos_ia) + creditoUsd,
+        proxima_renovacao_credito: proxima.toISOString().slice(0, 10),
+      })
       .eq('id', perfil.id);
     await supabaseAdmin.from('uso_ia').insert({
       user_id: perfil.id,
       tipo: 'renovacao',
       provedor: 'sistema',
-      modelo: 'assinatura_mercadopago',
+      modelo: `plano_${estado.assinatura_plano}`,
       unidades: null,
       custo_estimado: -creditoUsd,
     });

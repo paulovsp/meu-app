@@ -1111,8 +1111,13 @@ export default function PerfilScreen({ navigation }) {
 
             <View style={st.creditosDetalheBox}>
               <View style={st.infoRow}>
+                {/* Lia `plano_ia`, coluna que nada preenche — mostrava
+                    "Nenhum plano definido" até pra quem assinava. Quem sabe
+                    o plano é `assinatura_plano`, escrito pelo webhook. */}
                 <Text style={st.infoLabel}>Plano de créditos</Text>
-                <Text style={st.infoValue}>{PLANO_LABEL[user.plano_ia] || 'Nenhum plano definido'}</Text>
+                <Text style={st.infoValue}>
+                  {PLANO_LABEL[user.assinatura_plano] || 'Nenhum plano definido'}
+                </Text>
               </View>
               <View style={st.infoRow}>
                 <Text style={st.infoLabel}>Próxima renovação</Text>
@@ -1123,11 +1128,23 @@ export default function PerfilScreen({ navigation }) {
               <View style={st.infoRow}>
                 <Text style={st.infoLabel}>Créditos na próxima renovação</Text>
                 <Text style={st.infoValue}>
-                  {user.plano_ia
-                    ? (PLANOS_CREDITO_MENSAL_BRL[user.plano_ia] || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                  {user.assinatura_plano
+                    ? (PLANOS_CREDITO_MENSAL_BRL[user.assinatura_plano] || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
                     : '—'}
                 </Text>
               </View>
+
+              {/* Sem isto, ninguém sabia se o saldo renovava ou era entrega
+                  única — e a diferença muda a decisão de comprar mais. */}
+              <Text style={st.creditosExplicacao}>
+                {user.assinatura_plano
+                  ? `Seu plano ${(PLANO_LABEL[user.assinatura_plano] || '').toLowerCase()} dá `
+                    + `${(PLANOS_CREDITO_MENSAL_BRL[user.assinatura_plano] || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} `
+                    + 'de crédito por mês, de brinde, enquanto a assinatura estiver ativa. '
+                    + 'Se acabar antes do mês virar, dá pra comprar mais aqui — sem mexer na assinatura.'
+                  : 'Os créditos de IA entram todo mês junto com a assinatura. '
+                    + 'Quanto mais longo o plano, maior o crédito mensal.'}
+              </Text>
 
               <TouchableOpacity
                 style={st.assinaturaBtn}
@@ -1515,6 +1532,9 @@ const st = StyleSheet.create({
     borderWidth: 1, borderColor: '#EAE5DC',
   },
   trocarSenhaBtnText: { fontSize: 15, fontWeight: '500', color: '#497363', lineHeight: 22 },
+  creditosExplicacao: {
+    fontSize: 12.5, color: '#756E66', lineHeight: 19, marginTop: 12,
+  },
   notifAviso: {
     backgroundColor: '#F2E9DC', borderColor: '#E3D5BC', borderWidth: 1,
     borderRadius: 12, padding: 15, marginBottom: 12,

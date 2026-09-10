@@ -8,13 +8,13 @@ import { supabase } from './supabase';
 
 const TAXA_REFERENCIA_USD_BRL = 5.08;
 
-// Espelha CREDITO_MENSAL_BRL de supabase/functions/renovar-creditos —
-// só pra mostrar "quanto vem na próxima renovação" sem precisar
-// perguntar ao servidor.
+// Espelha CREDITO_MENSAL_BRL de supabase/functions/_shared/creditoDoPlano
+// — só pra mostrar "quanto vem na próxima renovação" sem precisar
+// perguntar ao servidor. O valor que vale é sempre o do servidor.
 export const PLANOS_CREDITO_MENSAL_BRL = {
-  mensal: 20,
-  semestral: 30,
-  anual: 40,
+  mensal: 5,
+  semestral: 7,
+  anual: 10,
 };
 
 export const PLANO_LABEL = {

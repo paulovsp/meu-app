@@ -11,17 +11,7 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
-// Valor mensal de cada plano, em reais.
-const CREDITO_MENSAL_BRL: Record<string, number> = {
-  mensal: 20,
-  semestral: 30,
-  anual: 40,
-};
-
-// Cotação de referência FIXA (jul/2026) só pra converter o valor do plano
-// (em R$) pro saldo interno (em US$, mesma unidade usada em creditos_ia) —
-// não busca cotação ao vivo. Ajustar aqui se ficar muito desatualizada.
-const TAXA_REFERENCIA_USD_BRL = 5.08;
+import { CREDITO_MENSAL_BRL, creditoMensalUsd } from '../_shared/creditoDoPlano.ts';
 
 const MAX_RENOVACOES_DE_UMA_VEZ = 24;
 
@@ -66,16 +56,32 @@ Deno.serve(async (req) => {
     const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
     const { data: perfil, error: perfilError } = await supabaseAdmin
       .from('profiles')
-      .select('creditos_ia, plano_ia, proxima_renovacao_credito')
+      .select('creditos_ia, assinatura_plano, assinatura_status, assinatura_expira_em, proxima_renovacao_credito')
       .eq('id', userId)
       .single();
     if (perfilError || !perfil) return json({ error: 'Perfil não encontrado.' }, 404);
 
-    if (!perfil.plano_ia || !CREDITO_MENSAL_BRL[perfil.plano_ia]) {
+    // Lia `plano_ia`, uma coluna que NADA no sistema preenchia — então esta
+    // função desistia aqui em toda conta real, e o crédito mensal nunca
+    // chegava a ninguém. Quem sabe o plano é `assinatura_plano`, escrito
+    // pelo webhook do Mercado Pago quando o pagamento entra.
+    const plano = perfil.assinatura_plano as string | null;
+    if (!plano || !CREDITO_MENSAL_BRL[plano]) {
       return json({ renovado: false, motivo: 'sem_plano', saldoAtual: Number(perfil.creditos_ia) });
     }
 
-    const valorMensalUsd = CREDITO_MENSAL_BRL[perfil.plano_ia] / TAXA_REFERENCIA_USD_BRL;
+    // Assinatura vencida ou cancelada não gera crédito novo. Sem isto, quem
+    // parasse de pagar seguiria ganhando o brinde todo mês, pra sempre.
+    const vencida = perfil.assinatura_expira_em
+      && new Date(perfil.assinatura_expira_em as string).getTime() < Date.now();
+    if (perfil.assinatura_status !== 'ativa' && perfil.assinatura_status !== 'cortesia') {
+      return json({ renovado: false, motivo: 'assinatura_inativa', saldoAtual: Number(perfil.creditos_ia) });
+    }
+    if (vencida) {
+      return json({ renovado: false, motivo: 'assinatura_vencida', saldoAtual: Number(perfil.creditos_ia) });
+    }
+
+    const valorMensalUsd = creditoMensalUsd(plano)!;
 
     const hoje = new Date();
     const hojeUTC = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), hoje.getUTCDate()));
@@ -90,7 +96,7 @@ Deno.serve(async (req) => {
         user_id: userId,
         tipo: 'renovacao',
         provedor: 'sistema',
-        modelo: `plano_${perfil.plano_ia}`,
+        modelo: `plano_${plano}`,
         unidades: null,
         custo_estimado: -valorMensalUsd,
       });

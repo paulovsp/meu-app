@@ -1,6 +1,6 @@
 // Edge Function: mercadopago-criar-checkout-assinatura
 //
-// Gera o checkout dos três planos. Os três são ASSINATURA de verdade
+// Gera a assinatura dos três planos. Os três são ASSINATURA de verdade
 // (`preapproval` do Mercado Pago): renovam sozinhos até a pessoa cancelar,
 // só mudando de quanto em quanto tempo a cobrança acontece — 1, 6 ou 12
 // meses. Verificado contra a API: `auto_recurring.frequency` aceita 6 e 12
@@ -15,13 +15,26 @@
 // O efeito colateral é o Pix, e não há como fugir dele no Mercado Pago:
 // recorrência lá só existe em cartão. Pix não faz cobrança automática, e a
 // única alternativa (Pix Automático) é do BTG, que cobra R$ 200/mês de
-// plano PJ — caro demais pra base de hoje. Então: os três planos são
-// cartão, e a página de escolha diz isso antes do clique, não depois.
+// plano PJ — caro demais pra base de hoje.
+//
+// ── Por que o cartão é cobrado na NOSSA página ─────────────────────────
+//
+// Mandar a pessoa pro checkout do Mercado Pago tem um efeito que não se
+// desliga por parâmetro nenhum: se ela tiver o app do Mercado Pago
+// instalado, o Android entrega o link ao app, e lá dentro só existe
+// "entrar" ou "criar conta grátis". A opção de pagar sem conta, que a
+// versão web oferece, simplesmente some. Quem não quer conta no Mercado
+// Pago — que é a maioria de quem só quer assinar um app — ficava sem
+// saída.
+//
+// Com um `card_token_id` gerado no navegador, a assinatura já nasce
+// autorizada e ninguém sai da nossa página. O número do cartão não passa
+// por aqui nem toca o nosso servidor: os campos são iframes do próprio
+// Mercado Pago (SDK v2), e o que chega nesta função é só um token de uso
+// único.
 //
 // `external_reference` = `assinatura:<plano>:<userId>` é o que liga o
-// pagamento à conta. Não depende do e-mail que a pessoa usa no Mercado
-// Pago, que frequentemente é outro — e adivinhar por e-mail foi
-// exatamente a origem do pagamento que ficou solto no teste.
+// pagamento à conta — nunca o e-mail do pagador.
 //
 // Chamada por docs/escolher-plano.html (fora do app, sem Authorization
 // automático do supabase-js — o token vai manual no header).
@@ -30,6 +43,9 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
 const MP_ACCESS_TOKEN = Deno.env.get('MERCADOPAGO_ACCESS_TOKEN')!;
+// Pública por definição — vai dentro da página, à vista de todos. Fica num
+// secret só pra poder ser trocada sem mexer no HTML.
+const MP_PUBLIC_KEY = Deno.env.get('MERCADOPAGO_PUBLIC_KEY') || '';
 
 const MP_API = 'https://api.mercadopago.com';
 const CONFIRMACAO_URL = 'https://app.drsig.com.br/assinatura-confirmada.html';
@@ -69,6 +85,40 @@ function json(body: unknown, status = 200) {
   });
 }
 
+/**
+ * Traduz a recusa do Mercado Pago para algo acionável.
+ *
+ * O que a API devolve ("cc_rejected_bad_filled_security_code") não é texto
+ * pra ninguém ler. E o genérico "não foi possível processar" faz a pessoa
+ * tentar o mesmo cartão de novo, com o mesmo resultado — o que ela precisa
+ * saber é se corrige um dígito, se liga pro banco, ou se troca de cartão.
+ */
+// deno-lint-ignore no-explicit-any
+function mensagemDeRecusa(corpo: any): string {
+  const causa = String(
+    corpo?.cause?.[0]?.code ?? corpo?.status_detail ?? corpo?.error ?? '',
+  );
+  const mapa: Record<string, string> = {
+    cc_rejected_bad_filled_card_number: 'Confira o número do cartão.',
+    cc_rejected_bad_filled_date: 'Confira a validade do cartão.',
+    cc_rejected_bad_filled_security_code: 'Confira o código de segurança (CVV).',
+    cc_rejected_bad_filled_other: 'Algum dado do cartão não confere. Confira e tente de novo.',
+    cc_rejected_insufficient_amount: 'O cartão não tem limite disponível para este valor.',
+    cc_rejected_high_risk: 'O banco não autorizou esta cobrança. Tente outro cartão, ou fale com o banco.',
+    cc_rejected_call_for_authorize: 'O banco pediu que você autorize esta cobrança. Ligue para o banco e tente de novo.',
+    cc_rejected_card_disabled: 'O cartão está desativado. Fale com o banco ou use outro.',
+    cc_rejected_duplicated_payment: 'Esta cobrança já foi feita. Confira antes de tentar de novo.',
+    cc_rejected_max_attempts: 'Muitas tentativas com este cartão. Espere um pouco ou use outro.',
+    cc_rejected_other_reason: 'O banco não autorizou. Tente outro cartão.',
+    cc_rejected_card_type_not_allowed: 'Este tipo de cartão não é aceito. Use um cartão de crédito.',
+  };
+  if (mapa[causa]) return mapa[causa];
+  if (causa.includes('card_token')) {
+    return 'Os dados do cartão expiraram nesta página. Preencha de novo.';
+  }
+  return 'Não foi possível autorizar o cartão. Confira os dados ou tente outro cartão.';
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Método não permitido.' }, 405);
@@ -85,44 +135,74 @@ Deno.serve(async (req) => {
     const userId = userData.user.id;
 
     const body = await req.json().catch(() => ({}));
+
+    // A página pergunta primeiro se dá pra cobrar o cartão ali mesmo. Sem a
+    // chave configurada, a resposta é `null` e ela cai no caminho antigo,
+    // de mandar pro Mercado Pago — em vez de mostrar um formulário morto.
+    if (body?.acao === 'chave') {
+      return json({ publicKey: MP_PUBLIC_KEY || null });
+    }
+
     const plano = String(body?.plano || '') as Plano;
     const config = PLANOS[plano];
     if (!config) return json({ error: 'Plano inválido.' }, 400);
 
-    // ─── O e-mail do pagador ────────────────────────────────────────────
-    //
-    // O Mercado Pago EXIGE `payer_email` numa assinatura (sem ele: 400,
-    // "payer_email is required"), e amarra a assinatura àquele endereço:
-    // quem escolher "Entrar com a minha conta" no checkout tem que entrar
-    // com a conta daquele e-mail, ou leva "o e-mail não coincide".
-    //
-    // Mandar o e-mail do cadastro parecia natural e quebrava na vida real:
-    // o e-mail da conta do Mercado Pago quase nunca é o do cadastro, e
-    // quem paga a conta de um consultório muitas vezes nem é a mesma
-    // pessoa — o contador, o cônjuge, o cartão da empresa. A página agora
-    // deixa informar qual e-mail vai ser usado no Mercado Pago, e o padrão
-    // continua sendo o do cadastro.
-    //
-    // Aceitar um e-mail vindo do cliente não abre brecha nenhuma: ele não
-    // decide de quem é a assinatura. Quem decide é o `external_reference`,
-    // montado aqui com o id de quem está autenticado nesta chamada. O
-    // e-mail serve só pro Mercado Pago saber com qual conta DELE a pessoa
-    // vai pagar.
-    const emailDoCadastro = userData.user.email;
-    const emailInformado = String(body?.payerEmail || '').trim().toLowerCase();
-    const emailValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInformado);
-    if (emailInformado && !emailValido) {
-      return json({ error: 'O e-mail informado para o Mercado Pago não é válido.' }, 400);
-    }
-    const payerEmail = emailInformado || emailDoCadastro;
+    // `payer_email` é obrigatório numa assinatura do Mercado Pago (sem ele:
+    // 400, "payer_email is required"). Usamos sempre o e-mail do cadastro,
+    // e isso deixou de ser problema quando o cartão passou a ser cobrado
+    // aqui: como ninguém entra numa conta do Mercado Pago, não existe
+    // e-mail que precise "coincidir" — o erro que derrubou o teste real.
+    const payerEmail = userData.user.email;
     if (!payerEmail) return json({ error: 'Conta sem e-mail associado.' }, 400);
 
-    // Sem `preapproval_plan_id`: com ele o Mercado Pago exige um
-    // `card_token_id`, que só nasce no navegador com o cartão em mãos — o
-    // servidor não tem como produzir, e a chamada voltava 400. Descrevendo
-    // a recorrência aqui, o Mercado Pago devolve um `init_point`: a página
-    // deles onde a pessoa informa o cartão e autoriza. `status: 'pending'`
-    // deixa explícito que nada é cobrado até essa autorização.
+    const externalReference = `assinatura:${plano}:${userId}`;
+    const autoRecurring = {
+      frequency: config.mesesPorCobranca,
+      frequency_type: 'months',
+      transaction_amount: config.precoBRL,
+      currency_id: 'BRL',
+    };
+
+    const cardTokenId = String(body?.cardTokenId || '').trim();
+
+    // ─── Caminho principal: cartão digitado na nossa página ─────────────
+    if (cardTokenId) {
+      const resp = await fetch(`${MP_API}/preapproval`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${MP_ACCESS_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          reason: `Dr.Sig — Plano ${config.nome}`,
+          auto_recurring: autoRecurring,
+          payer_email: payerEmail,
+          card_token_id: cardTokenId,
+          external_reference: externalReference,
+          back_url: CONFIRMACAO_URL,
+          status: 'authorized',
+        }),
+      });
+      const corpo = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        console.error('mercadopago-criar-checkout-assinatura: recusa do cartão.', {
+          http: resp.status,
+          corpo,
+        });
+        return json({ error: mensagemDeRecusa(corpo) }, 400);
+      }
+      // A liberação do acesso não acontece aqui: quem grava no perfil é o
+      // webhook, por `external_reference`, com a mesma lógica que trata
+      // renovação e cancelamento. Um só caminho de escrita.
+      return json({ assinaturaId: corpo?.id ?? null, status: corpo?.status ?? null, plano });
+    }
+
+    // ─── Caminho antigo: manda pro checkout do Mercado Pago ─────────────
+    //
+    // Só roda enquanto MERCADOPAGO_PUBLIC_KEY não estiver configurada. Sem
+    // `preapproval_plan_id` de propósito: com ele o Mercado Pago exige
+    // `card_token_id`, que só nasce no navegador. `status: 'pending'` deixa
+    // explícito que nada é cobrado até a pessoa autorizar lá.
     const resp = await fetch(`${MP_API}/preapproval`, {
       method: 'POST',
       headers: {
@@ -131,15 +211,9 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         reason: `Dr.Sig — Plano ${config.nome}`,
-        auto_recurring: {
-          frequency: config.mesesPorCobranca,
-          frequency_type: 'months',
-          transaction_amount: config.precoBRL,
-          currency_id: 'BRL',
-        },
+        auto_recurring: autoRecurring,
         payer_email: payerEmail,
-        // Isto, e só isto, diz de quem é a assinatura.
-        external_reference: `assinatura:${plano}:${userId}`,
+        external_reference: externalReference,
         back_url: CONFIRMACAO_URL,
         status: 'pending',
       }),

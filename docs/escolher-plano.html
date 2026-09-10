@@ -54,24 +54,39 @@
     padding: 15px 18px; font-size: 15.5px; font-weight: 700; cursor: pointer; margin-top: 20px;
   }
   .btn-grande:disabled { background: #C6C1B8; cursor: default; }
-  /* O e-mail do pagador só aparece pra quem precisa dele: quem vai entrar
-     numa conta do Mercado Pago com outro endereço. Para todo mundo é uma
-     linha discreta que não pede nada. */
-  .pagador { margin-top: 14px; }
   .link-discreto {
     background: none; border: none; padding: 4px 0; font: inherit; font-size: 13px;
     color: #6B6860; text-decoration: underline; cursor: pointer;
   }
   .link-discreto:focus-visible { outline: 3px solid #3A5C4F; outline-offset: 2px; }
-  .rotulo { display: block; font-size: 13px; font-weight: 700; margin: 12px 0 6px; }
-  .entrada {
+
+  /* ─── Formulário do cartão ─── */
+  .resumo {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    background: #F0F4F8; border-radius: 14px; padding: 14px 16px; margin-bottom: 6px;
+  }
+  .resumo-plano { font-size: 15px; font-weight: 700; }
+  .resumo-ciclo { display: block; font-size: 12.5px; font-weight: 400; color: #6B6860; margin-top: 2px; }
+  .resumo-preco { font-size: 17px; font-weight: 800; color: #3A5C4F; white-space: nowrap; }
+  .campos { display: flex; flex-direction: column; gap: 14px; margin-top: 20px; }
+  .linha { display: flex; gap: 12px; }
+  .linha > * { flex: 1 1 0; min-width: 0; }
+  .rotulo { display: block; font-size: 12.5px; font-weight: 700; margin-bottom: 6px; }
+  .entrada, .campo-mp {
     width: 100%; padding: 12px 14px; font: inherit; font-size: 15px;
     border: 2px solid #E8E4DD; border-radius: 10px; background: #fff; color: inherit;
   }
   .entrada:focus { outline: none; border-color: #3A5C4F; }
-  .ajuda { font-size: 12.5px; color: #6B6860; margin: 8px 0 0; }
-  .rodape { margin-top: 26px; text-align: center; }
-  .rodape a { color: #6B6860; font-size: 13.5px; text-decoration: underline; }
+  /* Os campos do Mercado Pago são iframes: a altura tem que vir daqui,
+     porque o conteúdo deles não empurra a caixa. */
+  .campo-mp { height: 48px; padding: 0 12px; display: flex; align-items: center; }
+  .campo-mp iframe { width: 100%; height: 100%; border: 0; }
+  .ajuda { font-size: 12.5px; color: #8A857D; margin: 10px 0 0; }
+  .selo-seguro {
+    display: flex; align-items: center; gap: 8px; margin-top: 16px;
+    font-size: 12.5px; color: #6B6860;
+  }
+
   .depois { margin-top: 24px; padding-top: 18px; border-top: 1px solid #EFECE7; }
   .depois p { font-size: 12.5px; color: #8A857D; margin: 0; }
   .erro { background: #FCEBEA; color: #C0392B; padding: 12px 14px; border-radius: 10px; font-size: 13.5px; margin-bottom: 20px; display: none; }
@@ -79,6 +94,8 @@
   .aviso-sem-token p { color: #6B6860; font-size: 14.5px; }
   .nota { font-size: 12px; color: #A5A19A; margin-top: 20px; line-height: 1.6; }
   .carregando-tela { text-align: center; padding: 60px 0; color: #6B6860; }
+  .sucesso { text-align: center; padding: 10px 0 4px; }
+  .sucesso .marca-ok { font-size: 42px; line-height: 1; }
 </style>
 </head>
 <body>
@@ -86,6 +103,7 @@
   <div class="carregando-tela">Carregando…</div>
 </div>
 
+<script src="https://sdk.mercadopago.com/js/v2"></script>
 <script>
   const SUPABASE_URL = 'https://iahtyvqjgukdgrftpyxm.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_GEYLOEfzFHU0zkdpJCNDVw_cVbO_rS6';
@@ -124,9 +142,7 @@
   //
   // Guardar a sessão resolve: o token é gasto uma vez, e a partir daí a
   // página se abre sozinha enquanto a sessão valer. Fica no localStorage
-  // deste navegador, com validade própria, e some quando expira. É a
-  // mesma coisa que o app faz com o login — e some junto com os dados do
-  // site se a pessoa limpar o navegador.
+  // deste navegador, com validade própria, e some quando expira.
   function guardarSessao(token, expiraEmSegundos) {
     try {
       const validade = Date.now() + (Number(expiraEmSegundos) || 3600) * 1000;
@@ -139,8 +155,8 @@
       const bruto = localStorage.getItem(CHAVE_SESSAO);
       if (!bruto) return null;
       const dados = JSON.parse(bruto);
-      // Uma margem de um minuto: token que vence no meio do checkout é
-      // pior do que token que a página considera vencido um pouco antes.
+      // Margem de um minuto: token que vence no meio do pagamento é pior
+      // do que token que a página considera vencido um pouco antes.
       if (!dados || !dados.token || dados.validade < Date.now() + 60000) {
         localStorage.removeItem(CHAVE_SESSAO);
         return null;
@@ -154,32 +170,27 @@
   const PLANOS = [
     {
       id: 'mensal', nome: 'Mensal', preco: 'R$ 89', periodo: '/mês',
-      detalhe: 'Cobrado todo mês.',
+      detalhe: 'Cobrado todo mês.', ciclo: 'Cobrança a cada mês, até você cancelar.',
     },
     {
       id: 'semestral', nome: 'Semestral', preco: 'R$ 414', periodo: '/6 meses',
       detalhe: 'Equivale a R$ 69/mês. Cobrado de 6 em 6 meses.',
+      ciclo: 'Cobrança a cada 6 meses, até você cancelar.',
       selo: 'Mais escolhido',
     },
     {
       id: 'anual', nome: 'Anual', preco: 'R$ 588', periodo: '/ano',
       detalhe: 'Equivale a R$ 49/mês — melhor preço. Cobrado uma vez por ano.',
+      ciclo: 'Cobrança uma vez por ano, até você cancelar.',
     },
   ];
 
   let planoEscolhido = null;
-  let outroEmailAberto = false;
+  let chavePublica = null;   // null = ainda não perguntamos; '' = não configurada
+  let camposCartao = null;   // os iframes do Mercado Pago, quando montados
 
-  // O e-mail do cadastro sai do próprio token — é uma informação da pessoa
-  // sobre ela mesma, só pra mostrar qual endereço vai ser usado por padrão
-  // no Mercado Pago.
-  function emailDoToken(token) {
-    try {
-      const corpo = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-      return JSON.parse(decodeURIComponent(escape(atob(corpo)))).email || '';
-    } catch (_) {
-      return '';
-    }
+  function planoPorId(id) {
+    return PLANOS.filter(function (p) { return p.id === id; })[0];
   }
 
   function render(html) {
@@ -191,6 +202,22 @@
     if (!el) return;
     el.textContent = msg;
     el.style.display = 'block';
+    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+
+  async function chamarFuncao(corpo) {
+    const resp = await fetch(FUNCAO_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + accessToken,
+        apikey: SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify(corpo),
+    });
+    const dados = await resp.json().catch(function () { return {}; });
+    if (!resp.ok) throw new Error(dados.error || 'Não foi possível concluir. Tente de novo.');
+    return dados;
   }
 
   function renderSemToken() {
@@ -213,8 +240,7 @@
       '<div class="erro" id="erro"></div>' +
       '<button class="btn-grande" id="btn-entrar">Continuar</button>' +
       '<p class="nota">Este link vale por 1 hora e só pode ser usado uma vez. Depois de entrar, ' +
-      'esta página continua aberta neste navegador durante esse período — dá para comparar os ' +
-      'planos e voltar sem precisar de um link novo.</p>'
+      'esta página continua aberta neste navegador durante esse período.</p>'
     );
 
     document.getElementById('btn-entrar').addEventListener('click', async function () {
@@ -245,7 +271,6 @@
   }
 
   function renderPlanos() {
-    const emailPadrao = emailDoToken(accessToken);
     const cartoes = PLANOS.map(function (p) {
       return (
         '<button type="button" class="plano" role="radio" aria-checked="false" data-plano="' + p.id + '">' +
@@ -267,47 +292,18 @@
       'menor o preço por mês.</p>' +
       '<div class="erro" id="erro"></div>' +
       '<div class="planos" role="radiogroup" aria-label="Planos disponíveis">' + cartoes + '</div>' +
-      '<button class="btn-grande" id="btn-assinar" disabled>Selecione um plano acima</button>' +
-      '<div class="pagador">' +
-      '<button type="button" class="link-discreto" id="btn-outro-email">Vou pagar com outra conta do Mercado Pago</button>' +
-      '<div id="campo-email" hidden>' +
-      '<label class="rotulo" for="email-pagador">E-mail da conta do Mercado Pago que vai pagar</label>' +
-      '<input class="entrada" type="email" id="email-pagador" inputmode="email" autocomplete="email" ' +
-      'placeholder="' + (emailPadrao || 'nome@exemplo.com') + '" />' +
-      '<p class="ajuda">Só precisa disto se você for <strong>entrar na sua conta</strong> do Mercado Pago ' +
-      'e ela usar outro endereço' + (emailPadrao ? ' (o padrão é ' + emailPadrao + ')' : '') + '. ' +
-      'Para pagar direto no cartão, escolha “Sem conta Mercado Pago” lá — aí o e-mail não importa. ' +
-      'Seja qual for, a assinatura entra nesta sua conta do Dr.Sig.</p>' +
-      '</div>' +
-      '</div>' +
+      '<button class="btn-grande" id="btn-continuar" disabled>Selecione um plano acima</button>' +
       '<div class="depois"><p>Se preferir decidir depois, é só fechar esta página. Você entra no ' +
       'app normalmente e vê tudo que já registrou — só criar sessões, registros e cadastros fica ' +
       'bloqueado até escolher um plano. O link para voltar aqui fica em ' +
       '<strong>Meu Perfil &rsaquo; Seu plano</strong>.</p></div>' +
-      '<p class="nota"><strong>Você não precisa ter conta nem o app do Mercado Pago.</strong> ' +
-      'Na tela seguinte, escolha “Sem conta Mercado Pago” e informe os dados do cartão — é o ' +
-      'caminho normal, e não instala nada. Entrar na conta do Mercado Pago é opcional, e serve ' +
-      'só para quem já tem cartão salvo lá.</p>' +
-      '<p class="nota">O pagamento é em cartão de crédito. Assinatura recorrente no Mercado Pago ' +
-      'só existe em cartão — Pix não faz cobrança automática, e um plano que vence sozinho no ' +
-      'meio do seu trabalho não é um plano. Por isso também não há escolha de banco: quem cobra ' +
-      'é o cartão, todo mês, sem você precisar lembrar. Sem fidelidade: cancele quando quiser, ' +
-      'pelo Mercado Pago ou falando com a gente, e use até o fim do período já pago.</p>'
+      '<p class="nota">Pagamento em cartão de crédito, processado pelo Mercado Pago. Assinatura ' +
+      'recorrente só existe em cartão — Pix não faz cobrança automática, e um plano que vence ' +
+      'sozinho no meio do seu trabalho não é um plano. Sem fidelidade: cancele quando quiser e ' +
+      'use até o fim do período já pago.</p>'
     );
 
-    const botaoAssinar = document.getElementById('btn-assinar');
-    const campoEmail = document.getElementById('campo-email');
-    const botaoOutroEmail = document.getElementById('btn-outro-email');
-
-    botaoOutroEmail.addEventListener('click', function () {
-      outroEmailAberto = !outroEmailAberto;
-      campoEmail.hidden = !outroEmailAberto;
-      botaoOutroEmail.textContent = outroEmailAberto
-        ? 'Usar o e-mail do meu cadastro'
-        : 'Vou pagar com outra conta do Mercado Pago';
-      if (outroEmailAberto) document.getElementById('email-pagador').focus();
-    });
-    campoEmail.hidden = !outroEmailAberto;
+    const botao = document.getElementById('btn-continuar');
 
     document.querySelectorAll('[data-plano]').forEach(function (el) {
       el.addEventListener('click', function () {
@@ -315,62 +311,176 @@
         document.querySelectorAll('[data-plano]').forEach(function (outro) {
           outro.setAttribute('aria-checked', String(outro === el));
         });
-        const p = PLANOS.find(function (x) { return x.id === planoEscolhido; });
-        botaoAssinar.disabled = false;
-        botaoAssinar.textContent = 'Assinar o plano ' + p.nome + ' — ' + p.preco + p.periodo;
+        const p = planoPorId(planoEscolhido);
+        botao.disabled = false;
+        botao.textContent = 'Assinar o plano ' + p.nome + ' — ' + p.preco + p.periodo;
       });
     });
 
-    botaoAssinar.addEventListener('click', function () {
-      if (planoEscolhido) iniciarCheckout(planoEscolhido, botaoAssinar);
+    botao.addEventListener('click', function () {
+      if (planoEscolhido) irParaPagamento(botao);
     });
 
-    // Volta com a escolha anterior já marcada: quem foi olhar o Mercado
-    // Pago e voltou não recomeça do zero.
+    // Volta com a escolha anterior já marcada: quem trocou de ideia na tela
+    // do cartão não recomeça do zero.
     if (planoEscolhido) {
       const anterior = document.querySelector('[data-plano="' + planoEscolhido + '"]');
       if (anterior) anterior.click();
     }
   }
 
-  async function iniciarCheckout(plano, botao) {
-    const entrada = document.getElementById('email-pagador');
-    const payerEmail = outroEmailAberto && entrada ? entrada.value.trim() : '';
-    if (payerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payerEmail)) {
-      mostrarErro('Confira o e-mail do Mercado Pago: parece incompleto.');
-      entrada.focus();
-      return;
-    }
-
+  async function irParaPagamento(botao) {
     botao.disabled = true;
     const rotulo = botao.textContent;
-    botao.textContent = 'Abrindo pagamento…';
+    botao.textContent = 'Abrindo…';
     try {
-      const resp = await fetch(FUNCAO_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer ' + accessToken,
-          apikey: SUPABASE_ANON_KEY,
-        },
-        body: JSON.stringify(payerEmail ? { plano: plano, payerEmail: payerEmail } : { plano: plano }),
-      });
-      const dados = await resp.json();
-      if (!resp.ok || !dados.initPoint) {
-        throw new Error(dados.error || 'Não foi possível gerar o link de pagamento.');
+      if (chavePublica === null) {
+        const r = await chamarFuncao({ acao: 'chave' });
+        chavePublica = r.publicKey || '';
       }
-      window.location.href = dados.initPoint;
+      if (chavePublica) {
+        renderPagamento();
+      } else {
+        // Sem a chave pública configurada, cai no caminho antigo: manda pro
+        // checkout do Mercado Pago. Não é o preferido — se a pessoa tiver o
+        // app do Mercado Pago, o Android o abre e some a opção de pagar sem
+        // conta — mas é melhor do que não ter como assinar.
+        const r = await chamarFuncao({ plano: planoEscolhido });
+        if (!r.initPoint) throw new Error('Não foi possível abrir o pagamento.');
+        window.location.href = r.initPoint;
+      }
     } catch (err) {
-      mostrarErro(err.message || 'Erro ao iniciar o pagamento. Tente novamente.');
+      mostrarErro(err.message || 'Não foi possível continuar. Tente de novo.');
       botao.disabled = false;
       botao.textContent = rotulo;
     }
   }
 
+  // ─── A tela do cartão, aqui mesmo ───────────────────────────────────
+  //
+  // Os três campos sensíveis (número, validade, CVV) são iframes do
+  // Mercado Pago: o que a pessoa digita neles nunca entra nesta página nem
+  // chega ao nosso servidor. O que sai daqui é um token de uso único.
+  function renderPagamento() {
+    const p = planoPorId(planoEscolhido);
+    render(
+      '<h1>Dados do cartão</h1>' +
+      '<div class="resumo">' +
+      '<span class="resumo-plano">Plano ' + p.nome +
+      '<span class="resumo-ciclo">' + p.ciclo + '</span></span>' +
+      '<span class="resumo-preco">' + p.preco + p.periodo + '</span>' +
+      '</div>' +
+      '<button type="button" class="link-discreto" id="btn-voltar">Trocar de plano</button>' +
+      '<div class="erro" id="erro" style="margin-top:16px;"></div>' +
+      '<div class="campos">' +
+      '<div><label class="rotulo" for="mp-numero">Número do cartão</label>' +
+      '<div class="campo-mp" id="mp-numero"></div></div>' +
+      '<div class="linha">' +
+      '<div><label class="rotulo" for="mp-validade">Validade</label>' +
+      '<div class="campo-mp" id="mp-validade"></div></div>' +
+      '<div><label class="rotulo" for="mp-cvv">Código de segurança</label>' +
+      '<div class="campo-mp" id="mp-cvv"></div></div>' +
+      '</div>' +
+      '<div><label class="rotulo" for="titular">Nome como está no cartão</label>' +
+      '<input class="entrada" id="titular" autocomplete="cc-name" placeholder="MARIA S SILVA" /></div>' +
+      '<div><label class="rotulo" for="cpf">CPF do titular do cartão</label>' +
+      '<input class="entrada" id="cpf" inputmode="numeric" autocomplete="off" placeholder="000.000.000-00" /></div>' +
+      '</div>' +
+      '<button class="btn-grande" id="btn-pagar">Assinar — ' + p.preco + p.periodo + '</button>' +
+      '<div class="selo-seguro">🔒 Os dados do cartão vão direto para o Mercado Pago. ' +
+      'O Dr.Sig não recebe nem guarda o número do seu cartão.</div>' +
+      '<p class="nota">Você não precisa de conta no Mercado Pago. A cobrança se repete ' +
+      'automaticamente no fim de cada período, e você cancela quando quiser — pelo app, em ' +
+      'Meu Perfil, ou falando com a gente.</p>'
+    );
+
+    document.getElementById('btn-voltar').addEventListener('click', function () {
+      camposCartao = null;
+      renderPlanos();
+    });
+
+    const mp = new MercadoPago(chavePublica, { locale: 'pt-BR' });
+    const estilo = { placeholderColor: '#A5A19A', fontSize: '15px', color: '#302C28' };
+    camposCartao = {
+      numero: mp.fields.create('cardNumber', { placeholder: '0000 0000 0000 0000', style: estilo }).mount('mp-numero'),
+      validade: mp.fields.create('expirationDate', { placeholder: 'MM/AA', style: estilo }).mount('mp-validade'),
+      cvv: mp.fields.create('securityCode', { placeholder: 'CVV', style: estilo }).mount('mp-cvv'),
+    };
+
+    // Máscara simples de CPF: o Mercado Pago aceita com ou sem pontuação,
+    // mas quem digita confere melhor o que está formatado.
+    const campoCpf = document.getElementById('cpf');
+    campoCpf.addEventListener('input', function () {
+      const so = campoCpf.value.replace(/\D/g, '').slice(0, 11);
+      campoCpf.value = so
+        .replace(/^(\d{3})(\d)/, '$1.$2')
+        .replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
+        .replace(/\.(\d{3})(\d{1,2})$/, '.$1-$2');
+    });
+
+    document.getElementById('btn-pagar').addEventListener('click', function () {
+      pagar(mp, p);
+    });
+  }
+
+  async function pagar(mp, plano) {
+    const botao = document.getElementById('btn-pagar');
+    const titular = document.getElementById('titular').value.trim();
+    const cpf = document.getElementById('cpf').value.replace(/\D/g, '');
+
+    if (!titular) {
+      mostrarErro('Informe o nome como está impresso no cartão.');
+      return;
+    }
+    if (cpf.length !== 11) {
+      mostrarErro('O CPF do titular precisa ter 11 dígitos.');
+      return;
+    }
+
+    botao.disabled = true;
+    botao.textContent = 'Confirmando…';
+    try {
+      // O Mercado Pago lê os campos dos próprios iframes: nada do cartão
+      // passa por este código.
+      const token = await mp.fields.createCardToken({
+        cardholderName: titular,
+        identificationType: 'CPF',
+        identificationNumber: cpf,
+      });
+      if (!token || !token.id) throw new Error('Confira os dados do cartão e tente de novo.');
+
+      const r = await chamarFuncao({ plano: plano.id, cardTokenId: token.id });
+      renderSucesso(plano, r.status);
+    } catch (err) {
+      // Erro de validação dos campos vem como lista, não como mensagem.
+      const daLista = err && err.length && err[0] && err[0].message;
+      mostrarErro(daLista || err.message || 'Não foi possível confirmar. Confira os dados do cartão.');
+      botao.disabled = false;
+      botao.textContent = 'Assinar — ' + plano.preco + plano.periodo;
+    }
+  }
+
+  function renderSucesso(plano, status) {
+    const autorizada = status === 'authorized';
+    render(
+      '<div class="sucesso"><div class="marca-ok">✅</div>' +
+      '<h1>' + (autorizada ? 'Assinatura ativa!' : 'Assinatura registrada') + '</h1>' +
+      '<p class="lede">' +
+      (autorizada
+        ? 'Seu plano ' + plano.nome + ' está valendo. Abra o app Dr.Sig e faça login: tudo já está liberado.'
+        : 'Recebemos sua assinatura do plano ' + plano.nome + '. Assim que o cartão for confirmado, ' +
+          'o acesso é liberado sozinho — costuma levar poucos minutos.') +
+      '</p></div>' +
+      '<p class="nota">Se demorar para liberar, feche e abra o app de novo. Qualquer coisa, ' +
+      '<a href="mailto:drsig@drsig.com.br">drsig@drsig.com.br</a>.</p>'
+    );
+    try { localStorage.removeItem(CHAVE_SESSAO); } catch (_) {}
+  }
+
   const sessaoGuardada = lerSessaoGuardada();
   if (accessToken) {
-    // Chegou de confirmar-cadastro.html: guarda pra sobreviver ao ir e
-    // voltar do Mercado Pago. O token do Supabase dura 1 hora.
+    // Chegou de confirmar-cadastro.html: guarda pra sobreviver a idas e
+    // vindas. O token do Supabase dura 1 hora.
     guardarSessao(accessToken, 3600);
     renderPlanos();
   } else if (sessaoGuardada) {

@@ -125,3 +125,6 @@ max_client_conn = 200
 
 [storage.vector]
 enabled = false
+
+[functions.assinatura-cancelar]
+verify_jwt = true

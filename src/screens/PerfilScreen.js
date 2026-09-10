@@ -21,7 +21,7 @@ import {
 } from '../services/validacao';
 import TelefoneInput from '../components/TelefoneInput';
 import { mensagemDeErro } from '../services/erros';
-import { getStatusAssinatura, reenviarInstrucoesDePlano } from '../services/assinatura';
+import { getStatusAssinatura, reenviarInstrucoesDePlano, cancelarAssinatura } from '../services/assinatura';
 import Constants from 'expo-constants';
 import { enviarFotoPerfil, enviarFotoCapa } from '../services/avatar';
 import { exportarDadosUsuario } from '../services/exportacaoDados';
@@ -60,7 +60,7 @@ function formatarMoedaInteira(valor) {
  * conta, e é justamente o que faltava. O caminho para pagar continua sendo
  * o e-mail, e o botão aqui só faz esse e-mail chegar de novo.
  */
-function CartaoDoPlano({ assinatura, reenviando, onPedirInstrucoes }) {
+function CartaoDoPlano({ assinatura, reenviando, onPedirInstrucoes, cancelando, onCancelar }) {
   if (!assinatura) {
     return (
       <View style={st.planoBox}>
@@ -135,6 +135,18 @@ function CartaoDoPlano({ assinatura, reenviando, onPedirInstrucoes }) {
   const precisaDoLink = situacao === 'nenhuma' || situacao === 'expirada'
     || (situacao === 'vencendo' && cortesia);
 
+  // Onde se cancela. Até agora não existia: a única coisa parecida no
+  // perfil era "Excluir conta", que apaga tudo — quem só queria parar de
+  // pagar tinha que escolher entre continuar pagando e destruir o próprio
+  // arquivo clínico. E a tela de pagamento promete, com essas palavras,
+  // "cancele quando quiser, pelo app".
+  //
+  // Cortesia fica de fora porque não há o que cancelar, e 'cancelada'
+  // também: já está feito, e o acesso corre até a data que o cartão do
+  // topo mostra.
+  const podeCancelar = !cortesia
+    && (situacao === 'ativa' || situacao === 'vencendo' || situacao === 'inadimplente');
+
   return (
     <View style={[st.planoBox, { backgroundColor: info.cor.fundo, borderColor: info.cor.borda }]}>
       <Text style={[st.planoTitulo, { color: info.cor.tinta }]}>{info.titulo}</Text>
@@ -156,6 +168,18 @@ function CartaoDoPlano({ assinatura, reenviando, onPedirInstrucoes }) {
           )}
         </>
       )}
+
+      {podeCancelar && (
+        <TouchableOpacity
+          style={[st.planoBtnSecundario, cancelando && { opacity: 0.7 }]}
+          onPress={onCancelar}
+          disabled={cancelando}
+        >
+          {cancelando
+            ? <ActivityIndicator size="small" color="#8C5A52" />
+            : <Text style={st.planoBtnSecundarioTexto}>Cancelar assinatura</Text>}
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -168,6 +192,7 @@ export default function PerfilScreen({ navigation }) {
   // Situação da assinatura — o app nunca mostrou isso em lugar nenhum.
   const [assinatura, setAssinatura] = useState(null);
   const [reenviando, setReenviando] = useState(false);
+  const [cancelando, setCancelando] = useState(false);
   // Estado real das notificações no sistema. Sem isto, os interruptores
   // abaixo prometiam avisos que o Android podia estar descartando.
   const [notifSistema, setNotifSistema] = useState(null);
@@ -370,6 +395,47 @@ export default function PerfilScreen({ navigation }) {
       Alert.alert('Não foi possível enviar', mensagemDeErro(e));
     } finally {
       setReenviando(false);
+    }
+  }
+
+  function confirmarCancelamento() {
+    const ate = assinatura?.expiraEm
+      ? dataISOParaBR(assinatura.expiraEm.slice(0, 10))
+      : null;
+    Alert.alert(
+      'Cancelar assinatura',
+      'A cobrança para de se repetir e nada mais é debitado do seu cartão.'
+      + (ate ? `\n\nO acesso continua até ${ate} — o período que você já pagou é seu.` : '')
+      + '\n\nNada é apagado: analisantes, sessões e registros continuam aqui, e a exportação '
+      + 'dos seus dados segue liberada. Depois disso, criar coisas novas fica bloqueado até '
+      + 'você assinar de novo.',
+      [
+        { text: 'Voltar', style: 'cancel' },
+        { text: 'Cancelar assinatura', style: 'destructive', onPress: cancelarAgora },
+      ],
+      // Android fecha alerta pelo botão de voltar sem disparar onPress
+      // nenhum — sem isto, a pessoa acha que cancelou e não cancelou.
+      { cancelable: false },
+    );
+  }
+
+  async function cancelarAgora() {
+    setCancelando(true);
+    try {
+      const r = await cancelarAssinatura();
+      const ate = r?.validaAte ? dataISOParaBR(String(r.validaAte).slice(0, 10)) : null;
+      Alert.alert(
+        r?.jaEstavaCancelada ? 'Já estava cancelada' : 'Assinatura cancelada',
+        (ate
+          ? `Nenhuma cobrança nova vai acontecer. Seu acesso vale até ${ate}.`
+          : 'Nenhuma cobrança nova vai acontecer.')
+        + '\n\nSe mudar de ideia, é só assinar de novo em Meu Perfil › Seu plano.',
+      );
+      await carregar();
+    } catch (e) {
+      Alert.alert('Não foi possível cancelar', mensagemDeErro(e));
+    } finally {
+      setCancelando(false);
     }
   }
 
@@ -1106,6 +1172,8 @@ export default function PerfilScreen({ navigation }) {
               assinatura={assinatura}
               reenviando={reenviando}
               onPedirInstrucoes={pedirInstrucoesDePlano}
+              cancelando={cancelando}
+              onCancelar={confirmarCancelamento}
             />
 
             <Text style={st.sectionTitle}>Créditos de IA</Text>
@@ -1760,6 +1828,14 @@ const st = StyleSheet.create({
   },
   planoBtnTexto: { color: '#FFFFFF', fontWeight: '500', fontSize: 14.5, lineHeight: 21 },
   planoRodape: { fontSize: 12, color: '#756E66', lineHeight: 17, marginTop: 8, textAlign: 'center' },
+  // Cancelar é uma saída legítima, não um botão de perigo: fica visível e
+  // fácil de achar, mas discreto — contorno, não preenchimento, pra não
+  // competir com a ação principal do cartão.
+  planoBtnSecundario: {
+    marginTop: 14, borderRadius: 10, paddingVertical: 11, alignItems: 'center',
+    borderWidth: 1, borderColor: '#D9C4BF', backgroundColor: 'transparent',
+  },
+  planoBtnSecundarioTexto: { color: '#8C5A52', fontWeight: '500', fontSize: 14, lineHeight: 20 },
   assinaturaBox: {
     backgroundColor: '#FDFCFA', borderRadius: 14, padding: 14,
     borderWidth: 1, borderColor: '#EAE5DC', alignItems: 'center', gap: 10,

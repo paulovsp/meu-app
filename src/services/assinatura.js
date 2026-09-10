@@ -109,6 +109,31 @@ export async function reenviarInstrucoesDePlano() {
   return data;
 }
 
+/**
+ * Cancela a assinatura desta conta.
+ *
+ * A tela de pagamento promete "cancele quando quiser, pelo app" — e até
+ * agora não havia onde. A única coisa parecida no perfil era "Excluir
+ * conta", que apaga tudo: quem só queria parar de pagar tinha que escolher
+ * entre continuar pagando e destruir o próprio arquivo clínico.
+ *
+ * Devolve `validaAte`: cancelar não tira o acesso na hora, e essa é a data
+ * até quando o que já foi pago continua valendo.
+ */
+export async function cancelarAssinatura() {
+  const { data, error } = await supabase.functions.invoke('assinatura-cancelar', { body: {} });
+  if (error) {
+    let mensagem = error.message;
+    try {
+      const corpo = await error.context?.json();
+      if (corpo?.error) mensagem = corpo.error;
+    } catch (_) {}
+    throw new Error(mensagem);
+  }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+
 export async function assinaturaEstaAtiva() {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return false;

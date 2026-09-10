@@ -219,6 +219,7 @@ Deno.serve(async (req) => {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 to: perfil.expo_push_token,
+                channelId: 'sessao',
                 title: aguardandoConfirmacao === 1
                   ? 'Uma sessão esperando confirmação'
                   : `${aguardandoConfirmacao} sessões esperando confirmação`,

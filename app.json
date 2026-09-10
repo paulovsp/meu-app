@@ -19,7 +19,8 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#497363"
+        "backgroundColor": "#497363",
+        "monochromeImage": "./assets/adaptive-icon-mono.png"
       },
       "permissions": [
         "android.permission.RECORD_AUDIO",
@@ -29,18 +30,29 @@
         "android.permission.POST_NOTIFICATIONS"
       ],
       "package": "br.com.drsig.app",
-      "versionCode": 22
+      "versionCode": 23,
+      "predictiveBackGestureEnabled": true
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-audio",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-freud.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#F7F5F0"
+        }
+      ],
       "expo-asset",
       [
         "expo-notifications",
         {
-          "color": "#497363"
+          "color": "#497363",
+          "icon": "./assets/notification-icon.png"
         }
       ],
       "expo-secure-store",
@@ -67,6 +79,7 @@
     },
     "runtimeVersion": {
       "policy": "fingerprint"
-    }
+    },
+    "backgroundColor": "#F7F5F0"
   }
 }

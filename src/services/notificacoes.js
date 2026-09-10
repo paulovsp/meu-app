@@ -15,6 +15,24 @@ import notifee, { AuthorizationStatus } from 'react-native-notify-kit';
 import { CANAL_SESSAO, CANAL_CURSO } from './protecaoGravacao';
 
 /**
+ * Um canal do Android por tipo de aviso.
+ *
+ * Antes todo push caía num canal só, chamado "Notificações". Isso torna a
+ * coluna "Celular" da matriz do Perfil inadministrável do lado do sistema:
+ * quem quisesse silenciar só o aviso de atraso, deslizando a notificação
+ * pro lado, silenciava junto o de transcrição pronta — e o app não tinha
+ * como perceber, porque só olhava os canais de gravação.
+ *
+ * Os ids são estáveis: mudar um cria um canal novo e o antigo fica lá,
+ * silenciado, invisível pro app.
+ */
+export const CANAIS_DE_AVISO = [
+  { id: 'transcricao', nome: 'Transcrição pronta' },
+  { id: 'atraso', nome: 'Recebimento em atraso' },
+  { id: 'sessao', nome: 'Sessões a confirmar' },
+];
+
+/**
  * 'liberadas'   — o sistema entrega.
  * 'bloqueadas'  — a pessoa negou; só as configurações resolvem.
  * 'nao_pedidas' — ainda não perguntamos.
@@ -74,6 +92,7 @@ export async function canaisSilenciados() {
   const nomes = {
     [CANAL_SESSAO]: 'Gravação de sessão',
     [CANAL_CURSO]: 'Gravação de aula',
+    ...Object.fromEntries(CANAIS_DE_AVISO.map((c) => [c.id, c.nome])),
   };
   const silenciados = [];
   for (const id of Object.keys(nomes)) {

@@ -10,8 +10,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, Image, TouchableOpacity, StyleSheet, ScrollView,
-  ActivityIndicator, Share,
+  ActivityIndicator,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -79,18 +80,13 @@ export default function RecargaCreditosScreen() {
     return () => { vivo = false; clearTimeout(timerRef.current); };
   }, [cobranca, paga]);
 
-  // `Share` em vez da área de transferência de propósito: `expo-clipboard`
-  // é módulo nativo, e instalar um muda o fingerprint do projeto — o que
-  // derrubaria a atualização por OTA e exigiria build novo só pra ter um
-  // botão de copiar. O compartilhamento entrega o código no app do banco,
-  // que é pra onde ele ia de qualquer jeito.
-  async function compartilhar() {
+  async function copiar() {
     if (!cobranca?.emv) return;
-    try {
-      await Share.share({ message: cobranca.emv });
-      setCopiado(true);
-      setTimeout(() => setCopiado(false), 2500);
-    } catch (_) {}
+    await Clipboard.setStringAsync(cobranca.emv);
+    setCopiado(true);
+    // Volta ao normal depois de um tempo: um "Copiado" permanente deixa de
+    // informar se o segundo toque funcionou.
+    setTimeout(() => setCopiado(false), 2500);
   }
 
   if (erro) {
@@ -159,17 +155,15 @@ export default function RecargaCreditosScreen() {
         {cobranca.emv ? (
           <View style={s.copiaBox}>
             <Text style={s.copiaRotulo}>Pix copia e cola</Text>
-            {/* `selectable`: quem preferir copiar na mão consegue, com o
-                toque longo do próprio Android. */}
             <Text style={s.copiaCodigo} numberOfLines={3} selectable>{cobranca.emv}</Text>
-            <TouchableOpacity style={s.copiaAcao} onPress={compartilhar}>
+            <TouchableOpacity style={s.copiaAcao} onPress={copiar}>
               <Ionicons
-                name={copiado ? 'checkmark' : 'share-outline'}
+                name={copiado ? 'checkmark' : 'copy-outline'}
                 size={16}
                 color={copiado ? salvia.tinta : tinta.t500}
               />
               <Text style={[s.copiaAcaoTexto, copiado && { color: salvia.tinta }]}>
-                {copiado ? 'Enviado' : 'Enviar para o app do banco'}
+                {copiado ? 'Copiado' : 'Tocar para copiar'}
               </Text>
             </TouchableOpacity>
           </View>

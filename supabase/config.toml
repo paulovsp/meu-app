@@ -1,0 +1,111 @@
+# Configuração do projeto Supabase — Dr.Sig
+#
+# Este arquivo existe por um motivo específico: `--no-verify-jwt` é grudento.
+# Uma vez desligada a verificação de uma função no servidor, um deploy sem a
+# flag NÃO religa — a função continua aberta, em silêncio. Já aconteceu duas
+# vezes neste projeto, e nas duas o defeito só apareceu depois.
+#
+# Declarando aqui, o valor deixa de depender de alguém lembrar a flag na
+# hora: o `supabase functions deploy` aplica o que está escrito. A tabela em
+# functions/DEPLOY.md explica o porquê de cada uma; aqui fica o que vale.
+
+project_id = "iahtyvqjgukdgrftpyxm"
+
+[functions.assinatura-processar-ciclo]
+verify_jwt = false
+
+[functions.auth-send-email]
+verify_jwt = false
+
+[functions.btg-criar-cobranca]
+verify_jwt = true
+
+[functions.btg-oauth-callback]
+verify_jwt = false
+
+[functions.btg-oauth-iniciar]
+verify_jwt = true
+
+[functions.btg-webhook]
+verify_jwt = false
+
+[functions.confirmar-autorizacao]
+verify_jwt = false
+
+[functions.curso-transcrever-webhook]
+verify_jwt = false
+
+[functions.curso-transcrever]
+verify_jwt = true
+
+[functions.enviar-alerta-atraso]
+verify_jwt = true
+
+[functions.enviar-digest-diario]
+verify_jwt = false
+
+[functions.enviar-recibo]
+verify_jwt = true
+
+[functions.excluir-conta]
+verify_jwt = true
+
+[functions.google-oauth-callback]
+verify_jwt = false
+
+[functions.google-oauth-iniciar]
+verify_jwt = true
+
+[functions.ia-busca]
+verify_jwt = true
+
+[functions.ia-transcrever-webhook]
+verify_jwt = false
+
+[functions.ia-transcrever]
+verify_jwt = true
+
+[functions.meet-buscar-transcricao]
+verify_jwt = false
+
+[functions.meet-criar-sala]
+verify_jwt = true
+
+[functions.mercadopago-criar-checkout-assinatura]
+verify_jwt = true
+
+[functions.mercadopago-criar-checkout-creditos]
+verify_jwt = true
+
+[functions.mercadopago-webhook]
+verify_jwt = false
+
+[functions.reenviar-instrucoes-plano]
+verify_jwt = true
+
+[functions.renovar-creditos]
+verify_jwt = true
+
+[functions.solicitar-autorizacao]
+verify_jwt = true
+
+[functions.whatsapp-webhook]
+verify_jwt = false
+
+[functions.zoom-buscar-transcricao]
+verify_jwt = false
+
+[functions.zoom-criar-reuniao]
+verify_jwt = true
+
+[functions.zoom-desconectar]
+verify_jwt = true
+
+[functions.zoom-oauth-callback]
+verify_jwt = false
+
+[functions.zoom-oauth-iniciar]
+verify_jwt = true
+
+[functions.zoom-webhook]
+verify_jwt = false

@@ -1,56 +1,39 @@
 # O que entra no próximo build
 
 Melhorias que exigem build novo porque mexem no lado nativo — instalar um
-módulo, mudar permissão, mexer em plugin. Nenhuma delas cabe em OTA: o
-`runtimeVersion` é fingerprint, e essas mudanças alteram o fingerprint (ver
-[AGENTS.md](AGENTS.md)).
+módulo, mudar permissão, mexer em plugin ou em asset nativo. Nenhuma delas
+cabe em OTA: o `runtimeVersion` é fingerprint, e essas mudanças alteram o
+fingerprint (ver [AGENTS.md](AGENTS.md)).
 
 A regra: **não piorar a usabilidade só pra caber num OTA.** Quando a saída
 sem build for pior pra quem usa, a boa vai pra esta lista e a saída
 provisória fica documentada no código, com o motivo.
 
-Quando um build for feito, aplicar tudo o que estiver aqui de uma vez — e
-esvaziar o arquivo.
-
 ---
 
-## 1. Botão de copiar de verdade no Pix
+## Nada pendente
 
-**Onde:** [src/screens/RecargaCreditosScreen.js](src/screens/RecargaCreditosScreen.js)
+Tudo o que estava acumulado entrou na v23. Registro do que foi:
 
-**Hoje:** o "Pix copia e cola" abre o menu de compartilhar (`Share`) e conta
-com o toque longo do Android pra selecionar o texto.
-
-**Deveria:** um toque, o código na área de transferência, e o rótulo virando
-"Copiado". É o gesto que qualquer pessoa espera de um copia-e-cola, e o
-caminho pelo compartilhar tem um passo a mais bem no meio de um pagamento.
-
-**O que fazer:**
-
-```bash
-npx expo install expo-clipboard
-```
-
-Trocar a função `compartilhar()` por:
-
-```js
-async function copiar() {
-  if (!cobranca?.emv) return;
-  await Clipboard.setStringAsync(cobranca.emv);
-  setCopiado(true);
-  setTimeout(() => setCopiado(false), 2500);
-}
-```
-
-com `import * as Clipboard from 'expo-clipboard';`, o ícone voltando a
-`copy-outline` / `checkmark` e o rótulo a "Tocar para copiar" / "Copiado".
-Apagar o comentário que explica por que era Share.
+- **Splash screen.** Não existia nenhuma configuração: o app abria numa tela
+  branca vazia, que era a primeira coisa que se via toda vez. O
+  `splash-icon.png` que estava no projeto era o placeholder do template do
+  Expo, com um grid cinza — nunca trocado.
+- **Ícone de notificação.** O `expo-notifications` tinha `color` mas não
+  `icon`. Sem ícone, o Android usa o do app, e como ele é opaco de canto a
+  canto o resultado na barra era um quadrado branco. Agora é uma silhueta
+  gerada da própria arte.
+- **Ícone monocromático** para os ícones temáticos do Android 13+, que sem
+  ele caem num genérico.
+- **Botão de copiar do Pix.** Passava pelo menu de compartilhar, um passo a
+  mais no meio de um pagamento. Agora é um toque e "Copiado".
+- **Volta preditiva** do Android 14+.
 
 ---
 
 ## Como conferir antes de publicar
 
-Depois de qualquer mudança nativa, o fingerprint muda — e é isso que obriga
+Depois de qualquer mudança nativa o fingerprint muda — e é isso que obriga
 o build. Pra confirmar qual runtime o pacote atual atinge:
 
 ```bash

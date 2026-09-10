@@ -42,6 +42,7 @@ export async function notificarTranscricao(
           to: perfil.expo_push_token,
           title,
           body: corpo,
+          channelId: 'transcricao',
           data: { sessionId },
         }),
       });

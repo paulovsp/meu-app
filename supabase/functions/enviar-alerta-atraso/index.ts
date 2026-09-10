@@ -54,6 +54,7 @@ Deno.serve(async (req) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           to: perfil.expo_push_token,
+          channelId: 'atraso',
           title: titulo,
           body: atrasados.map((a: { nome: string }) => a.nome).join(', '),
         }),

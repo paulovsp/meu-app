@@ -39,6 +39,7 @@
 // Chamada por docs/escolher-plano.html (fora do app, sem Authorization
 // automático do supabase-js — o token vai manual no header).
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { sincronizarPreapproval } from '../_shared/assinaturaMercadoPago.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -191,9 +192,29 @@ Deno.serve(async (req) => {
         });
         return json({ error: mensagemDeRecusa(corpo) }, 400);
       }
-      // A liberação do acesso não acontece aqui: quem grava no perfil é o
-      // webhook, por `external_reference`, com a mesma lógica que trata
-      // renovação e cancelamento. Um só caminho de escrita.
+      // Libera o acesso agora, sem esperar o webhook.
+      //
+      // O webhook continua sendo o dono da regra — é ele que trata
+      // renovação, recusa e cancelamento — e vai passar por aqui de novo
+      // daqui a alguns segundos. Mas "alguns segundos" é otimismo: webhook
+      // é entrega de melhor esforço, e a pessoa que ACABOU de pagar está
+      // olhando pra tela. Deixar ela abrir o app e encontrar tudo
+      // bloqueado, logo depois de passar o cartão, é o pior momento
+      // possível pra uma incerteza de rede.
+      //
+      // Rodar duas vezes é inofensivo: a escrita é a mesma função
+      // compartilhada, e o brinde de crédito tem guarda contra repetição.
+      if (corpo?.status === 'authorized' && corpo?.id) {
+        try {
+          const admin = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+          await sincronizarPreapproval(admin, MP_ACCESS_TOKEN, String(corpo.id), 'checkout-imediato');
+        } catch (err) {
+          // Não desfaz nada nem assusta quem pagou: o cartão foi
+          // autorizado de verdade, e o webhook (ou a conferência diária)
+          // libera em seguida.
+          console.error('mercadopago-criar-checkout-assinatura: liberação imediata falhou.', err);
+        }
+      }
       return json({ assinaturaId: corpo?.id ?? null, status: corpo?.status ?? null, plano });
     }
 

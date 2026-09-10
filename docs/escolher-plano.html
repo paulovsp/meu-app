@@ -50,6 +50,22 @@
     padding: 15px 18px; font-size: 15.5px; font-weight: 700; cursor: pointer; margin-top: 20px;
   }
   .btn-grande:disabled { background: #C6C1B8; cursor: default; }
+  /* O e-mail do pagador só aparece pra quem precisa dele: quem vai entrar
+     numa conta do Mercado Pago com outro endereço. Para todo mundo é uma
+     linha discreta que não pede nada. */
+  .pagador { margin-top: 14px; }
+  .link-discreto {
+    background: none; border: none; padding: 4px 0; font: inherit; font-size: 13px;
+    color: #6B6860; text-decoration: underline; cursor: pointer;
+  }
+  .link-discreto:focus-visible { outline: 3px solid #3A5C4F; outline-offset: 2px; }
+  .rotulo { display: block; font-size: 13px; font-weight: 700; margin: 12px 0 6px; }
+  .entrada {
+    width: 100%; padding: 12px 14px; font: inherit; font-size: 15px;
+    border: 2px solid #E8E4DD; border-radius: 10px; background: #fff; color: inherit;
+  }
+  .entrada:focus { outline: none; border-color: #3A5C4F; }
+  .ajuda { font-size: 12.5px; color: #6B6860; margin: 8px 0 0; }
   .rodape { margin-top: 26px; text-align: center; }
   .rodape a { color: #6B6860; font-size: 13.5px; text-decoration: underline; }
   .depois { margin-top: 24px; padding-top: 18px; border-top: 1px solid #EFECE7; }
@@ -148,6 +164,19 @@
   ];
 
   let planoEscolhido = null;
+  let outroEmailAberto = false;
+
+  // O e-mail do cadastro sai do próprio token — é uma informação da pessoa
+  // sobre ela mesma, só pra mostrar qual endereço vai ser usado por padrão
+  // no Mercado Pago.
+  function emailDoToken(token) {
+    try {
+      const corpo = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      return JSON.parse(decodeURIComponent(escape(atob(corpo)))).email || '';
+    } catch (_) {
+      return '';
+    }
+  }
 
   function render(html) {
     card.innerHTML = html;
@@ -212,6 +241,7 @@
   }
 
   function renderPlanos() {
+    const emailPadrao = emailDoToken(accessToken);
     const cartoes = PLANOS.map(function (p) {
       return (
         '<button type="button" class="plano" role="radio" aria-checked="false" data-plano="' + p.id + '">' +
@@ -234,17 +264,46 @@
       '<div class="erro" id="erro"></div>' +
       '<div class="planos" role="radiogroup" aria-label="Planos disponíveis">' + cartoes + '</div>' +
       '<button class="btn-grande" id="btn-assinar" disabled>Selecione um plano acima</button>' +
+      '<div class="pagador">' +
+      '<button type="button" class="link-discreto" id="btn-outro-email">Vou pagar com outra conta do Mercado Pago</button>' +
+      '<div id="campo-email" hidden>' +
+      '<label class="rotulo" for="email-pagador">E-mail da conta do Mercado Pago que vai pagar</label>' +
+      '<input class="entrada" type="email" id="email-pagador" inputmode="email" autocomplete="email" ' +
+      'placeholder="' + (emailPadrao || 'nome@exemplo.com') + '" />' +
+      '<p class="ajuda">Só precisa disto se você for <strong>entrar na sua conta</strong> do Mercado Pago ' +
+      'e ela usar outro endereço' + (emailPadrao ? ' (o padrão é ' + emailPadrao + ')' : '') + '. ' +
+      'Para pagar direto no cartão, escolha “Sem conta Mercado Pago” lá — aí o e-mail não importa. ' +
+      'Seja qual for, a assinatura entra nesta sua conta do Dr.Sig.</p>' +
+      '</div>' +
+      '</div>' +
       '<div class="depois"><p>Se preferir decidir depois, é só fechar esta página. Você entra no ' +
       'app normalmente e vê tudo que já registrou — só criar sessões, registros e cadastros fica ' +
       'bloqueado até escolher um plano. O link para voltar aqui fica em ' +
       '<strong>Meu Perfil &rsaquo; Seu plano</strong>.</p></div>' +
-      '<p class="nota">Pagamento pelo Mercado Pago, em cartão de crédito. Assinatura recorrente ' +
-      'no Mercado Pago só existe em cartão — Pix não faz cobrança automática, e um plano que ' +
-      'vence sozinho no meio do seu trabalho não é um plano. Sem fidelidade: você cancela quando ' +
-      'quiser, pelo Mercado Pago ou falando com a gente, e usa até o fim do período já pago.</p>'
+      '<p class="nota"><strong>Você não precisa ter conta nem o app do Mercado Pago.</strong> ' +
+      'Na tela seguinte, escolha “Sem conta Mercado Pago” e informe os dados do cartão — é o ' +
+      'caminho normal, e não instala nada. Entrar na conta do Mercado Pago é opcional, e serve ' +
+      'só para quem já tem cartão salvo lá.</p>' +
+      '<p class="nota">O pagamento é em cartão de crédito. Assinatura recorrente no Mercado Pago ' +
+      'só existe em cartão — Pix não faz cobrança automática, e um plano que vence sozinho no ' +
+      'meio do seu trabalho não é um plano. Por isso também não há escolha de banco: quem cobra ' +
+      'é o cartão, todo mês, sem você precisar lembrar. Sem fidelidade: cancele quando quiser, ' +
+      'pelo Mercado Pago ou falando com a gente, e use até o fim do período já pago.</p>'
     );
 
     const botaoAssinar = document.getElementById('btn-assinar');
+    const campoEmail = document.getElementById('campo-email');
+    const botaoOutroEmail = document.getElementById('btn-outro-email');
+
+    botaoOutroEmail.addEventListener('click', function () {
+      outroEmailAberto = !outroEmailAberto;
+      campoEmail.hidden = !outroEmailAberto;
+      botaoOutroEmail.textContent = outroEmailAberto
+        ? 'Usar o e-mail do meu cadastro'
+        : 'Vou pagar com outra conta do Mercado Pago';
+      if (outroEmailAberto) document.getElementById('email-pagador').focus();
+    });
+    campoEmail.hidden = !outroEmailAberto;
 
     document.querySelectorAll('[data-plano]').forEach(function (el) {
       el.addEventListener('click', function () {
@@ -271,6 +330,14 @@
   }
 
   async function iniciarCheckout(plano, botao) {
+    const entrada = document.getElementById('email-pagador');
+    const payerEmail = outroEmailAberto && entrada ? entrada.value.trim() : '';
+    if (payerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payerEmail)) {
+      mostrarErro('Confira o e-mail do Mercado Pago: parece incompleto.');
+      entrada.focus();
+      return;
+    }
+
     botao.disabled = true;
     const rotulo = botao.textContent;
     botao.textContent = 'Abrindo pagamento…';
@@ -282,7 +349,7 @@
           Authorization: 'Bearer ' + accessToken,
           apikey: SUPABASE_ANON_KEY,
         },
-        body: JSON.stringify({ plano: plano }),
+        body: JSON.stringify(payerEmail ? { plano: plano, payerEmail: payerEmail } : { plano: plano }),
       });
       const dados = await resp.json();
       if (!resp.ok || !dados.initPoint) {

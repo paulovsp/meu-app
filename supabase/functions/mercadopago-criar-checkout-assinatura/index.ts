@@ -83,13 +83,39 @@ Deno.serve(async (req) => {
     const { data: userData, error: userError } = await supabaseUser.auth.getUser();
     if (userError || !userData?.user) return json({ error: 'Sessão inválida ou expirada.' }, 401);
     const userId = userData.user.id;
-    const email = userData.user.email;
-    if (!email) return json({ error: 'Conta sem e-mail associado.' }, 400);
 
     const body = await req.json().catch(() => ({}));
     const plano = String(body?.plano || '') as Plano;
     const config = PLANOS[plano];
     if (!config) return json({ error: 'Plano inválido.' }, 400);
+
+    // ─── O e-mail do pagador ────────────────────────────────────────────
+    //
+    // O Mercado Pago EXIGE `payer_email` numa assinatura (sem ele: 400,
+    // "payer_email is required"), e amarra a assinatura àquele endereço:
+    // quem escolher "Entrar com a minha conta" no checkout tem que entrar
+    // com a conta daquele e-mail, ou leva "o e-mail não coincide".
+    //
+    // Mandar o e-mail do cadastro parecia natural e quebrava na vida real:
+    // o e-mail da conta do Mercado Pago quase nunca é o do cadastro, e
+    // quem paga a conta de um consultório muitas vezes nem é a mesma
+    // pessoa — o contador, o cônjuge, o cartão da empresa. A página agora
+    // deixa informar qual e-mail vai ser usado no Mercado Pago, e o padrão
+    // continua sendo o do cadastro.
+    //
+    // Aceitar um e-mail vindo do cliente não abre brecha nenhuma: ele não
+    // decide de quem é a assinatura. Quem decide é o `external_reference`,
+    // montado aqui com o id de quem está autenticado nesta chamada. O
+    // e-mail serve só pro Mercado Pago saber com qual conta DELE a pessoa
+    // vai pagar.
+    const emailDoCadastro = userData.user.email;
+    const emailInformado = String(body?.payerEmail || '').trim().toLowerCase();
+    const emailValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInformado);
+    if (emailInformado && !emailValido) {
+      return json({ error: 'O e-mail informado para o Mercado Pago não é válido.' }, 400);
+    }
+    const payerEmail = emailInformado || emailDoCadastro;
+    if (!payerEmail) return json({ error: 'Conta sem e-mail associado.' }, 400);
 
     // Sem `preapproval_plan_id`: com ele o Mercado Pago exige um
     // `card_token_id`, que só nasce no navegador com o cartão em mãos — o
@@ -111,7 +137,8 @@ Deno.serve(async (req) => {
           transaction_amount: config.precoBRL,
           currency_id: 'BRL',
         },
-        payer_email: email,
+        payer_email: payerEmail,
+        // Isto, e só isto, diz de quem é a assinatura.
         external_reference: `assinatura:${plano}:${userId}`,
         back_url: CONFIRMACAO_URL,
         status: 'pending',

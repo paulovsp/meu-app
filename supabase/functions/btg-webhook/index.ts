@@ -33,7 +33,13 @@ Deno.serve(async (req) => {
     const tipo = evento?.type ?? evento?.event ?? '';
     const dados = evento?.data ?? evento;
 
-    if (!String(tipo).includes('instant-collection.paid')) {
+    // O console do BTG lista o evento como `instant-collections.paid`, no
+    // plural; a ficha técnica escreve `instant-collection.paid`, no
+    // singular. Aceitar as duas grafias custa nada e evita o pior tipo de
+    // falha aqui: o Pix cai, o webhook chega, e o crédito não entra porque
+    // uma letra não bateu.
+    const ehPagamento = /instant-collections?\.paid/.test(String(tipo));
+    if (!ehPagamento) {
       return json({ ignorado: tipo || 'sem tipo' });
     }
 

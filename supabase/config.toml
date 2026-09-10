@@ -97,3 +97,30 @@ verify_jwt = true
 
 [functions.zoom-webhook]
 verify_jwt = false
+
+[auth]
+additional_redirect_urls = ["https://app.drsig.com.br/*"]
+# Pra onde o Supabase manda quem clica num link de auth sem redirect_to
+# explicito. Ficou em localhost:3000 desde o inicio do projeto: quem pedia
+# "esqueci minha senha" recebia um e-mail que levava a ERR_CONNECTION_REFUSED.
+site_url = "https://app.drsig.com.br"
+
+[auth.email]
+enable_confirmations = true
+max_frequency = "1m0s"
+otp_length = 8
+
+[auth.hook.send_email]
+enabled = true
+uri = "https://iahtyvqjgukdgrftpyxm.supabase.co/functions/v1/auth-send-email"
+
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
+
+[db.pooler]
+default_pool_size = 15
+max_client_conn = 200
+
+[storage.vector]
+enabled = false

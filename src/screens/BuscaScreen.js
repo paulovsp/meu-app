@@ -15,6 +15,8 @@ import {
 import { formatarSaldoBRL } from '../services/creditosIA';
 import { mensagemDeErro } from '../services/erros';
 import { MENSAGEM_ASSINATURA_INATIVA } from '../services/assinatura';
+import { useBloqueioIA } from '../hooks/useBloqueioIA';
+import { MENSAGEM_SEM_CREDITOS } from '../services/usoDeIA';
 
 // Estado sobrevive fora do componente — a tela é remontada sempre que sai
 // da pilha de navegação (ex: Início → Analisantes → Busca de novo), então um
@@ -49,6 +51,9 @@ function Troca({ item }) {
 
 export default function BuscaScreen() {
   const navigation = useNavigation();
+  // Esta tela não faz nada sem IA paga: se a conta não pode usar, avisa e
+  // volta, em vez de deixar escrever a pergunta inteira pra negar no fim.
+  useBloqueioIA(navigation);
   const [pessoas, setPessoas] = useState([]);
   const [selecionadosIds, setSelecionadosIds] = useState(estadoPersistente.selecionadosIds);
   const [seletorAberto, setSeletorAberto] = useState(estadoPersistente.selecionadosIds.length === 0);
@@ -126,7 +131,7 @@ export default function BuscaScreen() {
       if (e instanceof AssinaturaInativaError) {
         Alert.alert('Assinatura inativa', MENSAGEM_ASSINATURA_INATIVA);
       } else if (e instanceof CreditosInsuficientesError) {
-        Alert.alert('Créditos de IA insuficientes', 'Fale com o administrador da conta pra recarregar.');
+        Alert.alert('Créditos de IA esgotados', MENSAGEM_SEM_CREDITOS);
       } else {
         Alert.alert('Erro ao responder', mensagemDeErro(e, 'Tente novamente.'));
       }

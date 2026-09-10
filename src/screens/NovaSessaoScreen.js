@@ -27,7 +27,10 @@ import {
   diagnosticarProtecao, impedeGravacaoEmSegundoPlano, CANAL_SESSAO,
 } from '../services/protecaoGravacao';
 import { mensagemDeErro } from '../services/erros';
-import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
+import { useBloqueioIA } from '../hooks/useBloqueioIA';
+import {
+  getSituacaoIA, avisoDeSaldoNegativo, estimarCustoTranscricaoUSD,
+} from '../services/usoDeIA';
 import {
   criarGravadorEmBlocos, enviarBlocoParaTranscricao, enviarGravacaoCompleta,
   apagarBlocos, escolherArquivoDeAudio, MENSAGEM_SILENCIO, RECORDING_OPTIONS,
@@ -112,7 +115,12 @@ export default function NovaSessaoScreen() {
   // compromisso pra tela "Sessões sem relato" conseguir cruzar os dois.
   const appointmentId = route?.params?.appointmentId || null;
 
-  useBloqueioAssinatura(navigation);
+  // useBloqueioIA e nao useBloqueioAssinatura: aqui a assinatura ativa
+  // nao basta. Sem credito, a transcricao nao roda -- e gravar uma
+  // sessao inteira que nao tem como ser transcrita e pior do que ser
+  // avisado na porta. O hook checa assinatura primeiro e credito
+  // depois, com a mensagem certa pra cada caso.
+  useBloqueioIA(navigation);
 
   // ─── Estados ──────────────────────────────────────────────
   const [step, setStep] = useState(STEPS.SELECT_PATIENT);
@@ -575,6 +583,26 @@ Dá pra resolver agora, em poucos toques.`,
     setTranscricaoAssincrona(true);
   }
 
+  /**
+   * Diz, depois de despachar a transcrição, que ela vai fechar o saldo em
+   * negativo — quando for o caso.
+   *
+   * Avisa em vez de perguntar, de propósito. Aqui a sessão já foi gravada
+   * e já está a caminho da transcrição; oferecer "cancelar" neste ponto
+   * seria oferecer jogar fora a sessão da pessoa. O ponto de decidir é a
+   * entrada da tela, que o useBloqueioIA já guarda: com saldo zerado nem
+   * se começa a gravar.
+   */
+  async function avisarSeOSaldoVaiFicarNegativo(duracaoSegundos) {
+    try {
+      const { saldoUsd } = await getSituacaoIA();
+      const aviso = avisoDeSaldoNegativo(estimarCustoTranscricaoUSD(duracaoSegundos), saldoUsd);
+      if (aviso) Alert.alert('Seus créditos vão acabar com esta transcrição', aviso);
+    } catch (_) {
+      // Não é motivo pra atrapalhar o encerramento da sessão.
+    }
+  }
+
   // ─── Encerrar e transcrever ───────────────────────────────
   async function encerrarETranscrever() {
     clearInterval(timerRef.current);
@@ -613,6 +641,7 @@ Dá pra resolver agora, em poucos toques.`,
       });
 
       await enviarTudo(sid);
+      await avisarSeOSaldoVaiFicarNegativo(duracao);
     } catch (err) {
       // O áudio continua no aparelho — a próxima tela oferece tentar de novo
       // em vez de a gravação virar perda total.

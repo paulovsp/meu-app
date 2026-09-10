@@ -17,6 +17,10 @@ import {
 } from '../services/relatorios';
 import { mensagemDeErro } from '../services/erros';
 import { formatarSaldoBRL } from '../services/creditosIA';
+import {
+  getSituacaoIA, avisoDeSaldoNegativo, MOTIVO_ASSINATURA, MENSAGEM_SEM_CREDITOS,
+} from '../services/usoDeIA';
+import { MENSAGEM_ASSINATURA_INATIVA } from '../services/assinatura';
 
 const COLORS = {
   bg: '#F7F5F0',
@@ -89,8 +93,16 @@ export default function RelatoriosScreen() {
 
     setGerandoTipo(tipo);
     let custoEstimado;
+    let situacao;
     try {
-      custoEstimado = await estimarCustoRelatorio(paciente, tipo, parametros);
+      // Duas perguntas de uma vez: quanto custa, e se esta conta pode
+      // gastar. A TELA não é bloqueada de propósito — os relatórios já
+      // gerados continuam legíveis com a conta inativa, porque o que já é
+      // seu continua seu. O bloqueio mora aqui, no ato de gerar.
+      [custoEstimado, situacao] = await Promise.all([
+        estimarCustoRelatorio(paciente, tipo, parametros),
+        getSituacaoIA(),
+      ]);
     } catch (err) {
       setGerandoTipo(null);
       Alert.alert('Não foi possível gerar', mensagemDeErro(err));
@@ -98,8 +110,22 @@ export default function RelatoriosScreen() {
     }
     setGerandoTipo(null);
 
+    // Relatório calculado dentro do app (custo zero) continua liberado sem
+    // assinatura e sem crédito: não gasta IA nenhuma, não há o que barrar.
+    if (custoEstimado > 0 && !situacao.pode) {
+      const ehAssinatura = situacao.motivo === MOTIVO_ASSINATURA;
+      Alert.alert(
+        ehAssinatura ? 'Assinatura inativa' : 'Créditos de IA esgotados',
+        ehAssinatura ? MENSAGEM_ASSINATURA_INATIVA : MENSAGEM_SEM_CREDITOS,
+      );
+      return;
+    }
+
+    // Quando o custo estimado passa do saldo, a geração ainda acontece —
+    // mas dizendo antes o que ela vai deixar para trás.
+    const aviso = custoEstimado > 0 ? avisoDeSaldoNegativo(custoEstimado, situacao.saldoUsd) : null;
     const mensagem = custoEstimado > 0
-      ? `${tipoInfo?.label || tipo}\n\nCusto estimado (no pior caso): até ${formatarSaldoBRL(custoEstimado)}.\n\nGerar mesmo assim?`
+      ? `${tipoInfo?.label || tipo}\n\nCusto estimado (no pior caso): até ${formatarSaldoBRL(custoEstimado)}.${aviso ? `\n\n${aviso}` : ''}\n\nGerar mesmo assim?`
       : `${tipoInfo?.label || tipo}\n\nEste relatório é calculado direto no app, sem uso de IA — sem custo. Gerar?`;
 
     Alert.alert(

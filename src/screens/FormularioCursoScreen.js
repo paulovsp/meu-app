@@ -28,7 +28,7 @@ import {
   apagarBlocos, escolherArquivoDeAudio, MENSAGEM_SILENCIO, RECORDING_OPTIONS,
 } from '../services/gravacaoEmBlocos';
 import { mensagemDeErro } from '../services/erros';
-import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
+import { useBloqueioIA } from '../hooks/useBloqueioIA';
 import {
   dataBRParaISO, dataISOParaBR, mascararDataBR, interpretarDataDigitada,
 } from '../services/validacao';
@@ -69,7 +69,12 @@ export default function FormularioCursoScreen() {
   const cursoInicial = route.params?.curso || null;
   const cursoIdParam = route.params?.cursoId || null;
 
-  useBloqueioAssinatura(navigation);
+  // useBloqueioIA e nao useBloqueioAssinatura: aqui a assinatura ativa
+  // nao basta. Sem credito, a transcricao nao roda -- e gravar uma
+  // sessao inteira que nao tem como ser transcrita e pior do que ser
+  // avisado na porta. O hook checa assinatura primeiro e credito
+  // depois, com a mensagem certa pra cada caso.
+  useBloqueioIA(navigation);
 
   const [curso, setCurso] = useState(cursoInicial);
   const [carregandoCurso, setCarregandoCurso] = useState(!!cursoIdParam && !cursoInicial);

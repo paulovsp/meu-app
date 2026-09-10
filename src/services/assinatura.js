@@ -7,11 +7,17 @@ import { supabase } from './supabase';
 // Texto único, usado em todo canto que precisa avisar a psicanalista sobre
 // assinatura inativa (banner, telas de criação bloqueadas, erro do
 // ia-busca) — política do Google Play proíbe qualquer link, preço ou
-// instrução de pagamento nas telas do app; a ponte pro site é só o e-mail.
+// instrução de pagamento nas telas do app; a ponte pro site é o e-mail.
+//
+// Ele dizia "enviamos um e-mail com os próximos passos", e nenhum e-mail
+// era enviado: o envio só acontece quando a pessoa PEDE, em Meu Perfil ›
+// Seu plano. Quem batia no bloqueio ficava esperando uma mensagem que
+// nunca ia chegar. Agora o texto aponta pro botão que existe de verdade —
+// mandar um e-mail a cada toque bloqueado seria pior, viraria spam.
 export const MENSAGEM_ASSINATURA_INATIVA =
   'Sua conta está sem assinatura ativa. Você continua com acesso a tudo que já ' +
-  'registrou, e pode exportar seus dados quando quiser. Enviamos um e-mail com ' +
-  'os próximos passos.';
+  'registrou, e pode exportar seus dados quando quiser.\n\n' +
+  'Para ativar, abra Meu Perfil › Seu plano e toque em "Receber o link por e-mail".';
 
 /** Quantos dias faltam para uma data (negativo = já passou). */
 function diasAte(iso) {

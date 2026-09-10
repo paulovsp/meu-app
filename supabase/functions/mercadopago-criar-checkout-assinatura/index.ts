@@ -45,14 +45,32 @@ const PLANOS: Record<Plano, { precoBRL: number; mesesPorCobranca: number; nome: 
   anual: { precoBRL: 588, mesesPorCobranca: 12, nome: 'Anual' },
 };
 
+// Esta função é chamada de uma PÁGINA (docs/escolher-plano.html), não do
+// app — e página é navegador, e navegador exige CORS. Sem isto, o clique
+// em "Assinar" nem chega aqui: o browser manda um OPTIONS antes (porque a
+// requisição leva Authorization e Content-Type), leva 405, e cancela o
+// POST. O botão nunca funcionou num navegador, e o erro aparecia como
+// falha genérica de rede — o servidor, por curl, respondia 200 o tempo
+// todo, que foi o que escondeu isso.
+//
+// `*` como origem é seguro aqui porque quem autoriza é o JWT do usuário no
+// header, não um cookie de sessão: um site de terceiros não tem como
+// obtê-lo, e sem ele esta função devolve 401.
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'content-type, authorization, apikey',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { ...CORS, 'Content-Type': 'application/json' },
   });
 }
 
 Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Método não permitido.' }, 405);
 
   try {

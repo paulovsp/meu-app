@@ -38,6 +38,7 @@
 // Cobrar duas vezes a mesma pessoa não é um bug que se conserta depois.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sincronizarPreapproval } from '../_shared/assinaturaMercadoPago.ts';
+import { aplicarDescontoDeIndicacoes } from '../_shared/indicacoes.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -75,6 +76,7 @@ Deno.serve(async (req) => {
     conferidos: 0,
     corrigidos: 0,
     inalterados: 0,
+    descontosCorrigidos: 0,
     erros: [] as string[],
   };
 
@@ -126,6 +128,34 @@ Deno.serve(async (req) => {
         }
       } catch (err) {
         resultado.erros.push(`${conta.id}: ${String((err as Error)?.message || err)}`);
+      }
+    }
+
+    // ── Descontos por indicação ──────────────────────────────────────
+    //
+    // O desconto é recalculado na hora, sempre que a assinatura de um
+    // indicado muda de estado. Isto aqui é a rede de segurança do mesmo
+    // tipo: um webhook perdido, uma chamada que falhou, uma assinatura que
+    // simplesmente venceu sem evento nenhum — em qualquer desses casos
+    // alguém pode estar pagando mais (ou menos) do que deve.
+    //
+    // Como é idempotente, o resultado normal é não mudar nada.
+    const { data: elegiveis } = await supabaseAdmin
+      .from('profiles')
+      .select('id')
+      .eq('elegivel_indicacao', true);
+
+    for (const conta of elegiveis || []) {
+      try {
+        const r = await aplicarDescontoDeIndicacoes(supabaseAdmin, MP_ACCESS_TOKEN, String(conta.id));
+        if (r.mudou) {
+          resultado.descontosCorrigidos++;
+          console.log('assinatura-processar-ciclo: desconto de indicação ajustado.', {
+            conta: conta.id, desconto: r.desconto, acao: r.acao, detalhe: r.detalhe,
+          });
+        }
+      } catch (err) {
+        resultado.erros.push(`desconto ${conta.id}: ${String((err as Error)?.message || err)}`);
       }
     }
 

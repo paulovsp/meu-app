@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
   TextInput, Alert, ActivityIndicator, Image, Switch, Modal, Linking,
-  KeyboardAvoidingView, Platform,
+  KeyboardAvoidingView, Platform, Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -20,6 +20,7 @@ import {
   validarCPF, dataBRParaISO, dataISOParaBR, mascararDataBR, interpretarDataDigitada,
 } from '../services/validacao';
 import TelefoneInput from '../components/TelefoneInput';
+import { getResumoIndicacoes, convite, MAXIMO_INDICADOS } from '../services/indicacoes';
 import { mensagemDeErro } from '../services/erros';
 import { getStatusAssinatura, reenviarInstrucoesDePlano, cancelarAssinatura } from '../services/assinatura';
 import Constants from 'expo-constants';
@@ -193,6 +194,7 @@ export default function PerfilScreen({ navigation }) {
   const [assinatura, setAssinatura] = useState(null);
   const [reenviando, setReenviando] = useState(false);
   const [cancelando, setCancelando] = useState(false);
+  const [indicacoes, setIndicacoes] = useState(null);
   // Estado real das notificações no sistema. Sem isto, os interruptores
   // abaixo prometiam avisos que o Android podia estar descartando.
   const [notifSistema, setNotifSistema] = useState(null);
@@ -299,6 +301,7 @@ export default function PerfilScreen({ navigation }) {
       // Checagem silenciosa de renovação mensal de créditos — se houver
       // renovação pendente, já reflete o saldo/data novos sem recarregar tudo.
       getStatusAssinatura().then(setAssinatura).catch(() => {});
+      getResumoIndicacoes().then(setIndicacoes).catch(() => {});
       diagnosticoDeNotificacoes().then(setNotifSistema).catch(() => {});
 
       chamarRenovarCreditos()
@@ -1176,6 +1179,53 @@ export default function PerfilScreen({ navigation }) {
               onCancelar={confirmarCancelamento}
             />
 
+            {!!indicacoes?.elegivel && !!indicacoes?.codigo && (
+              <>
+                <Text style={st.sectionTitle}>Indique e ganhe desconto</Text>
+                <View style={st.indicaBox}>
+                  <Text style={st.indicaTexto}>
+                    {indicacoes.gratuita
+                      ? 'Você tem 10 indicações ativas: sua assinatura está gratuita enquanto elas continuarem.'
+                      : `Cada pessoa que assinar com o seu código tira ${10}% da sua mensalidade. Com ${MAXIMO_INDICADOS}, ela fica gratuita.`}
+                  </Text>
+
+                  <View style={st.indicaNumeros}>
+                    <View style={st.indicaNumero}>
+                      <Text style={st.indicaValor}>{indicacoes.indicadosAtivos}</Text>
+                      <Text style={st.indicaRotulo}>
+                        {indicacoes.indicadosAtivos === 1 ? 'indicação ativa' : 'indicações ativas'}
+                      </Text>
+                    </View>
+                    <View style={st.indicaNumero}>
+                      <Text style={st.indicaValor}>{indicacoes.descontoVigente}%</Text>
+                      <Text style={st.indicaRotulo}>de desconto agora</Text>
+                    </View>
+                  </View>
+
+                  <Text style={st.indicaCodigoRotulo}>Seu código</Text>
+                  <TouchableOpacity
+                    style={st.indicaCodigoCaixa}
+                    onPress={() => Share.share({ message: convite(indicacoes.codigo) })}
+                  >
+                    <Text style={st.indicaCodigo}>{indicacoes.codigo}</Text>
+                    <Ionicons name="share-outline" size={20} color="#497363" />
+                  </TouchableOpacity>
+
+                  {!indicacoes.gratuita && indicacoes.indicadosAtivos > 0 && (
+                    <Text style={st.indicaRodape}>
+                      {indicacoes.faltamParaGratis === 1
+                        ? 'Falta 1 indicação para a assinatura ficar gratuita.'
+                        : `Faltam ${indicacoes.faltamParaGratis} indicações para a assinatura ficar gratuita.`}
+                    </Text>
+                  )}
+                  <Text style={st.indicaRodape}>
+                    O desconto acompanha quem está com a assinatura ativa: se alguém cancelar,
+                    aqueles 10% saem no ajuste seguinte.
+                  </Text>
+                </View>
+              </>
+            )}
+
             <Text style={st.sectionTitle}>Créditos de IA</Text>
             <View style={st.infoRow}>
               <Text style={st.infoLabel}>Saldo disponível</Text>
@@ -1836,6 +1886,28 @@ const st = StyleSheet.create({
     borderWidth: 1, borderColor: '#D9C4BF', backgroundColor: 'transparent',
   },
   planoBtnSecundarioTexto: { color: '#8C5A52', fontWeight: '500', fontSize: 14, lineHeight: 20 },
+  indicaBox: {
+    backgroundColor: '#F2F6F3', borderRadius: 14, padding: 16,
+    borderWidth: 1, borderColor: '#DCE8E0',
+  },
+  indicaTexto: { fontSize: 13.5, color: '#4E4941', lineHeight: 20 },
+  indicaNumeros: { flexDirection: 'row', gap: 12, marginTop: 14 },
+  indicaNumero: {
+    flex: 1, backgroundColor: '#FFFFFF', borderRadius: 12, paddingVertical: 12,
+    alignItems: 'center', borderWidth: 1, borderColor: '#E4EDE7',
+  },
+  indicaValor: { fontSize: 24, fontWeight: '700', color: '#497363', lineHeight: 30 },
+  indicaRotulo: { fontSize: 11.5, color: '#756E66', marginTop: 2, textAlign: 'center' },
+  indicaCodigoRotulo: { fontSize: 12, color: '#756E66', marginTop: 16, marginBottom: 6 },
+  indicaCodigoCaixa: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF', borderRadius: 12, paddingVertical: 13, paddingHorizontal: 16,
+    borderWidth: 1, borderColor: '#CBDCD2',
+  },
+  // Espacamento entre letras porque o codigo vai ser ditado por telefone e
+  // copiado a mao: caractere colado no outro e digito trocado.
+  indicaCodigo: { fontSize: 21, fontWeight: '700', color: '#302C28', letterSpacing: 3 },
+  indicaRodape: { fontSize: 11.5, color: '#756E66', lineHeight: 17, marginTop: 10 },
   assinaturaBox: {
     backgroundColor: '#FDFCFA', borderRadius: 14, padding: 14,
     borderWidth: 1, borderColor: '#EAE5DC', alignItems: 'center', gap: 10,

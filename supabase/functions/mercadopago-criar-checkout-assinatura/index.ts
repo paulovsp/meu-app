@@ -40,6 +40,7 @@
 // automático do supabase-js — o token vai manual no header).
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sincronizarPreapproval } from '../_shared/assinaturaMercadoPago.ts';
+import { aplicarDescontoDeIndicacoes, precoComDesconto } from '../_shared/indicacoes.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -157,10 +158,24 @@ Deno.serve(async (req) => {
     if (!payerEmail) return json({ error: 'Conta sem e-mail associado.' }, 400);
 
     const externalReference = `assinatura:${plano}:${userId}`;
+
+    // O desconto por indicacoes entra JA na primeira cobranca. Sem isto,
+    // quem indicou dez pessoas antes de assinar pagaria o preco cheio no
+    // primeiro ciclo e so veria o desconto no segundo — punido por ter
+    // feito as coisas na ordem "errada".
+    const admin = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const { data: descontoBruto } = await admin.rpc('desconto_por_indicacoes', { uid: userId });
+    // Teto de 90% aqui: 100% nao e uma assinatura barata, e assinatura
+    // nenhuma (o Mercado Pago recusa qualquer valor abaixo de R$ 0,50).
+    // Quem tem direito a 100% e liberado logo depois, por
+    // aplicarDescontoDeIndicacoes, que cancela a assinatura recem-criada e
+    // poe a conta em `gratuita_indicacao`.
+    const desconto = Math.min(Number(descontoBruto) || 0, 90);
+
     const autoRecurring = {
       frequency: config.mesesPorCobranca,
       frequency_type: 'months',
-      transaction_amount: config.precoBRL,
+      transaction_amount: precoComDesconto(plano, desconto),
       currency_id: 'BRL',
     };
 
@@ -206,8 +221,10 @@ Deno.serve(async (req) => {
       // compartilhada, e o brinde de crédito tem guarda contra repetição.
       if (corpo?.status === 'authorized' && corpo?.id) {
         try {
-          const admin = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
           await sincronizarPreapproval(admin, MP_ACCESS_TOKEN, String(corpo.id), 'checkout-imediato');
+          // Fecha o caso dos 100%: a assinatura acabou de nascer com 90%
+          // de desconto e aqui ela e cancelada, virando acesso gratuito.
+          await aplicarDescontoDeIndicacoes(admin, MP_ACCESS_TOKEN, userId);
         } catch (err) {
           // Não desfaz nada nem assusta quem pagou: o cartão foi
           // autorizado de verdade, e o webhook (ou a conferência diária)

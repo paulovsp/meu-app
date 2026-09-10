@@ -53,6 +53,7 @@ export default function CadastroScreen({ navigation }) {
   const [seletorCidadeAberto, setSeletorCidadeAberto] = useState(false);
 
   const [crp, setCrp] = useState('');
+  const [codigoIndicacao, setCodigoIndicacao] = useState('');
   const [telefone, setTelefone] = useState('');
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
@@ -156,6 +157,11 @@ export default function CadastroScreen({ navigation }) {
             data_nascimento: dataNascimentoISO,
             cidade: cidade.trim() || null,
             uf: uf.trim() || null,
+            // Resolvido no banco, pelo trigger de criacao de conta: e la
+            // que o codigo vira o id de quem indicou. O app nao consulta
+            // isso — um campo que responde "esse codigo existe" seria um
+            // verificador de quem usa o Dr.Sig.
+            codigo_indicacao: codigoIndicacao || null,
           },
         },
       });
@@ -290,6 +296,29 @@ export default function CadastroScreen({ navigation }) {
             placeholder="Ex: CRP 06/123456"
             placeholderTextColor="#756E66"
           />
+
+          {/* Cupom de indicacao. Opcional, e de proposito o ultimo campo
+              antes da senha: quem nao foi indicado nao pode sentir que
+              esta faltando alguma coisa pra criar a conta.
+
+              Codigo errado NAO impede o cadastro — o vinculo simplesmente
+              nao acontece. Perder uma conta por causa de um digito trocado
+              seria muito pior do que perder a indicacao. */}
+          <Text style={s.label}>Código de indicação</Text>
+          <TextInput
+            style={s.input}
+            value={codigoIndicacao}
+            onChangeText={(t) => setCodigoIndicacao(t.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6))}
+            placeholder="Se alguém te indicou, o código dela"
+            placeholderTextColor="#756E66"
+            autoCapitalize="characters"
+            autoCorrect={false}
+            maxLength={6}
+          />
+          <Text style={s.ajudaCampo}>
+            Opcional. Quem te indicou ganha desconto na assinatura — e você encontra o seu
+            código depois, em Meu Perfil.
+          </Text>
 
           <Text style={s.label}>Senha *</Text>
           <View style={s.senhaRow}>

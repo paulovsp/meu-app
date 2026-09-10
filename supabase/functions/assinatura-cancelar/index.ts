@@ -21,6 +21,7 @@
 // bastaria mandar o id de outra pessoa pra cancelar a assinatura alheia.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { MP_API, sincronizarPreapproval } from '../_shared/assinaturaMercadoPago.ts';
+import { atualizarQuemIndicou } from '../_shared/indicacoes.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -107,6 +108,8 @@ Deno.serve(async (req) => {
     // aqui faria a pessoa cancelar duas vezes.
     try {
       await sincronizarPreapproval(admin, MP_ACCESS_TOKEN, String(perfil.mp_preapproval_id), 'cancelamento-pelo-app');
+      // Deixou de ser um indicado ativo: quem indicou perde os 10%.
+      await atualizarQuemIndicou(admin, MP_ACCESS_TOKEN, userId);
     } catch (err) {
       console.error('assinatura-cancelar: cancelou no Mercado Pago, mas não sincronizou o perfil.', err);
     }

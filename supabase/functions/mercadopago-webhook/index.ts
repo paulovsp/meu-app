@@ -54,6 +54,7 @@ import {
   registrarNaoIdentificado,
   sincronizarPreapproval,
 } from '../_shared/assinaturaMercadoPago.ts';
+import { atualizarQuemIndicou } from '../_shared/indicacoes.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -205,6 +206,9 @@ Deno.serve(async (req) => {
 
       const resultado = await sincronizarPreapproval(supabaseAdmin, MP_ACCESS_TOKEN, preapprovalId, tipo);
       if (!resultado.ok) return json({ error: resultado.erro }, 502);
+      // Esta conta acabou de mudar de estado: quem a indicou pode ter
+      // ganhado ou perdido 10%.
+      if (resultado.userId) await atualizarQuemIndicou(supabaseAdmin, MP_ACCESS_TOKEN, resultado.userId);
       await marcarProcessado();
       return json({ ok: true, ...resultado });
     }
@@ -213,6 +217,7 @@ Deno.serve(async (req) => {
     if (tipo.includes('preapproval') || tipo.includes('subscription')) {
       const resultado = await sincronizarPreapproval(supabaseAdmin, MP_ACCESS_TOKEN, recursoId, tipo);
       if (!resultado.ok) return json({ error: resultado.erro }, 502);
+      if (resultado.userId) await atualizarQuemIndicou(supabaseAdmin, MP_ACCESS_TOKEN, resultado.userId);
       await marcarProcessado();
       return json({ ok: true, ...resultado });
     }

@@ -190,7 +190,7 @@ Deno.serve(async (req) => {
               <td style="padding:8px 10px;border:1px solid #E2E6EC;">R$ 588/ano (~R$ 49/mês)</td>
             </tr>
           </table>
-          <p style="font-size:12.5px;color:#6B6860;">Cancele quando quiser, sem multa. Pagamento via Mercado Pago (cartão ou Pix).</p>
+          <p style="font-size:12.5px;color:#6B6860;">Cancele quando quiser, sem multa. Pagamento via Mercado Pago: o plano mensal é assinatura recorrente e só aceita cartão; semestral e anual aceitam Pix ou cartão.</p>
 
           <p style="text-align:center;margin:28px 0;">
             <a href="${linkSignup}" style="background:#3A5C4F;color:#fff;padding:14px 26px;border-radius:10px;text-decoration:none;display:inline-block;font-weight:700;font-size:15px;">Confirmar minha conta e ver os planos</a>

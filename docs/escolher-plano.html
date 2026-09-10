@@ -60,9 +60,9 @@
   const accessToken = hashParams.get('access_token');
 
   const PLANOS = [
-    { id: 'mensal', nome: 'Mensal', preco: 'R$ 89', periodo: '/mês', detalhe: 'Cobrado todo mês, sem fidelidade.' },
-    { id: 'semestral', nome: 'Semestral', preco: 'R$ 414', periodo: '/6 meses', detalhe: 'Equivale a ~R$ 69/mês.', destaque: true, selo: 'Mais escolhido' },
-    { id: 'anual', nome: 'Anual', preco: 'R$ 588', periodo: '/ano', detalhe: 'Equivale a ~R$ 49/mês — melhor preço.' },
+    { id: 'mensal', nome: 'Mensal', preco: 'R$ 89', periodo: '/mês', detalhe: 'Cartão de crédito. Renova sozinho todo mês, sem fidelidade.' },
+    { id: 'semestral', nome: 'Semestral', preco: 'R$ 414', periodo: '/6 meses', detalhe: 'Pix ou cartão. Equivale a ~R$ 69/mês.', destaque: true, selo: 'Mais escolhido' },
+    { id: 'anual', nome: 'Anual', preco: 'R$ 588', periodo: '/ano', detalhe: 'Pix ou cartão. Equivale a ~R$ 49/mês — melhor preço.' },
   ];
 
   function render(html) {
@@ -105,7 +105,9 @@
       '<div class="erro" id="erro"></div>' +
       '<div class="planos">' + cartoes + '</div>' +
       '<div class="rodape"><a href="https://app.drsig.com.br/confirmado.html">Prefiro só explorar o app agora e decidir depois</a></div>' +
-      '<p class="nota">O pagamento é processado com segurança pelo Mercado Pago (cartão ou Pix). ' +
+      '<p class="nota">Pagamento pelo Mercado Pago. O plano mensal é uma assinatura recorrente e, por ' +
+      'isso, só aceita cartão de crédito — Pix não faz cobrança automática. Semestral e anual são ' +
+      'pagamento único e aceitam Pix ou cartão. ' +
       'Sem fidelidade: o cancelamento é feito pelo Mercado Pago, a qualquer momento.</p>'
     );
 

@@ -20,6 +20,7 @@ coluna seria um endpoint aberto, e não existe nenhuma assim.
 |---|---|---|
 | `assinatura-processar-ciclo` | `--no-verify-jwt` | segredo de cron (`x-cron-secret`) |
 | `auth-send-email` | `--no-verify-jwt` | assinatura do hook do Supabase (Standard Webhooks) |
+| `btg-criar-assinatura` | padrão | JWT da usuária, vindo do app |
 | `btg-criar-cobranca` | padrão | JWT da usuária, vindo do app |
 | `btg-oauth-callback` | `--no-verify-jwt` | `state` assinado por HMAC |
 | `btg-oauth-iniciar` | padrão | JWT da usuária + `profiles.is_admin` — a conta do BTG é da empresa, não de cada usuária |

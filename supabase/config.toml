@@ -17,6 +17,9 @@ verify_jwt = false
 [functions.auth-send-email]
 verify_jwt = false
 
+[functions.btg-criar-assinatura]
+verify_jwt = true
+
 [functions.btg-criar-cobranca]
 verify_jwt = true
 

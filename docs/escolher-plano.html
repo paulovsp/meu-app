@@ -41,6 +41,18 @@
   .aviso-sem-token p { color: #6B6860; font-size: 14.5px; }
   .nota { font-size: 12px; color: #A5A19A; margin-top: 22px; line-height: 1.6; }
   .carregando-tela { text-align: center; padding: 60px 0; color: #6B6860; }
+  .qr-caixa { text-align: center; background: #FAFBFC; border: 1px solid #E8E4DD; border-radius: 16px; padding: 22px; margin: 18px 0; }
+  .qr-caixa img { width: 220px; height: 220px; object-fit: contain; }
+  .qr-legenda { font-size: 12.5px; color: #6B6860; margin-top: 10px; }
+  .emv-caixa { background: #FAFBFC; border: 1px solid #E8E4DD; border-radius: 14px; padding: 14px 16px; }
+  .emv-rotulo { font-size: 11px; font-weight: 700; color: #A5A19A; letter-spacing: .04em; text-transform: uppercase; margin-bottom: 6px; }
+  .emv-codigo { font-size: 11.5px; color: #4E4941; word-break: break-all; line-height: 1.5; max-height: 54px; overflow: hidden; }
+  .btn-copiar { margin-top: 12px; width: 100%; background: #fff; border: 1px solid #C6D6CE; color: #3A5C4F; border-radius: 10px; padding: 10px; font-size: 13.5px; font-weight: 700; cursor: pointer; }
+  .esperando { display: flex; align-items: center; gap: 10px; background: #F0F4F8; border-radius: 12px; padding: 13px 15px; margin-top: 16px; font-size: 13px; color: #4E4941; }
+  .ponto { width: 9px; height: 9px; border-radius: 50%; background: #3A5C4F; animation: pisca 1.1s infinite; flex-shrink: 0; }
+  @keyframes pisca { 0%,100% { opacity: .25 } 50% { opacity: 1 } }
+  .ok-grande { text-align: center; padding: 30px 0; }
+  .ok-grande .marca { font-size: 44px; }
 </style>
 </head>
 <body>
@@ -51,7 +63,7 @@
 <script>
   const SUPABASE_URL = 'https://iahtyvqjgukdgrftpyxm.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_GEYLOEfzFHU0zkdpJCNDVw_cVbO_rS6';
-  const FUNCAO_URL = SUPABASE_URL + '/functions/v1/mercadopago-criar-checkout-assinatura';
+  const FUNCAO_URL = SUPABASE_URL + '/functions/v1/btg-criar-assinatura';
   const card = document.getElementById('card');
 
   // O Supabase devolve o token no FRAGMENTO da URL (#access_token=...), não
@@ -105,8 +117,9 @@
       '<div class="erro" id="erro"></div>' +
       '<div class="planos">' + cartoes + '</div>' +
       '<div class="rodape"><a href="https://app.drsig.com.br/confirmado.html">Prefiro só explorar o app agora e decidir depois</a></div>' +
-      '<p class="nota">O pagamento é processado com segurança pelo Mercado Pago (cartão ou Pix). ' +
-      'Sem fidelidade: o cancelamento é feito pelo Mercado Pago, a qualquer momento.</p>'
+      '<p class="nota">Pagamento por <strong>Pix Automático</strong>: você autoriza uma vez no app do ' +
+      'seu banco e as próximas cobranças acontecem sozinhas, sem taxa. Sem fidelidade — dá pra ' +
+      'cancelar a autorização no seu banco ou aqui no app, quando quiser.</p>'
     );
 
     document.querySelectorAll('[data-plano-btn]').forEach(function (btn) {
@@ -125,7 +138,7 @@
 
   async function iniciarCheckout(plano, btnClicado) {
     document.querySelectorAll('[data-plano-btn]').forEach(function (b) { b.disabled = true; });
-    btnClicado.textContent = 'Abrindo pagamento…';
+    btnClicado.textContent = 'Gerando o Pix…';
     try {
       const resp = await fetch(FUNCAO_URL, {
         method: 'POST',
@@ -137,15 +150,83 @@
         body: JSON.stringify({ plano: plano }),
       });
       const dados = await resp.json();
-      if (!resp.ok || !dados.initPoint) {
-        throw new Error(dados.error || 'Não foi possível gerar o link de pagamento.');
+      if (!resp.ok || (!dados.emv && !dados.qrCodeUrl)) {
+        throw new Error(dados.error || 'Não foi possível gerar a cobrança.');
       }
-      window.location.href = dados.initPoint;
+      mostrarPix(dados);
     } catch (err) {
       mostrarErro(err.message || 'Erro ao iniciar o pagamento. Tente novamente.');
       document.querySelectorAll('[data-plano-btn]').forEach(function (b) { b.disabled = false; });
       btnClicado.textContent = 'Assinar';
     }
+  }
+
+  // Não redireciona mais pra lugar nenhum: o BTG não tem página de
+  // checkout hospedada, e mesmo que tivesse, sair da página no meio de um
+  // pagamento é onde se perde gente. O QR aparece aqui e a página espera.
+  function mostrarPix(dados) {
+    const nome = { mensal: 'Mensal', semestral: 'Semestral', anual: 'Anual' }[dados.plano] || '';
+    render(
+      '<h1>Falta só o pagamento</h1>' +
+      '<p class="lede">Plano <strong>' + nome + '</strong> — R$ ' + dados.valorBRL + '. ' +
+      'Abra o app do seu banco, escolha Pix e leia o código. Ao confirmar, o banco vai ' +
+      'pedir também a autorização das próximas cobranças: é o que faz a renovação ' +
+      'acontecer sozinha.</p>' +
+      (dados.qrCodeUrl
+        ? '<div class="qr-caixa"><img src="' + dados.qrCodeUrl + '" alt="QR code do Pix" />' +
+          '<div class="qr-legenda">Aponte a câmera do seu banco</div></div>'
+        : '') +
+      (dados.emv
+        ? '<div class="emv-caixa"><div class="emv-rotulo">Pix copia e cola</div>' +
+          '<div class="emv-codigo" id="emv"></div>' +
+          '<button class="btn-copiar" id="copiar">Tocar para copiar</button></div>'
+        : '') +
+      '<div class="esperando"><span class="ponto"></span>' +
+      '<span>Esperando a confirmação. Assim que o pagamento cair, esta página avisa — ' +
+      'e o app já estará liberado.</span></div>'
+    );
+
+    if (dados.emv) {
+      // textContent, não innerHTML: o código vem do servidor, mas montar
+      // HTML com conteúdo dinâmico é o hábito que um dia injeta algo.
+      document.getElementById('emv').textContent = dados.emv;
+      document.getElementById('copiar').addEventListener('click', function () {
+        const btn = this;
+        navigator.clipboard.writeText(dados.emv).then(function () {
+          btn.textContent = 'Copiado';
+          setTimeout(function () { btn.textContent = 'Tocar para copiar'; }, 2500);
+        });
+      });
+    }
+
+    acompanhar(dados.externalId);
+  }
+
+  // Pergunta de tempos em tempos se a assinatura ficou ativa. Quem muda
+  // esse status é o webhook do BTG, não esta página.
+  function acompanhar(externalId) {
+    const ate = Date.now() + 15 * 60 * 1000;
+    const url = SUPABASE_URL + '/rest/v1/assinaturas_btg?select=status&external_id=eq.' + externalId;
+    (function conferir() {
+      fetch(url, {
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer ' + accessToken },
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (linhas) {
+          if (linhas && linhas[0] && linhas[0].status === 'ativa') { mostrarAtivada(); return; }
+          if (Date.now() < ate) setTimeout(conferir, 4000);
+        })
+        .catch(function () { if (Date.now() < ate) setTimeout(conferir, 4000); });
+    })();
+  }
+
+  function mostrarAtivada() {
+    render(
+      '<div class="ok-grande"><div class="marca">✓</div>' +
+      '<h1>Assinatura ativa</h1>' +
+      '<p class="lede">Pronto. Abra o app Dr.Sig com o mesmo e-mail e tudo já está liberado.</p>' +
+      '</div>'
+    );
   }
 
   if (!accessToken) {

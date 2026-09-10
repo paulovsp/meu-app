@@ -1,19 +1,30 @@
 // Edge Function: mercadopago-criar-checkout-assinatura
-// Gera o checkout de assinatura (mensal/semestral/anual) pra quem acabou de
-// confirmar o cadastro pelo e-mail de boas-vindas. Diferente do link
-// estático do site (drsig.com.br, vendido ANTES de existir conta — por isso
-// o mercadopago-webhook precisa casar por e-mail ou gravar em
-// `pagamentos_pendentes`), aqui a conta já existe e o usuário já está
-// autenticado (o link de confirmação do Supabase devolve um access_token),
-// então dá pra gerar um checkout dinâmico de verdade com `external_reference`
-// = `assinatura:<plano>:<userId>` — o webhook aplica direto por id, sem
-// ambiguidade nenhuma. Mesmo princípio já usado em
-// mercadopago-criar-checkout-creditos.
 //
-// Chamada a partir de docs/escolher-plano.html (fora do app, então sem
-// Authorization automático do supabase-js — o token vai manual no header,
-// extraído do fragmento #access_token que o Supabase devolve depois de
-// verificar o e-mail).
+// Gera o checkout dos três planos. Os três são ASSINATURA de verdade
+// (`preapproval` do Mercado Pago): renovam sozinhos até a pessoa cancelar,
+// só mudando de quanto em quanto tempo a cobrança acontece — 1, 6 ou 12
+// meses. Verificado contra a API: `auto_recurring.frequency` aceita 6 e 12
+// com `frequency_type: 'months'` (HTTP 201 nos três).
+//
+// Antes, só o mensal era assinatura; semestral e anual eram pagamento
+// ÚNICO via checkout/preferences. Isso vencia caladamente: o acesso caía
+// no fim do período e a renovação dependia de a pessoa receber um e-mail,
+// lembrar, e pagar de novo na mão. Um plano que expira sozinho não é um
+// plano — é uma evasão marcada na agenda.
+//
+// O efeito colateral é o Pix, e não há como fugir dele no Mercado Pago:
+// recorrência lá só existe em cartão. Pix não faz cobrança automática, e a
+// única alternativa (Pix Automático) é do BTG, que cobra R$ 200/mês de
+// plano PJ — caro demais pra base de hoje. Então: os três planos são
+// cartão, e a página de escolha diz isso antes do clique, não depois.
+//
+// `external_reference` = `assinatura:<plano>:<userId>` é o que liga o
+// pagamento à conta. Não depende do e-mail que a pessoa usa no Mercado
+// Pago, que frequentemente é outro — e adivinhar por e-mail foi
+// exatamente a origem do pagamento que ficou solto no teste.
+//
+// Chamada por docs/escolher-plano.html (fora do app, sem Authorization
+// automático do supabase-js — o token vai manual no header).
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -24,14 +35,14 @@ const MP_API = 'https://api.mercadopago.com';
 const CONFIRMACAO_URL = 'https://app.drsig.com.br/assinatura-confirmada.html';
 
 type Plano = 'mensal' | 'semestral' | 'anual';
-const PLANOS_VALIDOS: Plano[] = ['mensal', 'semestral', 'anual'];
 
-// Mesmos valores documentados em mercadopago-webhook (VALOR_PAGAMENTO_UNICO_PARA_PLANO
-// e VALOR_MENSAL_EQUIVALENTE) — se o Paulo mudar o preço, atualizar nos dois lugares.
-const PRECO_MENSAL_BRL = 89;
-const PRECO_SEMESTRAL_ANUAL_BRL: Record<'semestral' | 'anual', number> = {
-  semestral: 414,
-  anual: 588,
+// Preço e ritmo de cada plano, num lugar só. `mesesPorCobranca` é o que vai
+// pro `auto_recurring.frequency`; `precoBRL` é o valor de CADA cobrança —
+// não o mensal equivalente (esse é só pra exibir, e vive no webhook).
+const PLANOS: Record<Plano, { precoBRL: number; mesesPorCobranca: number; nome: string }> = {
+  mensal: { precoBRL: 89, mesesPorCobranca: 1, nome: 'Mensal' },
+  semestral: { precoBRL: 414, mesesPorCobranca: 6, nome: 'Semestral' },
+  anual: { precoBRL: 588, mesesPorCobranca: 12, nome: 'Anual' },
 };
 
 function json(body: unknown, status = 200) {
@@ -59,86 +70,41 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const plano = String(body?.plano || '') as Plano;
-    if (!PLANOS_VALIDOS.includes(plano)) {
-      return json({ error: 'Plano inválido.' }, 400);
-    }
+    const config = PLANOS[plano];
+    if (!config) return json({ error: 'Plano inválido.' }, 400);
 
-    const externalReference = `assinatura:${plano}:${userId}`;
-
-    if (plano === 'mensal') {
-      // Assinatura recorrente SEM `preapproval_plan_id`.
-      //
-      // Com o plan_id, o Mercado Pago exige `card_token_id` — um token que
-      // só nasce no navegador, com os dados do cartão em mãos. O servidor
-      // não tem como produzi-lo, e a chamada voltava
-      // "card_token_id is required" (400). Ou seja: a assinatura mensal
-      // pelo app nunca funcionou, e o erro chegava à pessoa como 502.
-      //
-      // Descrevendo a recorrência aqui (`auto_recurring`), o Mercado Pago
-      // devolve um `init_point`: uma página deles onde a pessoa informa o
-      // cartão e autoriza. `status: pending` deixa claro que nada é
-      // cobrado até essa autorização.
-      const resp = await fetch(`${MP_API}/preapproval`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${MP_ACCESS_TOKEN}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          reason: 'Dr.Sig — Plano Mensal',
-          auto_recurring: {
-            frequency: 1,
-            frequency_type: 'months',
-            transaction_amount: PRECO_MENSAL_BRL,
-            currency_id: 'BRL',
-          },
-          payer_email: email,
-          // O que liga o pagamento à conta, sem depender do e-mail que a
-          // pessoa usa no Mercado Pago — que pode ser outro.
-          external_reference: externalReference,
-          back_url: CONFIRMACAO_URL,
-          status: 'pending',
-        }),
-      });
-      if (!resp.ok) {
-        const errBody = await resp.text().catch(() => '');
-        return json({ error: `Erro ao criar assinatura no Mercado Pago (${resp.status}): ${errBody}` }, 502);
-      }
-      const preapproval = await resp.json();
-      return json({ initPoint: preapproval.init_point });
-    }
-
-    // Semestral/anual: pagamento único (Pix ou cartão), não recorrente —
-    // mesmo mecanismo de checkout/preferences já usado pra créditos de IA.
-    const valorBRL = PRECO_SEMESTRAL_ANUAL_BRL[plano as 'semestral' | 'anual'];
-    const resp = await fetch(`${MP_API}/checkout/preferences`, {
+    // Sem `preapproval_plan_id`: com ele o Mercado Pago exige um
+    // `card_token_id`, que só nasce no navegador com o cartão em mãos — o
+    // servidor não tem como produzir, e a chamada voltava 400. Descrevendo
+    // a recorrência aqui, o Mercado Pago devolve um `init_point`: a página
+    // deles onde a pessoa informa o cartão e autoriza. `status: 'pending'`
+    // deixa explícito que nada é cobrado até essa autorização.
+    const resp = await fetch(`${MP_API}/preapproval`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${MP_ACCESS_TOKEN}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        items: [{
-          title: `Assinatura Dr.Sig — Plano ${plano === 'semestral' ? 'Semestral' : 'Anual'}`,
-          quantity: 1,
+        reason: `Dr.Sig — Plano ${config.nome}`,
+        auto_recurring: {
+          frequency: config.mesesPorCobranca,
+          frequency_type: 'months',
+          transaction_amount: config.precoBRL,
           currency_id: 'BRL',
-          unit_price: valorBRL,
-        }],
-        payer: { email },
-        external_reference: externalReference,
-        back_urls: {
-          success: CONFIRMACAO_URL,
-          failure: CONFIRMACAO_URL,
-          pending: CONFIRMACAO_URL,
         },
+        payer_email: email,
+        external_reference: `assinatura:${plano}:${userId}`,
+        back_url: CONFIRMACAO_URL,
+        status: 'pending',
       }),
     });
     if (!resp.ok) {
       const errBody = await resp.text().catch(() => '');
-      return json({ error: `Erro ao criar checkout no Mercado Pago (${resp.status}): ${errBody}` }, 502);
+      return json({ error: `Erro ao criar assinatura no Mercado Pago (${resp.status}): ${errBody}` }, 502);
     }
-    const preferencia = await resp.json();
-    return json({ initPoint: preferencia.init_point });
+    const preapproval = await resp.json();
+    return json({ initPoint: preapproval.init_point });
   } catch (err) {
     return json({ error: String((err as Error)?.message || err) }, 500);
   }

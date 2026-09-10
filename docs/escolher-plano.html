@@ -34,8 +34,15 @@
     padding: 9px 14px; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; flex-shrink: 0;
   }
   .btn-assinar:disabled { opacity: 0.6; cursor: default; }
+  .btn-grande {
+    background: #3A5C4F; color: #fff; border: none; border-radius: 12px; width: 100%;
+    padding: 15px 18px; font-size: 15.5px; font-weight: 700; cursor: pointer;
+  }
+  .btn-grande:disabled { opacity: 0.6; cursor: default; }
   .rodape { margin-top: 26px; text-align: center; }
   .rodape a { color: #6B6860; font-size: 13.5px; text-decoration: underline; }
+  .depois { margin-top: 26px; padding-top: 20px; border-top: 1px solid #EFECE7; text-align: center; }
+  .depois p { font-size: 13px; color: #8A857D; margin: 0; }
   .erro { background: #FCEBEA; color: #C0392B; padding: 12px 14px; border-radius: 10px; font-size: 13.5px; margin-bottom: 20px; display: none; }
   .aviso-sem-token { text-align: center; padding: 20px 0; }
   .aviso-sem-token p { color: #6B6860; font-size: 14.5px; }
@@ -54,32 +61,101 @@
   const FUNCAO_URL = SUPABASE_URL + '/functions/v1/mercadopago-criar-checkout-assinatura';
   const card = document.getElementById('card');
 
-  // O Supabase devolve o token no FRAGMENTO da URL (#access_token=...), não
-  // na query string — não trafega pro servidor, só fica no navegador.
+  // ─── As duas portas de entrada desta tela ───────────────────────────
+  //
+  // Esta é a ÚNICA tela de pagamento do Dr.Sig. Quem chega aqui já tem
+  // conta confirmada, e chega de um destes dois jeitos:
+  //
+  //  1. `#access_token=` no fragmento — veio de confirmar-cadastro.html,
+  //     que acabou de trocar o token do e-mail por uma sessão. O
+  //     fragmento não trafega pro servidor: fica só no navegador.
+  //  2. `?token_hash=` na query — veio de um e-mail ("escolher meu
+  //     plano", pedido pelo app). O token só é trocado por sessão DEPOIS
+  //     de um clique de verdade, mais abaixo, e nunca no carregamento.
+  //
+  // O clique não é frescura: antivírus de e-mail (Safe Links, proxy
+  // corporativo) abrem sozinhos todo link que chega, e o token é de uso
+  // único — abrir na hora do carregamento queimava o token antes de a
+  // pessoa clicar. Já aconteceu com o link de cadastro e com o de
+  // recuperação de senha; este era o terceiro do mesmo jeito.
   const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-  const accessToken = hashParams.get('access_token');
+  const params = new URLSearchParams(window.location.search);
+  let accessToken = hashParams.get('access_token');
+  const tokenHash = params.get('token_hash');
 
   const PLANOS = [
-    { id: 'mensal', nome: 'Mensal', preco: 'R$ 89', periodo: '/mês', detalhe: 'Cartão de crédito. Renova sozinho todo mês, sem fidelidade.' },
-    { id: 'semestral', nome: 'Semestral', preco: 'R$ 414', periodo: '/6 meses', detalhe: 'Pix ou cartão. Equivale a ~R$ 69/mês.', destaque: true, selo: 'Mais escolhido' },
-    { id: 'anual', nome: 'Anual', preco: 'R$ 588', periodo: '/ano', detalhe: 'Pix ou cartão. Equivale a ~R$ 49/mês — melhor preço.' },
+    {
+      id: 'mensal', nome: 'Mensal', preco: 'R$ 89', periodo: '/mês',
+      detalhe: 'Cobrado todo mês.',
+    },
+    {
+      id: 'semestral', nome: 'Semestral', preco: 'R$ 414', periodo: '/6 meses',
+      detalhe: 'Equivale a R$ 69/mês. Cobrado de 6 em 6 meses.',
+      destaque: true, selo: 'Mais escolhido',
+    },
+    {
+      id: 'anual', nome: 'Anual', preco: 'R$ 588', periodo: '/ano',
+      detalhe: 'Equivale a R$ 49/mês — melhor preço. Cobrado uma vez por ano.',
+    },
   ];
 
   function render(html) {
     card.innerHTML = html;
   }
 
+  function mostrarErro(msg) {
+    const el = document.getElementById('erro');
+    if (!el) return;
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
   function renderSemToken() {
     render(
       '<h1>Este link expirou</h1>' +
       '<div class="aviso-sem-token">' +
-      '<p>O link de confirmação já foi usado ou não é mais válido. Se sua conta já está confirmada, ' +
-      'é só abrir o app Dr.Sig e fazer login normalmente. Para receber um link novo, vá em ' +
+      '<p>O link já foi usado ou não vale mais. Se sua conta já está confirmada, é só abrir o app ' +
+      'Dr.Sig e fazer login normalmente. Para receber um link novo, vá em ' +
       '<strong>Meu Perfil &rsaquo; Seu plano</strong> e toque em <strong>Receber o link por e-mail</strong>.</p>' +
-      '<p>Se precisar de um novo link, escreva pra gente.</p>' +
       '</div>' +
       '<div class="rodape"><a href="mailto:drsig@drsig.com.br">drsig@drsig.com.br</a></div>'
     );
+  }
+
+  // Porta 2: o token do e-mail só vira sessão depois deste clique.
+  function renderTrocaDeToken() {
+    render(
+      '<h1>Escolher meu plano</h1>' +
+      '<p class="lede">Confirme que é você para continuar.</p>' +
+      '<div class="erro" id="erro"></div>' +
+      '<button class="btn-grande" id="btn-entrar">Continuar</button>' +
+      '<p class="nota">Este link vale por 1 hora e só pode ser usado uma vez.</p>'
+    );
+
+    document.getElementById('btn-entrar').addEventListener('click', async function () {
+      const btn = document.getElementById('btn-entrar');
+      btn.disabled = true;
+      btn.textContent = 'Entrando…';
+      try {
+        const resp = await fetch(SUPABASE_URL + '/auth/v1/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
+          body: JSON.stringify({ type: 'magiclink', token_hash: tokenHash }),
+        });
+        const dados = await resp.json();
+        if (!resp.ok || !dados.access_token) {
+          throw new Error(
+            'Este link já foi usado ou expirou. Peça outro pelo app, em Meu Perfil › Seu plano.'
+          );
+        }
+        accessToken = dados.access_token;
+        renderPlanos();
+      } catch (err) {
+        mostrarErro(err.message || 'Não foi possível continuar. Tente de novo.');
+        btn.disabled = false;
+        btn.textContent = 'Tentar de novo';
+      }
+    });
   }
 
   function renderPlanos() {
@@ -100,15 +176,20 @@
     }).join('');
 
     render(
-      '<h1>Sua conta está confirmada 🎉</h1>' +
-      '<p class="lede">Agora escolha um plano pra ter acesso completo — todos sem fidelidade, cancele quando quiser.</p>' +
+      '<h1>Escolha seu plano</h1>' +
+      '<p class="lede">Os três são assinatura: renovam sozinhos até você cancelar. ' +
+      'Muda só de quanto em quanto tempo a cobrança acontece — e quanto mais longo o ciclo, ' +
+      'menor o preço por mês.</p>' +
       '<div class="erro" id="erro"></div>' +
       '<div class="planos">' + cartoes + '</div>' +
-      '<div class="rodape"><a href="https://app.drsig.com.br/confirmado.html">Prefiro só explorar o app agora e decidir depois</a></div>' +
-      '<p class="nota">Pagamento pelo Mercado Pago. O plano mensal é uma assinatura recorrente e, por ' +
-      'isso, só aceita cartão de crédito — Pix não faz cobrança automática. Semestral e anual são ' +
-      'pagamento único e aceitam Pix ou cartão. ' +
-      'Sem fidelidade: o cancelamento é feito pelo Mercado Pago, a qualquer momento.</p>'
+      '<div class="depois"><p>Se preferir decidir depois, é só fechar esta página. ' +
+      'Você entra no app normalmente e vê tudo que já registrou — só criar sessões, ' +
+      'registros e cadastros fica bloqueado até escolher um plano. O link para voltar aqui ' +
+      'fica em <strong>Meu Perfil &rsaquo; Seu plano</strong>.</p></div>' +
+      '<p class="nota">Pagamento pelo Mercado Pago, em cartão de crédito. Assinatura recorrente ' +
+      'no Mercado Pago só existe em cartão — Pix não faz cobrança automática, e um plano que ' +
+      'vence sozinho no meio do seu trabalho não é um plano. Sem fidelidade: você cancela quando ' +
+      'quiser, pelo Mercado Pago ou falando com a gente, e usa até o fim do período já pago.</p>'
     );
 
     document.querySelectorAll('[data-plano-btn]').forEach(function (btn) {
@@ -116,13 +197,6 @@
         iniciarCheckout(btn.getAttribute('data-plano-btn'), btn);
       });
     });
-  }
-
-  function mostrarErro(msg) {
-    const el = document.getElementById('erro');
-    if (!el) return;
-    el.textContent = msg;
-    el.style.display = 'block';
   }
 
   async function iniciarCheckout(plano, btnClicado) {
@@ -150,10 +224,12 @@
     }
   }
 
-  if (!accessToken) {
-    renderSemToken();
-  } else {
+  if (accessToken) {
     renderPlanos();
+  } else if (tokenHash) {
+    renderTrocaDeToken();
+  } else {
+    renderSemToken();
   }
 </script>
 </body>

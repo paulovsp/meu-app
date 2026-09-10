@@ -9,10 +9,21 @@
 //
 // Aqui ela pede o e-mail de novo, do próprio app, e ele chega na hora.
 //
-// O link precisa carregar um token de acesso: a página de planos
-// (docs/escolher-plano.html) lê `#access_token=` do fragmento pra chamar o
-// checkout autenticado. Por isso um magic link do próprio Supabase, gerado
-// no servidor — não dá pra montar isso no cliente sem expor a service role.
+// O link precisa levar a pessoa autenticada até a página de planos, que só
+// consegue chamar o checkout com uma sessão em mãos. O token vem de um
+// magic link do Supabase, gerado no servidor — não dá pra montar isso no
+// cliente sem expor a service role.
+//
+// Mas o `action_link` que o Supabase devolve NÃO pode ser mandado por
+// e-mail: ele é um GET em /auth/v1/verify, e antivírus de e-mail (Safe
+// Links, proxy corporativo) abrem sozinhos todo link que chega. Como o
+// token é de uso único, ele era consumido antes de a pessoa clicar, e o
+// link chegava morto. É o mesmo defeito já corrigido no e-mail de cadastro
+// e no de recuperação de senha; este era o terceiro.
+//
+// Por isso o que vai no e-mail é o `hashed_token` cru, apontando pra nossa
+// própria página, que só o troca por sessão depois de um clique de
+// verdade — num POST, que nenhum scanner dispara.
 //
 // JWT normal: quem pede é a própria dona da conta, autenticada no app.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -95,20 +106,24 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     // `magiclink` e não `signup`: a conta já está confirmada. O que se quer
-    // é um token de acesso válido chegando na página de planos.
+    // é uma sessão válida chegando na página de planos.
     const { data: linkData, error: erroLink } = await admin.auth.admin.generateLink({
       type: 'magiclink',
       email,
       options: { redirectTo: PAGINA_PLANOS },
     });
-    if (erroLink || !linkData?.properties?.action_link) {
+    if (erroLink || !linkData?.properties?.hashed_token) {
       return json({ error: 'Não foi possível gerar o link. Tente de novo em instantes.' }, 502);
     }
+
+    // Nossa página, com o token cru — nunca o action_link do Supabase (ver
+    // nota no topo: scanner de e-mail queima token de uso único).
+    const link = `${PAGINA_PLANOS}?token_hash=${encodeURIComponent(linkData.properties.hashed_token)}`;
 
     await enviarEmail(
       email,
       'Dr.Sig — o link para escolher seu plano',
-      corpo(perfil?.nome || '', linkData.properties.action_link),
+      corpo(perfil?.nome || '', link),
     );
 
     // Devolve o e-mail pra tela poder dizer PARA ONDE mandou — a dúvida

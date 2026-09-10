@@ -167,21 +167,28 @@
     }
   }
 
+  // O selo diz o desconto, que é conferível na própria tabela: R$ 69 e
+  // R$ 49 por mês contra os R$ 89 do mensal. Já disse "Mais escolhido" no
+  // semestral, o que era invenção — não havia escolha nenhuma pra contar,
+  // e prova social falsa é a primeira coisa que alguém desconfia numa
+  // página de pagamento.
   const PLANOS = [
     {
       id: 'mensal', nome: 'Mensal', preco: 'R$ 89', periodo: '/mês',
-      detalhe: 'Cobrado todo mês.', ciclo: 'Cobrança a cada mês, até você cancelar.',
+      detalhe: 'Cobrado todo mês.',
+      ciclo: 'Cobrança a cada mês, até você cancelar.',
     },
     {
       id: 'semestral', nome: 'Semestral', preco: 'R$ 414', periodo: '/6 meses',
-      detalhe: 'Equivale a R$ 69/mês. Cobrado de 6 em 6 meses.',
+      detalhe: 'R$ 69 por mês — R$ 120 a menos que pagar mês a mês.',
       ciclo: 'Cobrança a cada 6 meses, até você cancelar.',
-      selo: 'Mais escolhido',
+      selo: '22% mais barato',
     },
     {
       id: 'anual', nome: 'Anual', preco: 'R$ 588', periodo: '/ano',
-      detalhe: 'Equivale a R$ 49/mês — melhor preço. Cobrado uma vez por ano.',
+      detalhe: 'R$ 49 por mês — R$ 480 a menos que pagar mês a mês.',
       ciclo: 'Cobrança uma vez por ano, até você cancelar.',
+      selo: '45% mais barato',
     },
   ];
 

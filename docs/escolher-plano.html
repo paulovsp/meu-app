@@ -391,7 +391,10 @@
       '<div><label class="rotulo" for="titular">Nome como está no cartão</label>' +
       '<input class="entrada" id="titular" autocomplete="cc-name" placeholder="MARIA S SILVA" /></div>' +
       '<div><label class="rotulo" for="cpf">CPF do titular do cartão</label>' +
-      '<input class="entrada" id="cpf" inputmode="numeric" autocomplete="off" placeholder="000.000.000-00" /></div>' +
+      // `autocomplete="off"` aqui só atrapalhava: bloqueava o
+      // preenchimento automático de um campo que a pessoa digita sempre
+      // igual, e não protege nada — CPF não é dado de cartão.
+      '<input class="entrada" id="cpf" inputmode="numeric" placeholder="000.000.000-00" /></div>' +
       '</div>' +
       '<button class="btn-grande" id="btn-pagar">Assinar — ' + p.preco + p.periodo + '</button>' +
       '<div class="selo-seguro">🔒 Os dados do cartão vão direto para o Mercado Pago. ' +
@@ -404,6 +407,32 @@
     document.getElementById('btn-voltar').addEventListener('click', function () {
       camposCartao = null;
       renderPlanos();
+    });
+
+    // ─── Deixar o preenchimento automático entrar nos campos do cartão ──
+    //
+    // Os três campos sensíveis são iframes do Mercado Pago, ou seja, de
+    // outro domínio. O preenchimento automático do Android/Chrome não
+    // atravessa essa fronteira sozinho: a página de fora precisa delegar a
+    // permissão `shared-autofill` no próprio iframe. Sem isso, dá o que
+    // acontecia aqui — o número do cartão vinha preenchido e a validade
+    // não, obrigando a digitar no meio do caminho.
+    //
+    // O SDK do Mercado Pago é quem cria esses iframes, então a permissão é
+    // colocada no instante em que cada um aparece no documento. Se o
+    // navegador ignorar (Safari e Firefox não implementam), não muda nada:
+    // continua exatamente como estava.
+    const observador = new MutationObserver(function (mutacoes) {
+      mutacoes.forEach(function (m) {
+        Array.prototype.forEach.call(m.addedNodes, function (no) {
+          if (no.tagName === 'IFRAME' && !no.getAttribute('allow')) {
+            no.setAttribute('allow', 'shared-autofill');
+          }
+        });
+      });
+    });
+    document.querySelectorAll('.campo-mp').forEach(function (caixa) {
+      observador.observe(caixa, { childList: true });
     });
 
     const mp = new MercadoPago(chavePublica, { locale: 'pt-BR' });

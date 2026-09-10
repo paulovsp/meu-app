@@ -86,10 +86,19 @@ function CartaoDoPlano({ assinatura, reenviando, onPedirInstrucoes }) {
         ? `Tudo liberado. Renova ${emDias(diasRestantes)}, em ${dataISOParaBR(expiraEm.slice(0, 10))}.`
         : 'Tudo liberado.',
     },
-    vencendo: {
+    // Cortesia acaba e ninguém cobra nada: aí sim é um aviso de que o
+    // acesso vai fechar. Plano pago renova sozinho na data — dizer que
+    // "vence" assustaria quem não precisa fazer nada.
+    vencendo: cortesia ? {
       cor: AVISO,
-      titulo: `Seu plano vence ${emDias(diasRestantes)}`,
+      titulo: `Seu acesso termina ${emDias(diasRestantes)}`,
       texto: 'Depois disso o app deixa de permitir novos registros, sessões e cadastros. O que já está salvo continua seu, e a exportação dos dados continua liberada.',
+    } : {
+      cor: ATIVO,
+      titulo: `Renova ${emDias(diasRestantes)}`,
+      texto: expiraEm
+        ? `Seu plano ${(planoLabel || '').toLowerCase()} renova sozinho em ${dataISOParaBR(expiraEm.slice(0, 10))}, no cartão cadastrado. Se preferir não continuar, cancele antes disso — o acesso vale até o fim do período já pago.`
+        : 'Seu plano renova sozinho, no cartão cadastrado.',
     },
     inadimplente: {
       cor: AVISO,
@@ -121,7 +130,10 @@ function CartaoDoPlano({ assinatura, reenviando, onPedirInstrucoes }) {
   };
 
   const info = mapa[situacao] || mapa.indefinida;
-  const precisaDoLink = situacao === 'nenhuma' || situacao === 'expirada' || situacao === 'vencendo';
+  // 'vencendo' saiu daqui: plano pago renova sozinho, não há link a
+  // pedir. Só a cortesia, que acaba de verdade, ainda precisa.
+  const precisaDoLink = situacao === 'nenhuma' || situacao === 'expirada'
+    || (situacao === 'vencendo' && cortesia);
 
   return (
     <View style={[st.planoBox, { backgroundColor: info.cor.fundo, borderColor: info.cor.borda }]}>

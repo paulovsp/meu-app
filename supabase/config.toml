@@ -110,9 +110,10 @@ enable_confirmations = true
 max_frequency = "1m0s"
 otp_length = 8
 
-[auth.hook.send_email]
-enabled = true
-uri = "https://iahtyvqjgukdgrftpyxm.supabase.co/functions/v1/auth-send-email"
+# O hook de e-mail fica declarado SO no servidor: o CLI exige o campo
+#  junto, e ele e o segredo de assinatura do hook — que nao entra
+# em arquivo versionado. Declarar sem ele trava todo comando do CLI com
+# "Missing required field in config".
 
 [auth.mfa.totp]
 enroll_enabled = true

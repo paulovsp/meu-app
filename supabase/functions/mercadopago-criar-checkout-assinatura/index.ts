@@ -19,7 +19,6 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
 const MP_ACCESS_TOKEN = Deno.env.get('MERCADOPAGO_ACCESS_TOKEN')!;
-const MP_PLANO_MENSAL_ID = Deno.env.get('MP_PLANO_MENSAL_ID') || '';
 
 const MP_API = 'https://api.mercadopago.com';
 const CONFIRMACAO_URL = 'https://app.drsig.com.br/assinatura-confirmada.html';
@@ -29,6 +28,7 @@ const PLANOS_VALIDOS: Plano[] = ['mensal', 'semestral', 'anual'];
 
 // Mesmos valores documentados em mercadopago-webhook (VALOR_PAGAMENTO_UNICO_PARA_PLANO
 // e VALOR_MENSAL_EQUIVALENTE) — se o Paulo mudar o preço, atualizar nos dois lugares.
+const PRECO_MENSAL_BRL = 89;
 const PRECO_SEMESTRAL_ANUAL_BRL: Record<'semestral' | 'anual', number> = {
   semestral: 414,
   anual: 588,
@@ -66,9 +66,18 @@ Deno.serve(async (req) => {
     const externalReference = `assinatura:${plano}:${userId}`;
 
     if (plano === 'mensal') {
-      if (!MP_PLANO_MENSAL_ID) {
-        return json({ error: 'Plano mensal não configurado no servidor.' }, 500);
-      }
+      // Assinatura recorrente SEM `preapproval_plan_id`.
+      //
+      // Com o plan_id, o Mercado Pago exige `card_token_id` — um token que
+      // só nasce no navegador, com os dados do cartão em mãos. O servidor
+      // não tem como produzi-lo, e a chamada voltava
+      // "card_token_id is required" (400). Ou seja: a assinatura mensal
+      // pelo app nunca funcionou, e o erro chegava à pessoa como 502.
+      //
+      // Descrevendo a recorrência aqui (`auto_recurring`), o Mercado Pago
+      // devolve um `init_point`: uma página deles onde a pessoa informa o
+      // cartão e autoriza. `status: pending` deixa claro que nada é
+      // cobrado até essa autorização.
       const resp = await fetch(`${MP_API}/preapproval`, {
         method: 'POST',
         headers: {
@@ -76,10 +85,19 @@ Deno.serve(async (req) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          preapproval_plan_id: MP_PLANO_MENSAL_ID,
+          reason: 'Dr.Sig — Plano Mensal',
+          auto_recurring: {
+            frequency: 1,
+            frequency_type: 'months',
+            transaction_amount: PRECO_MENSAL_BRL,
+            currency_id: 'BRL',
+          },
           payer_email: email,
+          // O que liga o pagamento à conta, sem depender do e-mail que a
+          // pessoa usa no Mercado Pago — que pode ser outro.
           external_reference: externalReference,
           back_url: CONFIRMACAO_URL,
+          status: 'pending',
         }),
       });
       if (!resp.ok) {

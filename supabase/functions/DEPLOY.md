@@ -47,3 +47,17 @@ coluna seria um endpoint aberto, e não existe nenhuma assim.
 | `zoom-oauth-callback` | `--no-verify-jwt` | `state` assinado por HMAC |
 | `zoom-oauth-iniciar` | padrão | JWT da usuária, vindo do app |
 | `zoom-webhook` | `--no-verify-jwt` | assinatura do Zoom (HMAC) |
+
+## Antes de cada release: o banco é o que as migrations dizem?
+
+Uma política criada à mão no painel (`availability_slots_all`) ficou meses
+em produção sem constar em migration nenhuma, abrindo a agenda de todo
+mundo — só apareceu numa auditoria. `supabase db diff` pegaria isso, mas
+exige Docker. O caminho que funciona com o CLI já linkado:
+
+    npx supabase db query --linked -f supabase/checks/politicas.sql > politicas-atual.json
+
+e comparar com `supabase/checks/politicas-esperadas.json`, o último estado
+conferido. Qualquer linha a mais ou a menos é uma mudança que alguém
+precisa explicar — e, se for legítima, virar migration e atualizar o
+snapshot. Nunca atualizar o snapshot sem saber de onde veio a diferença.

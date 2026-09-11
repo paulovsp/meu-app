@@ -60,6 +60,13 @@ export async function aplicarDescontoDeIndicacoes(
   admin: Cliente,
   mpAccessToken: string,
   userId: string,
+  // Na hora da cobrança, não basta acreditar na nossa coluna: o que vai
+  // ser debitado é o que está gravado no Mercado Pago. Se um PUT deu certo
+  // e a gravação da coluna falhou logo depois (ou o contrário), os dois
+  // números se separam em silêncio — e ninguém percebe até alguém ser
+  // cobrado errado. Com isto ligado, o valor real é lido de lá e
+  // comparado.
+  opcoes: { conferirValorNoMercadoPago?: boolean } = {},
 ): Promise<ResultadoDesconto> {
   const { data: perfil } = await admin
     .from('profiles')
@@ -106,7 +113,32 @@ export async function aplicarDescontoDeIndicacoes(
     return { desconto: alvo, mudou: alvo !== atual, acao: 'sem-assinatura' };
   }
 
-  if (alvo === atual) return { desconto: atual, mudou: false, acao: 'nada' };
+  // O caminho normal: a coluna já diz o que deveria dizer, nada a fazer.
+  // Na conferência de vencimento (`conferirValorNoMercadoPago`), isso não
+  // basta — vai ser cobrado o que está lá, não o que está aqui.
+  if (alvo === atual) {
+    if (!opcoes.conferirValorNoMercadoPago) {
+      return { desconto: atual, mudou: false, acao: 'nada' };
+    }
+    const esperado = precoComDesconto(plano, alvo);
+    const leitura = await fetch(`${MP_API}/preapproval/${perfil.mp_preapproval_id}`, {
+      headers: { Authorization: `Bearer ${mpAccessToken}` },
+    });
+    if (leitura.ok) {
+      const atualNoMp = Number((await leitura.json())?.auto_recurring?.transaction_amount);
+      // Centavo de tolerância: comparar float com float por igualdade é
+      // como se inventa uma divergência que não existe.
+      if (Number.isFinite(atualNoMp) && Math.abs(atualNoMp - esperado) < 0.01) {
+        return { desconto: atual, mudou: false, acao: 'nada' };
+      }
+      console.error('indicacoes: o valor no Mercado Pago não bate com o desconto da conta.', {
+        userId, esperado, atualNoMp, desconto: alvo,
+      });
+      // Não retorna: segue para o ajuste abaixo, que reescreve o valor.
+    } else {
+      return { desconto: atual, mudou: false, acao: 'nada', detalhe: 'não consegui ler o valor no Mercado Pago' };
+    }
+  }
 
   // ── Chegou aos dez: a assinatura sai de cena ─────────────────────────
   if (alvo >= 100) {

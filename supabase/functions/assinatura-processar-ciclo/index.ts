@@ -5,6 +5,12 @@
 // por isso verify_jwt = false: quem chama não tem JWT de usuário nem
 // assinatura HMAC do Mercado Pago, é só o próprio Postgres.
 //
+// "1x por dia" é a frequência com que a função ACORDA, não a frequência
+// com que ela mexe em alguém. O que ela faz é olhar quem está no
+// vencimento hoje: quem tem plano mensal cai aqui uma vez por mês, quem
+// tem anual uma vez por ano. Acordar todo dia é o que garante que nenhum
+// vencimento passe sem ser visto — não é varrer a base inteira todo dia.
+//
 // ── O que esta função faz hoje: conferir ───────────────────────────────
 //
 // O estado da assinatura chega por webhook. Webhook é entrega de melhor
@@ -134,20 +140,57 @@ Deno.serve(async (req) => {
     // ── Descontos por indicação ──────────────────────────────────────
     //
     // O desconto é recalculado na hora, sempre que a assinatura de um
-    // indicado muda de estado. Isto aqui é a rede de segurança do mesmo
-    // tipo: um webhook perdido, uma chamada que falhou, uma assinatura que
-    // simplesmente venceu sem evento nenhum — em qualquer desses casos
-    // alguém pode estar pagando mais (ou menos) do que deve.
+    // indicado muda de estado (webhook, cancelamento pelo app). Isto aqui
+    // é a garantia de que, NA HORA DA COBRANÇA, o valor está certo — mesmo
+    // que um webhook tenha se perdido pelo caminho.
     //
-    // Como é idempotente, o resultado normal é não mudar nada.
-    const { data: elegiveis } = await supabaseAdmin
+    // E é por isso que a varredura não é "todo mundo, todo dia": ela segue
+    // o ciclo de cada conta. O desconto só produz efeito no momento em que
+    // o Mercado Pago cobra, e esse momento é o vencimento — de mês em mês,
+    // de seis em seis, ou de ano em ano, conforme o plano. Ajustar o valor
+    // no meio do ciclo não muda nada: a cobrança daquele período já
+    // aconteceu.
+    //
+    // Então entram na conta só duas situações:
+    //
+    //   a) quem está prestes a ser cobrado. A janela de dois dias é maior
+    //      que o intervalo entre execuções de propósito: nenhum vencimento
+    //      pode passar sem ser visto uma vez;
+    //   b) quem está com acesso gratuito pelas dez indicações. Essas contas
+    //      não têm vencimento nenhum — não há cobrança que sirva de âncora
+    //      —, e alguém pode ter deixado de ser indicado ativo a qualquer
+    //      momento. Aqui a verificação frequente protege a pessoa: é ela
+    //      que dispara os 15 dias de aviso, e quanto antes disparar, mais
+    //      tempo ela tem pra decidir.
+    const janelaCobranca = new Date(agora.getTime() + 2 * 86400000);
+
+    const { data: perto } = await supabaseAdmin
       .from('profiles')
       .select('id')
-      .eq('elegivel_indicacao', true);
+      .eq('elegivel_indicacao', true)
+      .eq('assinatura_status', 'ativa')
+      .lte('assinatura_expira_em', janelaCobranca.toISOString());
 
-    for (const conta of elegiveis || []) {
+    const { data: gratuitas } = await supabaseAdmin
+      .from('profiles')
+      .select('id')
+      .eq('elegivel_indicacao', true)
+      .eq('assinatura_status', 'gratuita_indicacao');
+
+    const paraRecalcular = [
+      ...new Set([...(perto || []), ...(gratuitas || [])].map((c) => String(c.id))),
+    ].map((id) => ({ id }));
+
+    for (const conta of paraRecalcular) {
       try {
-        const r = await aplicarDescontoDeIndicacoes(supabaseAdmin, MP_ACCESS_TOKEN, String(conta.id));
+        // `conferirValorNoMercadoPago`: aqui e a hora da cobranca, entao
+        // o valor e lido de la e comparado, em vez de confiar na nossa
+        // coluna. Se os dois se separaram, este e o momento de descobrir —
+        // nao depois, na fatura de alguem.
+        const r = await aplicarDescontoDeIndicacoes(
+          supabaseAdmin, MP_ACCESS_TOKEN, String(conta.id),
+          { conferirValorNoMercadoPago: true },
+        );
         if (r.mudou) {
           resultado.descontosCorrigidos++;
           console.log('assinatura-processar-ciclo: desconto de indicação ajustado.', {

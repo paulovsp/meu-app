@@ -1725,13 +1725,6 @@ export function formatarMoeda(valor) {
 // (ver src/services/currency.js) e consultado aqui pra converter preços de
 // sessão em moeda estrangeira para Reais nos cálculos financeiros.
 
-export async function salvarCotacaoCache(moeda, valorBrl, dataCotacao) {
-  const { supabase } = require('./supabase');
-  const { error } = await supabase
-    .from('cotacoes_cache')
-    .upsert({ moeda, valor_brl: valorBrl, data_cotacao: dataCotacao || null, atualizado_em: new Date().toISOString() });
-  if (error) throw error;
-}
 
 export async function getCotacaoCache(moeda) {
   const { supabase } = require('./supabase');

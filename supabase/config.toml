@@ -128,3 +128,6 @@ enabled = false
 
 [functions.assinatura-cancelar]
 verify_jwt = true
+
+[functions.cotacao-atualizar]
+verify_jwt = true

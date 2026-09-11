@@ -1,4 +1,4 @@
-import { salvarCotacaoCache, getCotacaoCache } from './database';
+import { getCotacaoCache } from './database';
 
 // Moedas disponíveis para o preço da sessão, além do Real.
 export const MOEDAS = [
@@ -19,12 +19,6 @@ export function formatarValorMoeda(valor, moedaCodigo) {
   return (valor || 0).toLocaleString(locale, { style: 'currency', currency: moedaCodigo || 'BRL' });
 }
 
-function formatarDataParaBcb(data) {
-  const mm = String(data.getMonth() + 1).padStart(2, '0');
-  const dd = String(data.getDate()).padStart(2, '0');
-  return `${mm}-${dd}-${data.getFullYear()}`;
-}
-
 /**
  * Busca a cotação PTAX oficial (Banco Central do Brasil) mais recente
  * disponível para a moeda informada, dentro dos últimos 7 dias corridos
@@ -37,27 +31,31 @@ export async function atualizarCotacao(moedaCodigo) {
     return { valor: 1, data: null };
   }
 
-  const hoje = new Date();
-  const seteDiasAtras = new Date(hoje);
-  seteDiasAtras.setDate(hoje.getDate() - 7);
-
-  const url =
-    'https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/odata/CotacaoMoedaPeriodo(' +
-    'moeda=@moeda,dataInicial=@dataInicial,dataFinalCotacao=@dataFinalCotacao)' +
-    `?@moeda='${moedaCodigo}'&@dataInicial='${formatarDataParaBcb(seteDiasAtras)}'` +
-    `&@dataFinalCotacao='${formatarDataParaBcb(hoje)}'` +
-    '&$top=1&$orderby=dataHoraCotacao%20desc&$format=json';
-
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`Banco Central respondeu ${resp.status}`);
-
-  const json = await resp.json();
-  const item = json?.value?.[0];
-  if (!item) throw new Error('Nenhuma cotação PTAX encontrada nos últimos dias.');
-
-  const media = (item.cotacaoCompra + item.cotacaoVenda) / 2;
-  await salvarCotacaoCache(moedaCodigo, media, item.dataHoraCotacao);
-  return { valor: media, data: item.dataHoraCotacao };
+  // A busca no Banco Central e a gravacao acontecem no servidor
+  // (Edge Function `cotacao-atualizar`), nao aqui.
+  //
+  // `cotacoes_cache` tem uma linha por moeda e e compartilhada por TODOS os
+  // usuarios: e dela que saem as conversoes de preco de sessao nos calculos
+  // financeiros de todo mundo. Enquanto o app escrevia direto, qualquer
+  // pessoa logada podia gravar a cotacao que quisesse — e o estrago nao
+  // ficava na conta dela, ficava no livro-caixa dos outros.
+  //
+  // Agora o app diz QUAL moeda quer. Quanto ela vale, quem responde e o
+  // Banco Central.
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase.functions.invoke('cotacao-atualizar', {
+    body: { moeda: moedaCodigo },
+  });
+  if (error) {
+    let mensagem = error.message;
+    try {
+      const corpo = await error.context?.json();
+      if (corpo?.error) mensagem = corpo.error;
+    } catch (_) {}
+    throw new Error(mensagem);
+  }
+  if (data?.error) throw new Error(data.error);
+  return { valor: Number(data?.valor_brl), data: data?.data_cotacao ?? null };
 }
 
 /** Última cotação conhecida em cache (pode ser null se nunca buscada). */

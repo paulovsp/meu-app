@@ -1,7 +1,6 @@
 import { useEffect } from 'react';
 import { Alert } from 'react-native';
-import { getSituacaoIA, MOTIVO_ASSINATURA, MENSAGEM_SEM_CREDITOS } from '../services/usoDeIA';
-import { MENSAGEM_ASSINATURA_INATIVA } from '../services/assinatura';
+import { getSituacaoIA, avisoDeBloqueioIA } from '../services/usoDeIA';
 
 // Fecha a porta de telas que SÓ existem pra usar IA paga — hoje a Busca
 // Dr.Sig. Sem isto, a pessoa entrava, escolhia analisantes, escrevia a
@@ -18,10 +17,10 @@ export function useBloqueioIA(navigation) {
     getSituacaoIA()
       .then(({ pode, motivo }) => {
         if (cancelado || pode) return;
-        const ehAssinatura = motivo === MOTIVO_ASSINATURA;
+        const { titulo, texto } = avisoDeBloqueioIA(motivo);
         Alert.alert(
-          ehAssinatura ? 'Assinatura inativa' : 'Créditos de IA esgotados',
-          ehAssinatura ? MENSAGEM_ASSINATURA_INATIVA : MENSAGEM_SEM_CREDITOS,
+          titulo,
+          texto,
           [{ text: 'Entendi', onPress: () => navigation.goBack() }],
           { cancelable: false },
         );

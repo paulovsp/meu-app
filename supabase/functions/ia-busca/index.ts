@@ -8,6 +8,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { precosAtuais } from '../_shared/precificacaoDeepSeek.ts';
 import { MULTIPLICADOR_COBRANCA_USUARIO } from '../_shared/margemCobranca.ts';
+import { ajustarCreditoIA } from '../_shared/creditoIA.ts';
+import { ehContaDemonstracao, respostaDemonstracao } from '../_shared/contaDemonstracao.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -71,6 +73,8 @@ Deno.serve(async (req) => {
       .single();
     if (perfilError || !perfil) return json({ error: 'Perfil não encontrado.' }, 404);
 
+    if (await ehContaDemonstracao(supabaseAdmin, userId)) return respostaDemonstracao();
+
     const { data: assinaturaAtiva } = await supabaseAdmin.rpc('assinatura_ativa', { uid: userId });
     if (!assinaturaAtiva) {
       return json({ error: 'Assinatura inativa.', assinaturaInativa: true }, 403);
@@ -122,12 +126,7 @@ Deno.serve(async (req) => {
     // (mesmo multiplicador aplicado à transcrição — ver margemCobranca.ts).
     const custo = custoReal * MULTIPLICADOR_COBRANCA_USUARIO;
 
-    const { data: atualizado } = await supabaseAdmin
-      .from('profiles')
-      .update({ creditos_ia: Number(perfil.creditos_ia) - custo })
-      .eq('id', userId)
-      .select('creditos_ia')
-      .single();
+    const saldoRestante = await ajustarCreditoIA(supabaseAdmin, userId, -custo);
 
     await supabaseAdmin.from('uso_ia').insert({
       user_id: userId,
@@ -138,7 +137,7 @@ Deno.serve(async (req) => {
       custo_estimado: custo,
     });
 
-    return json({ resposta, custo, saldoRestante: atualizado?.creditos_ia ?? null });
+    return json({ resposta, custo, saldoRestante });
   } catch (err) {
     return json({ error: String((err as Error)?.message || err) }, 500);
   }

@@ -137,11 +137,6 @@ export default function CadastroScreen({ navigation }) {
     setCriando(true);
     try {
       const cpfLimpo = cpf.trim();
-      const { data: disponivel, error: erroCpf } = await supabase.rpc('cpf_disponivel', { p_cpf: cpfLimpo });
-      if (!erroCpf && disponivel === false) {
-        Alert.alert('CPF já cadastrado', 'Já existe uma conta com este CPF.');
-        return;
-      }
 
       const { data, error } = await supabase.auth.signUp({
         email: emailTrim,
@@ -166,8 +161,20 @@ export default function CadastroScreen({ navigation }) {
         },
       });
       if (error) {
-        if (/duplicate|unique/i.test(error.message) && /cpf/i.test(error.message)) {
-          Alert.alert('CPF já cadastrado', 'Já existe uma conta com este CPF.');
+        // Esta tela perguntava ao banco, antes de criar a conta, se o CPF
+        // já existia — e a função respondia a qualquer um, sem login. Num
+        // app de psicanálise, "este CPF é cliente" é informação sobre a
+        // pessoa, e estava aberta a quem tivesse a chave do app. A
+        // pergunta sumiu; quem garante o CPF único é o índice do banco,
+        // que falha dentro da criação da conta. O Supabase esconde o
+        // motivo ("Database error saving new user"), e é assim que tem que
+        // ser: a mensagem abaixo não confirma nem nega nada sobre o CPF.
+        if (/database error/i.test(error.message)) {
+          Alert.alert(
+            'Não foi possível criar a conta',
+            'Confira os dados e tente de novo. Se você já tem uma conta com este CPF, '
+            + 'entre com ela — ou use "Esqueci minha senha" na tela de entrada.',
+          );
         } else {
           Alert.alert('Não foi possível criar a conta', error.message);
         }

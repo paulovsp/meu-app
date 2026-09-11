@@ -17,10 +17,7 @@ import {
 } from '../services/relatorios';
 import { mensagemDeErro } from '../services/erros';
 import { formatarSaldoBRL } from '../services/creditosIA';
-import {
-  getSituacaoIA, avisoDeSaldoNegativo, MOTIVO_ASSINATURA, MENSAGEM_SEM_CREDITOS,
-} from '../services/usoDeIA';
-import { MENSAGEM_ASSINATURA_INATIVA } from '../services/assinatura';
+import { getSituacaoIA, avisoDeSaldoNegativo, avisoDeBloqueioIA } from '../services/usoDeIA';
 
 const COLORS = {
   bg: '#F7F5F0',
@@ -113,11 +110,8 @@ export default function RelatoriosScreen() {
     // Relatório calculado dentro do app (custo zero) continua liberado sem
     // assinatura e sem crédito: não gasta IA nenhuma, não há o que barrar.
     if (custoEstimado > 0 && !situacao.pode) {
-      const ehAssinatura = situacao.motivo === MOTIVO_ASSINATURA;
-      Alert.alert(
-        ehAssinatura ? 'Assinatura inativa' : 'Créditos de IA esgotados',
-        ehAssinatura ? MENSAGEM_ASSINATURA_INATIVA : MENSAGEM_SEM_CREDITOS,
-      );
+      const { titulo, texto } = avisoDeBloqueioIA(situacao.motivo);
+      Alert.alert(titulo, texto);
       return;
     }
 

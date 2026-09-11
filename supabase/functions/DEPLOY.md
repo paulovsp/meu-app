@@ -35,7 +35,7 @@ coluna seria um endpoint aberto, e não existe nenhuma assim.
 | `meet-buscar-transcricao` | `--no-verify-jwt` | segredo de cron — e também aceita JWT do app, pro botão "buscar agora" |
 | `meet-criar-sala` | padrão | JWT da usuária, vindo do app |
 | `mercadopago-criar-checkout-assinatura` | padrão | JWT da usuária, vindo do app |
-| `mercadopago-criar-checkout-creditos` | padrão | JWT da usuária, vindo do app |
+| `mercadopago-criar-recarga` | padrão | JWT da usuária — vindo da página de recarga (docs/recarregar-creditos.html), com o token no header |
 | `mercadopago-webhook` | `--no-verify-jwt` | assinatura do Mercado Pago |
 | `reenviar-instrucoes-plano` | padrão | JWT da usuária, vindo do app |
 | `renovar-creditos` | padrão | JWT da usuária, vindo do app |

@@ -127,9 +127,9 @@ export default function FiscalScreen() {
       if (item.tipo_emissao_fiscal === 'nota') {
         Alert.alert('Nota solicitada', `Resumo enviado para ${user.contador_email}, que vai emitir a nota fiscal e enviá-la a ${item.nome}.`);
       } else {
-        const destinos = [];
-        if (data?.enviadoPaciente) destinos.push(item.email);
-        if (data?.enviadoContador) destinos.push(user.contador_email);
+        // Os endereços vêm da resposta: foi o servidor que os leu da ficha
+        // e do perfil, e é para lá que o e-mail foi de fato.
+        const destinos = [data?.destinos?.paciente, data?.destinos?.contador].filter(Boolean);
 
         if (destinos.length === 0) {
           Alert.alert('Nada enviado', 'Nenhum e-mail foi enviado. Confira os e-mails cadastrados do analisante e do contador.');

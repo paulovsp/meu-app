@@ -33,7 +33,30 @@ const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!;
 
-const PAGINA_PLANOS = 'https://app.drsig.com.br/escolher-plano.html';
+// Dois destinos, o mesmo mecanismo. A recarga de créditos passou a chegar
+// pelo mesmo caminho do plano — e-mail com link para a nossa página —
+// porque a política de pagamentos do Google Play alcança os dois: crédito
+// de IA gasto dentro do app é bem digital tanto quanto a assinatura.
+const DESTINOS = {
+  plano: {
+    pagina: 'https://app.drsig.com.br/escolher-plano.html',
+    assunto: 'Dr.Sig — o link para escolher seu plano',
+    pediu: 'Você pediu, pelo app, o link para escolher seu plano. É este:',
+    botao: 'Escolher meu plano',
+    depois: 'Assim que o pagamento for confirmado, o acesso é liberado sozinho — basta abrir o app de novo.',
+    ondePedir: 'Meu Perfil › Seu plano',
+  },
+  creditos: {
+    pagina: 'https://app.drsig.com.br/recarregar-creditos.html',
+    assunto: 'Dr.Sig — o link para recarregar seus créditos de IA',
+    pediu: 'Você pediu, pelo app, o link para recarregar seus créditos de IA. É este:',
+    botao: 'Recarregar créditos',
+    depois: 'Pix ou cartão. O crédito entra na sua conta na hora em que o pagamento é confirmado.',
+    ondePedir: 'Meu Perfil › Créditos de IA',
+  },
+} as const;
+
+type Destino = keyof typeof DESTINOS;
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -60,22 +83,23 @@ async function enviarEmail(to: string, subject: string, html: string) {
   if (!resp.ok) throw new Error(`Falha ao enviar e-mail: ${await resp.text()}`);
 }
 
-function corpo(nome: string, link: string) {
+function corpo(nome: string, link: string, destino: Destino) {
   const saudacao = nome ? `Olá, ${nome}!` : 'Olá!';
+  const d = DESTINOS[destino];
   return `
     <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #302C28; line-height: 1.55;">
       <p style="font-size:22px;font-weight:800;font-style:italic;color:#3A5C4F;margin:0 0 4px;">Dr.Sig</p>
       <p style="font-size:11px;font-weight:700;color:#6B9E8A;letter-spacing:1.5px;text-transform:uppercase;margin:0 0 24px;">O seu assistente clínico</p>
 
       <h1 style="font-size:20px;margin:0 0 14px;">${saudacao}</h1>
-      <p>Você pediu, pelo app, o link para escolher seu plano. É este:</p>
+      <p>${d.pediu}</p>
 
       <p style="margin:26px 0;">
-        <a href="${link}" style="background:#497363;color:#fff;padding:14px 26px;border-radius:10px;text-decoration:none;display:inline-block;font-weight:700;font-size:15px;">Escolher meu plano</a>
+        <a href="${link}" style="background:#497363;color:#fff;padding:14px 26px;border-radius:10px;text-decoration:none;display:inline-block;font-weight:700;font-size:15px;">${d.botao}</a>
       </p>
 
-      <p style="font-size:13.5px;color:#756E66;">O link vale por 1 hora e só pode ser usado uma vez. Se expirar, é só pedir outro pelo app, em Meu Perfil.</p>
-      <p style="font-size:13.5px;color:#756E66;">Assim que o pagamento for confirmado, o acesso é liberado sozinho — basta abrir o app de novo.</p>
+      <p style="font-size:13.5px;color:#756E66;">O link vale por 1 hora e só pode ser usado uma vez. Se expirar, é só pedir outro pelo app, em ${d.ondePedir}.</p>
+      <p style="font-size:13.5px;color:#756E66;">${d.depois}</p>
 
       <p style="color:#A9A299;font-size:12px;margin-top:28px;">Se não foi você que pediu, ignore este e-mail: nada acontece sem que o link seja aberto.</p>
     </div>
@@ -97,20 +121,27 @@ Deno.serve(async (req) => {
     const email = userData?.user?.email;
     if (!email) return json({ error: 'Sessão inválida.' }, 401);
 
+    const body = await req.json().catch(() => ({}));
+    const destino: Destino = body?.destino === 'creditos' ? 'creditos' : 'plano';
+    const d = DESTINOS[destino];
+
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
     const { data: perfil } = await admin
       .from('profiles')
-      .select('nome')
+      .select('nome, conta_demonstracao')
       .eq('id', userData.user.id)
       .maybeSingle();
+    if (perfil?.conta_demonstracao) {
+      return json({ error: 'A conta de demonstração não assina nem compra créditos. Crie a sua conta.' }, 403);
+    }
 
     // `magiclink` e não `signup`: a conta já está confirmada. O que se quer
-    // é uma sessão válida chegando na página de planos.
+    // é uma sessão válida chegando na página.
     const { data: linkData, error: erroLink } = await admin.auth.admin.generateLink({
       type: 'magiclink',
       email,
-      options: { redirectTo: PAGINA_PLANOS },
+      options: { redirectTo: d.pagina },
     });
     if (erroLink || !linkData?.properties?.hashed_token) {
       return json({ error: 'Não foi possível gerar o link. Tente de novo em instantes.' }, 502);
@@ -118,13 +149,9 @@ Deno.serve(async (req) => {
 
     // Nossa página, com o token cru — nunca o action_link do Supabase (ver
     // nota no topo: scanner de e-mail queima token de uso único).
-    const link = `${PAGINA_PLANOS}?token_hash=${encodeURIComponent(linkData.properties.hashed_token)}`;
+    const link = `${d.pagina}?token_hash=${encodeURIComponent(linkData.properties.hashed_token)}`;
 
-    await enviarEmail(
-      email,
-      'Dr.Sig — o link para escolher seu plano',
-      corpo(perfil?.nome || '', link),
-    );
+    await enviarEmail(email, d.assunto, corpo(perfil?.nome || '', link, destino));
 
     // Devolve o e-mail pra tela poder dizer PARA ONDE mandou — a dúvida
     // mais comum de quem não recebe é se foi pro endereço certo.

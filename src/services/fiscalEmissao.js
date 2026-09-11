@@ -9,15 +9,10 @@ import { supabase } from './supabase';
 import { formatarMoeda } from './database';
 import { montarMensagemReciboPaciente, montarMensagemReciboContador, montarMensagemNotaContador } from './mensagens';
 
-// Texto autoral (do profissional) vira o corpo do e-mail — escapa HTML pra
-// não quebrar a renderização se ele tiver digitado "<" ou "&", e cada
-// quebra de linha vira um parágrafo próprio.
-function textoParaHtml(texto) {
-  const escapado = (texto || '')
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  return escapado
-    .split('\n').filter((l) => l.trim())
-    .map((l) => `<p>${l}</p>`).join('') || `<p>${escapado}</p>`;
+// A tela Fiscal monta a linha a partir da ficha (`patient_id`); outros
+// chamadores passam a ficha em si (`id`).
+function idDoAnalisante(paciente) {
+  return paciente?.patient_id || paciente?.id;
 }
 
 export const MESES_LABEL = [
@@ -119,19 +114,19 @@ export async function emitirRecibo({ profissional, paciente, valor, periodo }) {
   const { uri } = await Print.printToFileAsync({ html });
   const pdfBase64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
 
-  const corpoPacienteHtml = textoParaHtml(montarMensagemReciboPaciente(profissional, { nome: paciente.nome, periodo }));
-  const corpoContadorHtml = textoParaHtml(montarMensagemReciboContador(profissional, { nome: paciente.nome, periodo }));
-
+  // Só o TEXTO vai; quem o transforma em HTML, e quem decide para quais
+  // endereços o e-mail sai, é o servidor — a partir da ficha do analisante
+  // e do perfil, nunca do que o app manda. Um servidor que aceitasse
+  // destinatário e HTML do cliente seria um remetente de e-mail livre em
+  // nome do Dr.Sig.
   const { data, error } = await supabase.functions.invoke('enviar-recibo', {
     body: {
       tipo: 'recibo',
-      patientEmail: paciente.email || null,
-      patientNome: paciente.nome,
-      contadorEmail: profissional?.contador_email || null,
+      patientId: idDoAnalisante(paciente),
       periodo,
       pdfBase64,
-      corpoPacienteHtml,
-      corpoContadorHtml,
+      mensagemPaciente: montarMensagemReciboPaciente(profissional, { nome: paciente.nome, periodo }),
+      mensagemContador: montarMensagemReciboContador(profissional, { nome: paciente.nome, periodo }),
     },
   });
   if (error) throw new Error(await extrairErroInvoke(error));
@@ -147,19 +142,17 @@ export async function emitirNota({ profissional, paciente, valor, periodo }) {
   }
 
   const cpfTexto = paciente.cpf ? ` (CPF ${paciente.cpf})` : '';
-  const corpoContadorHtml = textoParaHtml(montarMensagemNotaContador(profissional, {
+  const mensagemContador = montarMensagemNotaContador(profissional, {
     nome: paciente.nome, periodo, valor: formatarMoeda(valor), cpfTexto,
-  }));
+  });
 
   const { data, error } = await supabase.functions.invoke('enviar-recibo', {
     body: {
       tipo: 'nota',
-      patientNome: paciente.nome,
-      patientCpf: paciente.cpf || null,
-      contadorEmail: profissional.contador_email,
+      patientId: idDoAnalisante(paciente),
       periodo,
       valor,
-      corpoContadorHtml,
+      mensagemContador,
     },
   });
   if (error) throw new Error(await extrairErroInvoke(error));

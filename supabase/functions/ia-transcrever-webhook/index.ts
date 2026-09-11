@@ -11,6 +11,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { notificarTranscricao } from '../_shared/notificarTranscricao.ts';
 import { calcularCobrancaIA } from '../_shared/precificacaoIA.ts';
+import { ajustarCreditoIA } from '../_shared/creditoIA.ts';
 import { acharBloco, marcarBlocoComErro, salvarBlocoEMontarTexto } from '../_shared/blocosTranscricao.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -117,17 +118,8 @@ Deno.serve(async (req) => {
       // pulado, pra não cobrar de conta que não deveria mais gastar.
       const { data: assinaturaAtiva } = await supabaseAdmin.rpc('assinatura_ativa', { uid: userId });
       if (!assinaturaAtiva) return;
-      const { data: perfil } = await supabaseAdmin
-        .from('profiles')
-        .select('creditos_ia')
-        .eq('id', userId)
-        .single();
-      if (perfil) {
-        await supabaseAdmin
-          .from('profiles')
-          .update({ creditos_ia: Number(perfil.creditos_ia) - custo })
-          .eq('id', userId);
-      }
+      // Atômico no banco: dois blocos terminando juntos não se sobrescrevem.
+      await ajustarCreditoIA(supabaseAdmin, userId, -custo);
       await supabaseAdmin.from('uso_ia').insert({
         user_id: userId,
         tipo: 'transcricao',

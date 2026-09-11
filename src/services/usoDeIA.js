@@ -24,8 +24,9 @@
 // uma sessão de cinquenta minutos vai gastar R$ 3,80 e descobrir depois.
 // Por isso `avisoDeSaldoNegativo()`: onde o custo é estimável antes (é o
 // caso dos dois), a tela diz o que vai acontecer e deixa a pessoa decidir.
-import { supabase } from './supabase';
+import { supabase, estaEmModoSomenteLeitura } from './supabase';
 import { formatarSaldoBRL } from './creditosIA';
+import { MENSAGEM_ASSINATURA_INATIVA } from './assinatura';
 
 // Espelha _shared/precificacaoIA.ts e _shared/margemCobranca.ts (o app não
 // pode importar módulo Deno). Se um mudar, o outro muda junto.
@@ -34,6 +35,7 @@ const MULTIPLICADOR_COBRANCA_USUARIO = 2;
 
 export const MOTIVO_ASSINATURA = 'assinatura';
 export const MOTIVO_CREDITOS = 'creditos';
+export const MOTIVO_DEMONSTRACAO = 'demonstracao';
 
 // Política do Google Play proíbe preço, link ou instrução de pagamento nas
 // telas do app — por isso as duas mensagens apontam para uma tela do
@@ -42,7 +44,22 @@ export const MENSAGEM_SEM_CREDITOS =
   'Seus créditos de IA acabaram. Transcrição, relatórios e a Busca Dr.Sig ficam ' +
   'indisponíveis até você recarregar — o resto do app continua funcionando normalmente, ' +
   'e nada do que você já registrou foi afetado.\n\n' +
-  'Para recarregar, abra Meu Perfil › Créditos de IA.';
+  'Para recarregar, abra Meu Perfil › Créditos de IA e peça o link por e-mail.';
+
+// A conta de demonstração não gasta: o servidor recusa (é dinheiro do
+// dono, pago por token e por minuto), e esta é a explicação que a pessoa
+// vê antes de tentar.
+export const MENSAGEM_DEMONSTRACAO_SEM_IA =
+  'No consultório de demonstração os recursos de IA — transcrição, relatórios e a Busca ' +
+  'Dr.Sig — ficam desligados. Dá para ver as sessões já transcritas e os relatórios já ' +
+  'gerados; para usar a IA com os seus próprios analisantes, crie a sua conta.';
+
+/** Título e texto do aviso para cada motivo de bloqueio de IA. */
+export function avisoDeBloqueioIA(motivo) {
+  if (motivo === MOTIVO_ASSINATURA) return { titulo: 'Assinatura inativa', texto: MENSAGEM_ASSINATURA_INATIVA };
+  if (motivo === MOTIVO_DEMONSTRACAO) return { titulo: 'Demonstração sem IA', texto: MENSAGEM_DEMONSTRACAO_SEM_IA };
+  return { titulo: 'Créditos de IA esgotados', texto: MENSAGEM_SEM_CREDITOS };
+}
 
 /** Custo, em US$, que será debitado por transcrever `segundos` de áudio. */
 export function estimarCustoTranscricaoUSD(segundos) {
@@ -62,6 +79,11 @@ export async function getSituacaoIA() {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return { pode: true, motivo: null, saldoUsd: null };
+
+    // Decidido antes de qualquer consulta: a demonstração nunca gasta, e
+    // o servidor recusaria de qualquer jeito — aqui é só para avisar na
+    // entrada, em vez de no último toque.
+    if (estaEmModoSomenteLeitura()) return { pode: false, motivo: MOTIVO_DEMONSTRACAO, saldoUsd: 0 };
 
     const [{ data: ativa, error: erroAtiva }, { data: perfil }] = await Promise.all([
       supabase.rpc('assinatura_ativa', { uid: session.user.id }),

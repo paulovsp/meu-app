@@ -62,7 +62,7 @@ verify_jwt = true
 [functions.mercadopago-criar-checkout-assinatura]
 verify_jwt = true
 
-[functions.mercadopago-criar-checkout-creditos]
+[functions.mercadopago-criar-recarga]
 verify_jwt = true
 
 [functions.mercadopago-webhook]

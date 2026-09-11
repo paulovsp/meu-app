@@ -41,9 +41,11 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sincronizarPreapproval } from '../_shared/assinaturaMercadoPago.ts';
 import { aplicarDescontoDeIndicacoes, precoComDesconto } from '../_shared/indicacoes.ts';
+import { mensagemDeRecusa } from '../_shared/recusaMercadoPago.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
+const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const MP_ACCESS_TOKEN = Deno.env.get('MERCADOPAGO_ACCESS_TOKEN')!;
 // Pública por definição — vai dentro da página, à vista de todos. Fica num
 // secret só pra poder ser trocada sem mexer no HTML.
@@ -87,40 +89,6 @@ function json(body: unknown, status = 200) {
   });
 }
 
-/**
- * Traduz a recusa do Mercado Pago para algo acionável.
- *
- * O que a API devolve ("cc_rejected_bad_filled_security_code") não é texto
- * pra ninguém ler. E o genérico "não foi possível processar" faz a pessoa
- * tentar o mesmo cartão de novo, com o mesmo resultado — o que ela precisa
- * saber é se corrige um dígito, se liga pro banco, ou se troca de cartão.
- */
-// deno-lint-ignore no-explicit-any
-function mensagemDeRecusa(corpo: any): string {
-  const causa = String(
-    corpo?.cause?.[0]?.code ?? corpo?.status_detail ?? corpo?.error ?? '',
-  );
-  const mapa: Record<string, string> = {
-    cc_rejected_bad_filled_card_number: 'Confira o número do cartão.',
-    cc_rejected_bad_filled_date: 'Confira a validade do cartão.',
-    cc_rejected_bad_filled_security_code: 'Confira o código de segurança (CVV).',
-    cc_rejected_bad_filled_other: 'Algum dado do cartão não confere. Confira e tente de novo.',
-    cc_rejected_insufficient_amount: 'O cartão não tem limite disponível para este valor.',
-    cc_rejected_high_risk: 'O banco não autorizou esta cobrança. Tente outro cartão, ou fale com o banco.',
-    cc_rejected_call_for_authorize: 'O banco pediu que você autorize esta cobrança. Ligue para o banco e tente de novo.',
-    cc_rejected_card_disabled: 'O cartão está desativado. Fale com o banco ou use outro.',
-    cc_rejected_duplicated_payment: 'Esta cobrança já foi feita. Confira antes de tentar de novo.',
-    cc_rejected_max_attempts: 'Muitas tentativas com este cartão. Espere um pouco ou use outro.',
-    cc_rejected_other_reason: 'O banco não autorizou. Tente outro cartão.',
-    cc_rejected_card_type_not_allowed: 'Este tipo de cartão não é aceito. Use um cartão de crédito.',
-  };
-  if (mapa[causa]) return mapa[causa];
-  if (causa.includes('card_token')) {
-    return 'Os dados do cartão expiraram nesta página. Preencha de novo.';
-  }
-  return 'Não foi possível autorizar o cartão. Confira os dados ou tente outro cartão.';
-}
-
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Método não permitido.' }, 405);
@@ -137,17 +105,60 @@ Deno.serve(async (req) => {
     const userId = userData.user.id;
 
     const body = await req.json().catch(() => ({}));
+    const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+
+    // O estado atual da conta decide duas coisas: o que a página mostra
+    // ao abrir, e se esta função aceita criar OUTRA assinatura.
+    //
+    // Sem esta leitura, quem já assinava e abria a página de novo (o link
+    // do e-mail vale para qualquer conta, e a sessão fica guardada por
+    // uma hora) criava uma segunda recorrência. O webhook gravava o id da
+    // nova por cima do da antiga — que sumia do perfil e continuava
+    // cobrando o cartão todo mês, sem botão para cancelar.
+    const { data: perfil } = await admin
+      .from('profiles')
+      .select('assinatura_status, assinatura_plano, assinatura_expira_em, mp_preapproval_id, conta_demonstracao')
+      .eq('id', userId)
+      .maybeSingle();
+    const renovaSozinha = perfil?.assinatura_status === 'ativa' && !!perfil?.mp_preapproval_id;
+    const gratuitaPorIndicacoes = perfil?.assinatura_status === 'gratuita_indicacao';
 
     // A página pergunta primeiro se dá pra cobrar o cartão ali mesmo. Sem a
     // chave configurada, a resposta é `null` e ela cai no caminho antigo,
     // de mandar pro Mercado Pago — em vez de mostrar um formulário morto.
     if (body?.acao === 'chave') {
-      return json({ publicKey: MP_PUBLIC_KEY || null });
+      return json({
+        publicKey: MP_PUBLIC_KEY || null,
+        situacao: {
+          status: perfil?.assinatura_status || 'sem_assinatura',
+          plano: perfil?.assinatura_plano || null,
+          expiraEm: perfil?.assinatura_expira_em || null,
+          renovaSozinha,
+          gratuitaPorIndicacoes,
+        },
+      });
     }
 
     const plano = String(body?.plano || '') as Plano;
     const config = PLANOS[plano];
     if (!config) return json({ error: 'Plano inválido.' }, 400);
+
+    if (perfil?.conta_demonstracao) {
+      return json({ error: 'A conta de demonstração não assina planos. Crie a sua conta no app.' }, 403);
+    }
+    if (renovaSozinha) {
+      const atual = PLANOS[perfil!.assinatura_plano as Plano]?.nome || perfil!.assinatura_plano;
+      return json({
+        error: `Esta conta já tem o plano ${atual} ativo, renovando sozinho. Para trocar de plano, cancele o atual no app (Meu Perfil › Seu plano) e assine de novo — o acesso continua até o fim do período já pago.`,
+        jaAssina: true,
+      }, 409);
+    }
+    if (gratuitaPorIndicacoes) {
+      return json({
+        error: 'Seu acesso é gratuito pelas suas indicações — não há o que assinar. Se o número de indicações ativas cair, o app avisa com antecedência.',
+        jaAssina: true,
+      }, 409);
+    }
 
     // `payer_email` é obrigatório numa assinatura do Mercado Pago (sem ele:
     // 400, "payer_email is required"). Usamos sempre o e-mail do cadastro,
@@ -163,7 +174,6 @@ Deno.serve(async (req) => {
     // quem indicou dez pessoas antes de assinar pagaria o preco cheio no
     // primeiro ciclo e so veria o desconto no segundo — punido por ter
     // feito as coisas na ordem "errada".
-    const admin = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
     const { data: descontoBruto } = await admin.rpc('desconto_por_indicacoes', { uid: userId });
     // Teto de 90% aqui: 100% nao e uma assinatura barata, e assinatura
     // nenhuma (o Mercado Pago recusa qualquer valor abaixo de R$ 0,50).

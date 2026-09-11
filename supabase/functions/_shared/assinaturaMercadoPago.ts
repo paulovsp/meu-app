@@ -68,6 +68,9 @@ export async function aplicarAssinaturaPorId(
   supabaseAdmin: Cliente,
   userId: string,
   estado: EstadoAssinatura,
+  // Só é usado quando a conta não existe mais (ver abaixo). Quem chama
+  // sem ele continua funcionando; só não consegue cancelar nesse caso.
+  mpAccessToken?: string,
 ) {
   const patch: Record<string, unknown> = { assinatura_status: estado.assinatura_status };
   if (estado.assinatura_expira_em) patch.assinatura_expira_em = estado.assinatura_expira_em;
@@ -83,7 +86,33 @@ export async function aplicarAssinaturaPorId(
     // em 7 dias" e assinou nunca mais receberia o aviso do ciclo seguinte.
     patch.aviso_fim_acesso_dias = null;
   }
-  await supabaseAdmin.from('profiles').update(patch).eq('id', userId);
+  const { data: atualizados } = await supabaseAdmin
+    .from('profiles')
+    .update(patch)
+    .eq('id', userId)
+    .select('id');
+
+  // Zero linhas: a conta não existe mais, e este `update` silencioso era
+  // a única coisa que acontecia. O caso real é a pessoa excluir a conta
+  // com a assinatura viva — excluir-conta cancela no Mercado Pago antes
+  // de apagar, mas se aquele cancelamento falhar depois de a conta já ter
+  // sumido (ou se a exclusão vier do painel), a cobrança continuaria todo
+  // mês, para ninguém. Aqui é o último lugar que fica sabendo: registra
+  // para conferência humana e cancela a recorrência.
+  if (!atualizados || atualizados.length === 0) {
+    await registrarNaoIdentificado(supabaseAdmin, {
+      mp_id: estado.mp_preapproval_id || userId,
+      tipo: 'assinatura-de-conta-inexistente',
+      valor: null,
+      status: estado.assinatura_status,
+      email_pagador: null,
+      motivo: `a conta ${userId} não existe mais; assinatura ${estado.mp_preapproval_id || '?'} ${estado.assinatura_status === 'ativa' ? 'cancelada agora no Mercado Pago' : 'já não estava ativa'}`,
+    });
+    if (estado.assinatura_status === 'ativa' && estado.mp_preapproval_id && mpAccessToken) {
+      await cancelarPreapproval(mpAccessToken, estado.mp_preapproval_id);
+    }
+    return;
+  }
 
   if (estado.assinatura_status !== 'ativa' || !estado.assinatura_plano) return;
   const creditoUsd = creditoMensalUsd(estado.assinatura_plano);
@@ -144,6 +173,35 @@ export async function registrarNaoIdentificado(
   await supabaseAdmin.from('pagamentos_nao_identificados').insert(dados);
 }
 
+/**
+ * Cancela a recorrência no Mercado Pago. Devolve `true` quando ela está
+ * cancelada ao fim — inclusive se já estava: o objetivo é o estado, não a
+ * chamada. `false` quando o Mercado Pago recusou e ela pode seguir viva.
+ */
+export async function cancelarPreapproval(mpAccessToken: string, preapprovalId: string): Promise<boolean> {
+  const resp = await fetch(`${MP_API}/preapproval/${preapprovalId}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${mpAccessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'cancelled' }),
+  });
+  if (resp.ok) return true;
+
+  // O PUT falha em assinatura já cancelada. Antes de dizer "não deu",
+  // confere o estado real.
+  const leitura = await fetch(`${MP_API}/preapproval/${preapprovalId}`, {
+    headers: { Authorization: `Bearer ${mpAccessToken}` },
+  });
+  const atual = leitura.ok ? await leitura.json().catch(() => null) : null;
+  if (atual?.status === 'cancelled') return true;
+
+  console.error('assinatura: o Mercado Pago não cancelou a preapproval.', {
+    preapprovalId,
+    http: resp.status,
+    detalhe: (await resp.text().catch(() => '')).slice(0, 500),
+  });
+  return false;
+}
+
 export type ResultadoSincronizacao =
   | { ok: true; situacao: string; plano?: Plano; userId?: string }
   | { ok: false; erro: string; httpMercadoPago?: number };
@@ -198,7 +256,7 @@ export async function sincronizarPreapproval(
       assinatura_plano: plano,
       assinatura_ciclo_inicio: cicloInicio.toISOString(),
       assinatura_valor_mensal_equivalente: VALOR_MENSAL_EQUIVALENTE[plano],
-    });
+    }, mpAccessToken);
     return { ok: true, situacao: 'ativa', plano, userId };
   }
 

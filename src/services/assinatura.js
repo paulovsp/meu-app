@@ -95,14 +95,17 @@ export async function getStatusAssinatura() {
 }
 
 /**
- * Reenvia, por e-mail, o link para escolher o plano.
+ * Manda, por e-mail, o link para escolher o plano (`destino: 'plano'`) ou
+ * para recarregar os créditos de IA (`destino: 'creditos'`).
  *
  * É a saída do beco: sem isto, o aviso "enviamos um e-mail" apontava para
  * uma mensagem que a pessoa podia não ter mais, e não havia nada a fazer
- * dentro do app.
+ * dentro do app. E é a única ponte para pagamento que o app tem — o
+ * Google Play não permite preço nem link de pagamento nas telas, e o
+ * e-mail está fora do alcance dessa regra.
  */
-export async function reenviarInstrucoesDePlano() {
-  const { data, error } = await supabase.functions.invoke('reenviar-instrucoes-plano', { body: {} });
+export async function reenviarInstrucoesDePlano(destino = 'plano') {
+  const { data, error } = await supabase.functions.invoke('reenviar-instrucoes-plano', { body: { destino } });
   if (error) {
     let mensagem = error.message;
     try {

@@ -47,12 +47,29 @@ Deno.serve(async (req) => {
 
     const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
+    // A ficha tem que ser de quem chamou. A inserção abaixo é feita com a
+    // service role, que não passa pela RLS — sem esta linha, dava para
+    // registrar uma solicitação apontando para o analisante de outra
+    // conta e mandar o e-mail em nome dela.
+    const { data: ficha } = await supabaseAdmin
+      .from('patients')
+      .select('id')
+      .eq('id', patient_local_id)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (!ficha) {
+      return new Response(JSON.stringify({ error: 'Analisante não encontrado.' }), { status: 404 });
+    }
+
     // Nome da psicanalista, pro e-mail deixar claro quem está solicitando.
     const { data: perfil } = await supabaseAdmin
       .from('profiles')
-      .select('nome')
+      .select('nome, conta_demonstracao')
       .eq('id', userId)
       .single();
+    if (perfil?.conta_demonstracao) {
+      return new Response(JSON.stringify({ error: 'A conta de demonstração não envia e-mails.' }), { status: 403 });
+    }
     const nomePsicanalista = perfil?.nome || 'sua psicanalista';
 
     const token = gerarToken();

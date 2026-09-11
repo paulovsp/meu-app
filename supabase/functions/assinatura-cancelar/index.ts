@@ -20,7 +20,7 @@
 // assinatura vem do PERFIL dela, nunca do corpo da requisição — senão
 // bastaria mandar o id de outra pessoa pra cancelar a assinatura alheia.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { MP_API, sincronizarPreapproval } from '../_shared/assinaturaMercadoPago.ts';
+import { cancelarPreapproval, sincronizarPreapproval } from '../_shared/assinaturaMercadoPago.ts';
 import { atualizarQuemIndicou } from '../_shared/indicacoes.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -82,21 +82,8 @@ Deno.serve(async (req) => {
     // precisa ver na tela — até quando ela ainda pode usar o que pagou.
     const validaAte = perfil.assinatura_expira_em;
 
-    const resp = await fetch(`${MP_API}/preapproval/${perfil.mp_preapproval_id}`, {
-      method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${MP_ACCESS_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ status: 'cancelled' }),
-    });
-    if (!resp.ok) {
-      const detalhe = await resp.text().catch(() => '');
-      console.error('assinatura-cancelar: o Mercado Pago recusou o cancelamento.', {
-        userId,
-        http: resp.status,
-        detalhe: detalhe.slice(0, 500),
-      });
+    const cancelada = await cancelarPreapproval(MP_ACCESS_TOKEN, String(perfil.mp_preapproval_id));
+    if (!cancelada) {
       return json({
         error: 'Não foi possível cancelar agora. Tente de novo em alguns minutos, ou escreva para drsig@drsig.com.br que a gente cancela para você.',
       }, 502);

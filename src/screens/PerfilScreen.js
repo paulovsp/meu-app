@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  TextInput, Alert, ActivityIndicator, Image, Switch, Modal, Linking,
+  TextInput, Alert, ActivityIndicator, Image, Switch, Modal,
   KeyboardAvoidingView, Platform, Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -34,7 +34,6 @@ import { enviarFotoPerfil, enviarFotoCapa } from '../services/avatar';
 import { exportarDadosUsuario } from '../services/exportacaoDados';
 import {
   formatarSaldoBRL, chamarRenovarCreditos, PLANOS_CREDITO_MENSAL_BRL, PLANO_LABEL,
-  PACOTES_CREDITO_AVULSO_BRL, criarCheckoutCreditos,
 } from '../services/creditosIA';
 import { excluirConta, alterarEmailLogin, alterarSenha } from '../services/conta';
 import SeletorCidadeEstado from '../components/SeletorCidadeEstado';
@@ -247,7 +246,7 @@ export default function PerfilScreen({ navigation }) {
   const [notifSalvando, setNotifSalvando] = useState(null);
   const [exportando, setExportando] = useState(false);
   const [excluindoConta, setExcluindoConta] = useState(false);
-  const [abrindoCheckout, setAbrindoCheckout] = useState(false);
+  const [pedindoRecarga, setPedindoRecarga] = useState(false);
   const [modalSenhaVisivel, setModalSenhaVisivel] = useState(false);
   const [senhaAtual, setSenhaAtual] = useState('');
   const [novaSenha, setNovaSenha] = useState('');
@@ -472,30 +471,24 @@ export default function PerfilScreen({ navigation }) {
     }
   }
 
-  async function iniciarCheckoutCreditos(valorBRL) {
-    setAbrindoCheckout(true);
+  // Mesmo caminho do plano: o app não mostra preço nem abre pagamento
+  // (política do Google Play para bens digitais); manda o link por e-mail
+  // e a página faz o resto, por Pix ou cartão.
+  async function pedirLinkDeRecarga() {
+    setPedindoRecarga(true);
     try {
-      const initPoint = await criarCheckoutCreditos(valorBRL);
-      if (initPoint) await Linking.openURL(initPoint);
+      const r = await reenviarInstrucoesDePlano('creditos');
+      Alert.alert(
+        'E-mail enviado',
+        `Mandamos o link para recarregar seus créditos em ${r?.email || 'seu e-mail'}.`
+        + '\n\nEle vale por 1 hora. Pix ou cartão — o crédito entra na sua conta assim que o '
+        + 'pagamento é confirmado. Confira também a caixa de spam.'
+      );
     } catch (e) {
-      Alert.alert('Erro ao gerar link de pagamento', mensagemDeErro(e));
+      Alert.alert('Não foi possível enviar', mensagemDeErro(e));
     } finally {
-      setAbrindoCheckout(false);
+      setPedindoRecarga(false);
     }
-  }
-
-  function abrirRecargaCreditos() {
-    Alert.alert(
-      'Adicionar créditos',
-      'Escolha o valor da recarga — você será levada ao checkout do Mercado Pago.',
-      [
-        ...PACOTES_CREDITO_AVULSO_BRL.map((valor) => ({
-          text: `R$ ${valor}`,
-          onPress: () => iniciarCheckoutCreditos(valor),
-        })),
-        { text: 'Cancelar', style: 'cancel' },
-      ]
-    );
   }
 
   // useFocusEffect (e não useEffect de montagem): a biometria pode ser
@@ -913,7 +906,8 @@ export default function PerfilScreen({ navigation }) {
           </View>
           <TouchableOpacity
             style={[st.statCard, Number(user.creditos_ia) <= 0 && st.statCardAlerta]}
-            onPress={abrirRecargaCreditos}
+            onPress={pedirLinkDeRecarga}
+            disabled={pedindoRecarga}
           >
             <Text style={[st.statNumber, Number(user.creditos_ia) <= 0 && st.statNumberAlerta]}>
               {formatarSaldoBRL(Number(user.creditos_ia ?? 0))}
@@ -1317,20 +1311,21 @@ export default function PerfilScreen({ navigation }) {
                   ? `Seu plano ${(PLANO_LABEL[user.assinatura_plano] || '').toLowerCase()} dá `
                     + `${(PLANOS_CREDITO_MENSAL_BRL[user.assinatura_plano] || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} `
                     + 'de crédito por mês, de brinde, enquanto a assinatura estiver ativa. '
-                    + 'Se acabar antes do mês virar, dá pra comprar mais aqui — sem mexer na assinatura.'
+                    + 'Se acabar antes do mês virar, dá para recarregar — o link chega por e-mail, '
+                    + 'e a recarga não mexe na assinatura.'
                   : 'Os créditos de IA entram todo mês junto com a assinatura. '
                     + 'Quanto mais longo o plano, maior o crédito mensal.'}
               </Text>
 
               <TouchableOpacity
                 style={st.assinaturaBtn}
-                onPress={abrirRecargaCreditos}
-                disabled={abrindoCheckout}
+                onPress={pedirLinkDeRecarga}
+                disabled={pedindoRecarga}
               >
-                {abrindoCheckout ? (
+                {pedindoRecarga ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
-                  <Text style={st.assinaturaBtnTexto}>Adicionar créditos</Text>
+                  <Text style={st.assinaturaBtnTexto}>Receber o link de recarga por e-mail</Text>
                 )}
               </TouchableOpacity>
             </View>

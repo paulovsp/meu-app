@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Recarregar créditos — Dr.Sig</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, Arial, sans-serif; background: #F5F7FA; margin: 0; padding: 24px 16px; color: #302C28; line-height: 1.5; }
+  .card { max-width: 560px; margin: 0 auto; background: #fff; border-radius: 20px; padding: 28px 22px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); }
+  h1 { font-size: 21px; margin: 0 0 8px; }
+  .lede { color: #6B6860; font-size: 14px; margin: 0 0 24px; }
+  .saldo { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; background: #F0F4F8; border-radius: 14px; padding: 12px 16px; margin-bottom: 20px; }
+  .saldo-rotulo { font-size: 13px; color: #6B6860; }
+  .saldo-valor { font-size: 17px; font-weight: 800; color: #3A5C4F; white-space: nowrap; }
+
+  .pacotes { display: flex; flex-direction: column; gap: 12px; }
+  .pacote {
+    border: 2px solid #E8E4DD; border-radius: 16px; padding: 15px 16px;
+    display: flex; align-items: center; gap: 14px;
+    cursor: pointer; background: #FAFBFC; width: 100%; text-align: left;
+    font: inherit; color: inherit; transition: border-color .15s, background .15s;
+  }
+  .pacote:hover { border-color: #B9C6C0; }
+  .pacote:focus-visible { outline: 3px solid #3A5C4F; outline-offset: 2px; }
+  .pacote[aria-checked="true"] { border-color: #3A5C4F; background: #F0F4F8; }
+  .marca { flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; border: 2px solid #C6C1B8; display: flex; align-items: center; justify-content: center; }
+  .pacote[aria-checked="true"] .marca { border-color: #3A5C4F; background: #3A5C4F; }
+  .marca span { width: 8px; height: 8px; border-radius: 50%; background: #fff; opacity: 0; }
+  .pacote[aria-checked="true"] .marca span { opacity: 1; }
+  .pacote-conteudo { flex: 1 1 auto; min-width: 0; }
+  .pacote-nome { display: block; font-size: 15.5px; font-weight: 700; }
+  .pacote-detalhe { display: block; font-size: 12.5px; color: #6B6860; margin-top: 3px; }
+
+  .meios { display: flex; gap: 12px; margin-top: 20px; }
+  .btn-grande {
+    background: #3A5C4F; color: #fff; border: none; border-radius: 12px; width: 100%;
+    padding: 15px 18px; font-size: 15.5px; font-weight: 700; cursor: pointer;
+  }
+  .btn-grande:disabled { background: #C6C1B8; cursor: default; }
+  .btn-secundario { background: #fff; color: #3A5C4F; border: 2px solid #3A5C4F; }
+  .btn-secundario:disabled { color: #C6C1B8; border-color: #E8E4DD; background: #fff; }
+  .link-discreto { background: none; border: none; padding: 4px 0; font: inherit; font-size: 13px; color: #6B6860; text-decoration: underline; cursor: pointer; }
+  .link-discreto:focus-visible { outline: 3px solid #3A5C4F; outline-offset: 2px; }
+
+  .resumo { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; background: #F0F4F8; border-radius: 14px; padding: 14px 16px; margin-bottom: 6px; }
+  .resumo-nome { font-size: 15px; font-weight: 700; }
+  .resumo-preco { font-size: 17px; font-weight: 800; color: #3A5C4F; white-space: nowrap; }
+
+  /* ─── Pix ─── */
+  .pix { text-align: center; margin-top: 18px; }
+  .pix img { width: 220px; height: 220px; border-radius: 12px; border: 1px solid #E8E4DD; background: #fff; }
+  .pix-codigo { width: 100%; font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; padding: 10px 12px; border: 2px solid #E8E4DD; border-radius: 10px; resize: none; color: #302C28; background: #FAFBFC; margin-top: 14px; }
+  .pix-espera { margin-top: 16px; font-size: 13.5px; color: #6B6860; }
+  .pix-espera b { color: #3A5C4F; }
+  .pulso { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #3A5C4F; margin-right: 6px; animation: pulso 1.2s infinite; }
+  @keyframes pulso { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .pulso { animation: none; } }
+
+  /* ─── Cartão ─── */
+  .campos { display: flex; flex-direction: column; gap: 14px; margin-top: 20px; }
+  .linha { display: flex; gap: 12px; }
+  .linha > * { flex: 1 1 0; min-width: 0; }
+  .rotulo { display: block; font-size: 12.5px; font-weight: 700; margin-bottom: 6px; }
+  .entrada, .campo-mp { width: 100%; padding: 12px 14px; font: inherit; font-size: 15px; border: 2px solid #E8E4DD; border-radius: 10px; background: #fff; color: inherit; }
+  .entrada:focus { outline: none; border-color: #3A5C4F; }
+  .campo-mp { height: 48px; padding: 0 12px; display: flex; align-items: center; }
+  .campo-mp iframe { width: 100%; height: 100%; border: 0; }
+  .selo-seguro { display: flex; align-items: center; gap: 8px; margin-top: 16px; font-size: 12.5px; color: #6B6860; }
+
+  .erro { background: #FCEBEA; color: #C0392B; padding: 12px 14px; border-radius: 10px; font-size: 13.5px; margin-bottom: 20px; display: none; }
+  .aviso-sem-token { text-align: center; padding: 20px 0; }
+  .aviso-sem-token p { color: #6B6860; font-size: 14.5px; }
+  .nota { font-size: 12px; color: #A5A19A; margin-top: 20px; line-height: 1.6; }
+  .carregando-tela { text-align: center; padding: 60px 0; color: #6B6860; }
+  .sucesso { text-align: center; padding: 10px 0 4px; }
+  .sucesso .marca-ok { font-size: 42px; line-height: 1; }
+</style>
+</head>
+<body>
+<div class="card" id="card">
+  <div class="carregando-tela">Carregando…</div>
+</div>
+
+<script src="https://sdk.mercadopago.com/js/v2"></script>
+<script>
+  const SUPABASE_URL = 'https://iahtyvqjgukdgrftpyxm.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_GEYLOEfzFHU0zkdpJCNDVw_cVbO_rS6';
+  const FUNCAO_URL = SUPABASE_URL + '/functions/v1/mercadopago-criar-recarga';
+  const CHAVE_SESSAO = 'drsig.sessao-recarga';
+  const card = document.getElementById('card');
+
+  // ─── Como se chega aqui ─────────────────────────────────────────────
+  //
+  // Só por e-mail. O app não mostra preço nem abre pagamento (política do
+  // Google Play para bens digitais — crédito de IA gasto no app é um);
+  // ele manda o link, com um token de uso único, e esta página faz o
+  // resto. O token só vira sessão depois de um clique de verdade: scanner
+  // de e-mail abre todo link que chega, e queimaria o token antes da
+  // pessoa. A sessão fica guardada por uma hora neste navegador, para dar
+  // para voltar e comparar sem pedir outro e-mail.
+  const params = new URLSearchParams(window.location.search);
+  const tokenHash = params.get('token_hash');
+  let accessToken = null;
+
+  function guardarSessao(token, expiraEmSegundos) {
+    try {
+      const validade = Date.now() + (Number(expiraEmSegundos) || 3600) * 1000;
+      localStorage.setItem(CHAVE_SESSAO, JSON.stringify({ token: token, validade: validade }));
+    } catch (_) {}
+  }
+
+  function lerSessaoGuardada() {
+    try {
+      const bruto = localStorage.getItem(CHAVE_SESSAO);
+      if (!bruto) return null;
+      const dados = JSON.parse(bruto);
+      if (!dados || !dados.token || dados.validade < Date.now() + 60000) {
+        localStorage.removeItem(CHAVE_SESSAO);
+        return null;
+      }
+      return dados.token;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // Espelha, só para ilustrar, o preço da transcrição do servidor
+  // (_shared/precificacaoIA.ts × margemCobranca.ts × creditoDoPlano.ts):
+  // US$ 0,23 por hora de áudio, cobrado em dobro, a R$ 5,08. O número que
+  // vale é o do servidor; este só dá uma ideia do que cada valor compra.
+  const REAIS_POR_HORA_DE_TRANSCRICAO = 0.23 * 2 * 5.08;
+
+  function horasQueCompra(valorBRL) {
+    const horas = valorBRL / REAIS_POR_HORA_DE_TRANSCRICAO;
+    return Math.floor(horas);
+  }
+
+  function reais(valor) {
+    return (Number(valor) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  }
+
+  let pacotes = [];          // vem do servidor
+  let saldoBrl = null;
+  let chavePublica = null;   // null = ainda não perguntamos; '' = não configurada
+  let pacoteEscolhido = null;
+  let pagamentoPixId = null;
+  let temporizadorPix = null;
+  let contagemPix = null;
+
+  function render(html) {
+    card.innerHTML = html;
+  }
+
+  function mostrarErro(msg) {
+    const el = document.getElementById('erro');
+    if (!el) return;
+    el.textContent = msg;
+    el.style.display = 'block';
+    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+
+  async function chamarFuncao(corpo) {
+    const resp = await fetch(FUNCAO_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + accessToken,
+        apikey: SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify(corpo),
+    });
+    const dados = await resp.json().catch(function () { return {}; });
+    if (!resp.ok) throw new Error(dados.error || 'Não foi possível concluir. Tente de novo.');
+    return dados;
+  }
+
+  function pararDeEsperarPix() {
+    if (temporizadorPix) clearInterval(temporizadorPix);
+    if (contagemPix) clearInterval(contagemPix);
+    temporizadorPix = null;
+    contagemPix = null;
+  }
+
+  function renderSemToken() {
+    render(
+      '<h1>Este link expirou</h1>' +
+      '<div class="aviso-sem-token">' +
+      '<p>O link já foi usado ou não vale mais. Para receber um link novo, abra o app Dr.Sig, vá em ' +
+      '<strong>Meu Perfil &rsaquo; Créditos de IA</strong> e toque em <strong>Receber o link de recarga por e-mail</strong>.</p>' +
+      '</div>' +
+      '<p class="nota"><a href="mailto:drsig@drsig.com.br">drsig@drsig.com.br</a></p>'
+    );
+  }
+
+  function renderTrocaDeToken() {
+    render(
+      '<h1>Recarregar créditos de IA</h1>' +
+      '<p class="lede">Confirme que é você para continuar.</p>' +
+      '<div class="erro" id="erro"></div>' +
+      '<button class="btn-grande" id="btn-entrar">Continuar</button>' +
+      '<p class="nota">Este link vale por 1 hora e só pode ser usado uma vez. Depois de entrar, ' +
+      'esta página continua aberta neste navegador durante esse período.</p>'
+    );
+
+    document.getElementById('btn-entrar').addEventListener('click', async function () {
+      const btn = document.getElementById('btn-entrar');
+      btn.disabled = true;
+      btn.textContent = 'Entrando…';
+      try {
+        const resp = await fetch(SUPABASE_URL + '/auth/v1/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
+          body: JSON.stringify({ type: 'magiclink', token_hash: tokenHash }),
+        });
+        const dados = await resp.json();
+        if (!resp.ok || !dados.access_token) {
+          throw new Error('Este link já foi usado ou expirou. Peça outro pelo app, em Meu Perfil › Créditos de IA.');
+        }
+        accessToken = dados.access_token;
+        guardarSessao(dados.access_token, dados.expires_in);
+        entrar();
+      } catch (err) {
+        mostrarErro(err.message || 'Não foi possível continuar. Tente de novo.');
+        btn.disabled = false;
+        btn.textContent = 'Tentar de novo';
+      }
+    });
+  }
+
+  async function entrar() {
+    render('<div class="carregando-tela">Carregando…</div>');
+    try {
+      const r = await chamarFuncao({ acao: 'chave' });
+      chavePublica = r.publicKey || '';
+      pacotes = r.pacotes || [];
+      saldoBrl = r.saldoBrl;
+      renderPacotes();
+    } catch (err) {
+      // Sessão guardada que o servidor não aceita mais: recomeça do link.
+      try { localStorage.removeItem(CHAVE_SESSAO); } catch (_) {}
+      renderSemToken();
+    }
+  }
+
+  function renderPacotes() {
+    pararDeEsperarPix();
+    const cartoes = pacotes.map(function (valor) {
+      const horas = horasQueCompra(valor);
+      return (
+        '<button type="button" class="pacote" role="radio" aria-checked="false" data-valor="' + valor + '">' +
+        '<span class="marca" aria-hidden="true"><span></span></span>' +
+        '<span class="pacote-conteudo">' +
+        '<span class="pacote-nome">' + reais(valor) + ' em créditos</span>' +
+        '<span class="pacote-detalhe">Dá para cerca de ' + horas + ' horas de transcrição, ou muitos relatórios e buscas.</span>' +
+        '</span>' +
+        '</button>'
+      );
+    }).join('');
+
+    render(
+      '<h1>Recarregar créditos de IA</h1>' +
+      '<p class="lede">O crédito entra na sua conta assim que o pagamento é confirmado, e não mexe na assinatura.</p>' +
+      '<div class="saldo"><span class="saldo-rotulo">Saldo atual</span><span class="saldo-valor">' + reais(saldoBrl) + '</span></div>' +
+      '<div class="erro" id="erro"></div>' +
+      '<div class="pacotes" role="radiogroup" aria-label="Valor da recarga">' + cartoes + '</div>' +
+      '<div class="meios">' +
+      '<button class="btn-grande" id="btn-pix" disabled>Pagar com Pix</button>' +
+      '<button class="btn-grande btn-secundario" id="btn-cartao" disabled>Cartão</button>' +
+      '</div>' +
+      '<p class="nota">Pagamento processado pelo Mercado Pago, sem precisar de conta lá. Pix confirma em segundos; ' +
+      'cartão de crédito, na hora. Créditos não expiram enquanto a conta existir.</p>'
+    );
+
+    const btnPix = document.getElementById('btn-pix');
+    const btnCartao = document.getElementById('btn-cartao');
+
+    document.querySelectorAll('[data-valor]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        pacoteEscolhido = Number(el.getAttribute('data-valor'));
+        document.querySelectorAll('[data-valor]').forEach(function (outro) {
+          outro.setAttribute('aria-checked', String(outro === el));
+        });
+        btnPix.disabled = false;
+        btnCartao.disabled = false;
+        btnPix.textContent = 'Pix — ' + reais(pacoteEscolhido);
+        btnCartao.textContent = 'Cartão — ' + reais(pacoteEscolhido);
+      });
+    });
+
+    btnPix.addEventListener('click', function () { if (pacoteEscolhido) gerarPix(btnPix); });
+    btnCartao.addEventListener('click', function () { if (pacoteEscolhido) renderCartao(); });
+
+    if (pacoteEscolhido) {
+      const anterior = document.querySelector('[data-valor="' + pacoteEscolhido + '"]');
+      if (anterior) anterior.click();
+    }
+  }
+
+  // ─── Pix ────────────────────────────────────────────────────────────
+  async function gerarPix(botao) {
+    botao.disabled = true;
+    const rotulo = botao.textContent;
+    botao.textContent = 'Gerando o Pix…';
+    try {
+      const r = await chamarFuncao({ acao: 'pix', valorBRL: pacoteEscolhido });
+      pagamentoPixId = r.pagamentoId;
+      renderPix(r);
+    } catch (err) {
+      mostrarErro(err.message || 'Não foi possível gerar o Pix. Tente de novo.');
+      botao.disabled = false;
+      botao.textContent = rotulo;
+    }
+  }
+
+  function renderPix(pix) {
+    render(
+      '<h1>Pague com Pix</h1>' +
+      '<div class="resumo"><span class="resumo-nome">Recarga de créditos</span>' +
+      '<span class="resumo-preco">' + reais(pix.valorBRL) + '</span></div>' +
+      '<button type="button" class="link-discreto" id="btn-voltar">Trocar o valor ou pagar com cartão</button>' +
+      '<div class="erro" id="erro" style="margin-top:16px;"></div>' +
+      '<div class="pix">' +
+      '<img alt="QR Code do Pix" src="data:image/png;base64,' + pix.qrCodeBase64 + '" />' +
+      '<textarea class="pix-codigo" id="pix-codigo" rows="4" readonly aria-label="Código Pix copia e cola">' + pix.qrCode + '</textarea>' +
+      '<button class="btn-grande btn-secundario" id="btn-copiar" style="margin-top:10px;">Copiar código Pix</button>' +
+      '<p class="pix-espera"><span class="pulso" aria-hidden="true"></span>Esperando o pagamento… ' +
+      'Assim que o banco confirmar, esta tela muda sozinha. <b id="pix-vence"></b></p>' +
+      '</div>' +
+      '<p class="nota">Abra o app do seu banco, escolha pagar com Pix e leia o QR Code — ou cole o código copiado. ' +
+      'O Pix vale por 30 minutos.</p>'
+    );
+
+    document.getElementById('btn-voltar').addEventListener('click', renderPacotes);
+
+    document.getElementById('btn-copiar').addEventListener('click', async function () {
+      const btn = document.getElementById('btn-copiar');
+      const campo = document.getElementById('pix-codigo');
+      try {
+        await navigator.clipboard.writeText(campo.value);
+      } catch (_) {
+        campo.select();
+        document.execCommand('copy');
+      }
+      btn.textContent = 'Copiado!';
+      setTimeout(function () { btn.textContent = 'Copiar código Pix'; }, 2000);
+    });
+
+    // Contagem regressiva a partir do vencimento que o servidor devolveu.
+    const vence = pix.expiraEm ? new Date(pix.expiraEm).getTime() : Date.now() + 30 * 60000;
+    const elVence = document.getElementById('pix-vence');
+    function atualizarContagem() {
+      const resta = Math.max(0, Math.floor((vence - Date.now()) / 1000));
+      const m = Math.floor(resta / 60);
+      const s = resta % 60;
+      elVence.textContent = resta > 0 ? 'Vence em ' + m + ':' + (s < 10 ? '0' : '') + s + '.' : 'Este Pix venceu.';
+      if (resta <= 0) {
+        pararDeEsperarPix();
+        mostrarErro('Este Pix venceu sem pagamento. Gere outro para continuar.');
+      }
+    }
+    atualizarContagem();
+    contagemPix = setInterval(atualizarContagem, 1000);
+
+    // A cada 4 s pergunta ao servidor; quem credita é ele, na hora em que
+    // vê o pagamento aprovado — sem depender do webhook chegar.
+    temporizadorPix = setInterval(async function () {
+      try {
+        const r = await chamarFuncao({ acao: 'situacao', pagamentoId: pagamentoPixId });
+        if (r.status === 'approved') {
+          pararDeEsperarPix();
+          renderSucesso(pix.valorBRL, r.saldoBrl);
+        } else if (r.status === 'cancelled' || r.status === 'rejected') {
+          pararDeEsperarPix();
+          mostrarErro('Este Pix foi cancelado. Gere outro para continuar.');
+        }
+      } catch (_) {
+        // Uma consulta perdida não é motivo para parar de perguntar.
+      }
+    }, 4000);
+  }
+
+  // ─── Cartão ─────────────────────────────────────────────────────────
+  //
+  // Os três campos sensíveis são iframes do Mercado Pago: o que a pessoa
+  // digita neles nunca entra nesta página nem chega ao nosso servidor.
+  function renderCartao() {
+    pararDeEsperarPix();
+    if (!chavePublica) {
+      renderPacotes();
+      mostrarErro('O pagamento com cartão não está disponível agora. Pague com Pix.');
+      return;
+    }
+    const valor = pacoteEscolhido;
+    render(
+      '<h1>Dados do cartão</h1>' +
+      '<div class="resumo"><span class="resumo-nome">Recarga de créditos</span>' +
+      '<span class="resumo-preco">' + reais(valor) + '</span></div>' +
+      '<button type="button" class="link-discreto" id="btn-voltar">Trocar o valor ou pagar com Pix</button>' +
+      '<div class="erro" id="erro" style="margin-top:16px;"></div>' +
+      '<div class="campos">' +
+      '<div><label class="rotulo" for="mp-numero">Número do cartão</label>' +
+      '<div class="campo-mp" id="mp-numero"></div></div>' +
+      '<div class="linha">' +
+      '<div><label class="rotulo" for="mp-validade">Validade</label>' +
+      '<div class="campo-mp" id="mp-validade"></div></div>' +
+      '<div><label class="rotulo" for="mp-cvv">Código de segurança</label>' +
+      '<div class="campo-mp" id="mp-cvv"></div></div>' +
+      '</div>' +
+      '<div><label class="rotulo" for="titular">Nome como está no cartão</label>' +
+      '<input class="entrada" id="titular" autocomplete="cc-name" placeholder="MARIA S SILVA" /></div>' +
+      '<div><label class="rotulo" for="cpf">CPF do titular do cartão</label>' +
+      '<input class="entrada" id="cpf" inputmode="numeric" placeholder="000.000.000-00" /></div>' +
+      '</div>' +
+      '<button class="btn-grande" id="btn-pagar" style="margin-top:20px;">Pagar ' + reais(valor) + '</button>' +
+      '<div class="selo-seguro">🔒 Os dados do cartão vão direto para o Mercado Pago. ' +
+      'O Dr.Sig não recebe nem guarda o número do seu cartão.</div>' +
+      '<p class="nota">Cobrança única, à vista. Na fatura aparece como MP *DRSIG.</p>'
+    );
+
+    document.getElementById('btn-voltar').addEventListener('click', renderPacotes);
+
+    // Preenchimento automático do Android dentro dos iframes do Mercado
+    // Pago: a página de fora precisa delegar `shared-autofill` em cada
+    // iframe no instante em que ele aparece (mesmo motivo da página de
+    // planos — sem isto o número vinha preenchido e a validade não).
+    const observador = new MutationObserver(function (mutacoes) {
+      mutacoes.forEach(function (m) {
+        Array.prototype.forEach.call(m.addedNodes, function (no) {
+          if (no.tagName === 'IFRAME' && !no.getAttribute('allow')) {
+            no.setAttribute('allow', 'shared-autofill');
+          }
+        });
+      });
+    });
+    document.querySelectorAll('.campo-mp').forEach(function (caixa) {
+      observador.observe(caixa, { childList: true });
+    });
+
+    const mp = new MercadoPago(chavePublica, { locale: 'pt-BR' });
+    const estilo = { placeholderColor: '#A5A19A', fontSize: '15px', color: '#302C28' };
+    const numero = mp.fields.create('cardNumber', { placeholder: '0000 0000 0000 0000', style: estilo }).mount('mp-numero');
+    mp.fields.create('expirationDate', { placeholder: 'MM/AA', style: estilo }).mount('mp-validade');
+    mp.fields.create('securityCode', { placeholder: 'CVV', style: estilo }).mount('mp-cvv');
+
+    // Um pagamento avulso precisa dizer a bandeira (`payment_method_id`) —
+    // a assinatura não precisa, o cartão avulso sim. O Mercado Pago a
+    // descobre pelos primeiros dígitos, que o iframe avisa ao mudar.
+    let meioDePagamento = null;
+    numero.on('binChange', async function (dados) {
+      meioDePagamento = null;
+      if (!dados || !dados.bin) return;
+      try {
+        const r = await mp.getPaymentMethods({ bin: dados.bin });
+        const encontrado = r && r.results && r.results[0];
+        if (encontrado) {
+          meioDePagamento = { id: encontrado.id, issuerId: encontrado.issuer && encontrado.issuer.id };
+        }
+      } catch (_) {}
+    });
+
+    const campoCpf = document.getElementById('cpf');
+    campoCpf.addEventListener('input', function () {
+      const so = campoCpf.value.replace(/\D/g, '').slice(0, 11);
+      campoCpf.value = so
+        .replace(/^(\d{3})(\d)/, '$1.$2')
+        .replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
+        .replace(/\.(\d{3})(\d{1,2})$/, '.$1-$2');
+    });
+
+    document.getElementById('btn-pagar').addEventListener('click', function () {
+      pagarComCartao(mp, valor, function () { return meioDePagamento; });
+    });
+  }
+
+  function mensagemDoErroDeCartao(err) {
+    const porCampo = [
+      { chave: 'cardnumber', texto: 'Confira o número do cartão.' },
+      { chave: 'expiration', texto: 'Confira a validade do cartão.' },
+      { chave: 'securitycode', texto: 'Confira o código de segurança (CVV).' },
+      { chave: 'cardholdername', texto: 'Confira o nome como está impresso no cartão.' },
+      { chave: 'identification', texto: 'Confira o CPF do titular do cartão.' },
+    ];
+    const lista = (err && err.length && err[0]) ? err : (err && err.cause && err.cause.length ? err.cause : null);
+    if (lista && lista.length) {
+      const vistos = [];
+      lista.forEach(function (item) {
+        const texto = String((item && (item.message || item.description)) || '').toLowerCase();
+        porCampo.forEach(function (campo) {
+          if (texto.indexOf(campo.chave) !== -1 && vistos.indexOf(campo.texto) === -1) vistos.push(campo.texto);
+        });
+      });
+      if (vistos.length) return vistos.join(' ');
+    }
+    return (err && err.message) || 'Não foi possível confirmar. Confira os dados do cartão.';
+  }
+
+  async function pagarComCartao(mp, valor, lerMeio) {
+    const botao = document.getElementById('btn-pagar');
+    const titular = document.getElementById('titular').value.trim();
+    const cpf = document.getElementById('cpf').value.replace(/\D/g, '');
+
+    if (!titular) { mostrarErro('Informe o nome como está impresso no cartão.'); return; }
+    if (cpf.length !== 11) { mostrarErro('O CPF do titular precisa ter 11 dígitos.'); return; }
+    const meio = lerMeio();
+    if (!meio) { mostrarErro('Confira o número do cartão.'); return; }
+
+    botao.disabled = true;
+    botao.textContent = 'Confirmando…';
+    try {
+      const token = await mp.fields.createCardToken({
+        cardholderName: titular,
+        identificationType: 'CPF',
+        identificationNumber: cpf,
+      });
+      if (!token || !token.id) throw new Error('Confira os dados do cartão e tente de novo.');
+
+      const r = await chamarFuncao({
+        acao: 'cartao',
+        valorBRL: valor,
+        cardTokenId: token.id,
+        paymentMethodId: meio.id,
+        issuerId: meio.issuerId || null,
+        cpf: cpf,
+      });
+      if (r.status === 'approved') {
+        renderSucesso(valor, r.saldoBrl);
+      } else {
+        // `in_process`/`pending`: o banco ainda está analisando. O crédito
+        // entra pelo webhook quando aprovar.
+        renderEmAnalise(valor);
+      }
+    } catch (err) {
+      mostrarErro(mensagemDoErroDeCartao(err));
+      botao.disabled = false;
+      botao.textContent = 'Pagar ' + reais(valor);
+    }
+  }
+
+  function renderSucesso(valor, saldoNovo) {
+    render(
+      '<div class="sucesso"><div class="marca-ok">✅</div>' +
+      '<h1>' + reais(valor) + ' adicionados</h1>' +
+      '<p class="lede">Seu saldo de créditos de IA agora é <strong>' + reais(saldoNovo) + '</strong>. ' +
+      'Abra o app Dr.Sig: transcrição, relatórios e Busca já estão liberados.</p></div>' +
+      '<p class="nota">Se o saldo no app não atualizar, feche e abra Meu Perfil de novo. Qualquer coisa, ' +
+      '<a href="mailto:drsig@drsig.com.br">drsig@drsig.com.br</a>.</p>'
+    );
+    try { localStorage.removeItem(CHAVE_SESSAO); } catch (_) {}
+  }
+
+  function renderEmAnalise(valor) {
+    render(
+      '<div class="sucesso"><div class="marca-ok">⏳</div>' +
+      '<h1>Pagamento em análise</h1>' +
+      '<p class="lede">O banco ainda está confirmando a cobrança de ' + reais(valor) + '. Assim que aprovar — ' +
+      'costuma levar poucos minutos — o crédito entra na sua conta sozinho.</p></div>' +
+      '<p class="nota">Se em uma hora nada mudar, escreva para <a href="mailto:drsig@drsig.com.br">drsig@drsig.com.br</a>.</p>'
+    );
+    try { localStorage.removeItem(CHAVE_SESSAO); } catch (_) {}
+  }
+
+  const sessaoGuardada = lerSessaoGuardada();
+  if (sessaoGuardada) {
+    accessToken = sessaoGuardada;
+    entrar();
+  } else if (tokenHash) {
+    renderTrocaDeToken();
+  } else {
+    renderSemToken();
+  }
+</script>
+</body>
+</html>

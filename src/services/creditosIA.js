@@ -23,27 +23,11 @@ export const PLANO_LABEL = {
   anual: 'Anual',
 };
 
-// Espelha VALORES_PERMITIDOS_BRL de supabase/functions/mercadopago-criar-checkout-creditos
-// — só pra montar as opções no app; a validação de verdade é sempre no
-// servidor, não confia em nada que vier do cliente.
-export const PACOTES_CREDITO_AVULSO_BRL = [20, 50, 100];
-
-/** Pede um link de checkout do Mercado Pago pra recarga avulsa de créditos
- * de IA — o usuário abre esse link (Linking.openURL) pra pagar. */
-export async function criarCheckoutCreditos(valorBRL) {
-  const { data, error } = await supabase.functions.invoke('mercadopago-criar-checkout-creditos', {
-    body: { valorBRL },
-  });
-  if (error) {
-    let mensagem = error.message;
-    try {
-      const corpo = await error.context?.json();
-      if (corpo?.error) mensagem = corpo.error;
-    } catch (_) {}
-    throw new Error(mensagem);
-  }
-  return data?.initPoint;
-}
+// Recarga avulsa: não há preço nem link aqui de propósito. Crédito de IA
+// gasto dentro do app é bem digital, e a política de pagamentos do Google
+// Play alcança isso tanto quanto a assinatura. A recarga chega pelo mesmo
+// caminho do plano — e-mail com link para a nossa página — em
+// services/assinatura.js (reenviarInstrucoesDePlano('creditos')).
 
 export function usdParaBRL(valorUSD) {
   return (valorUSD || 0) * TAXA_REFERENCIA_USD_BRL;

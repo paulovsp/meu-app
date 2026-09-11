@@ -72,7 +72,8 @@ export const PASSOS_DEMONSTRACAO = [
       'Em vez de abrir ficha por ficha, você pergunta. "Em que sessões a Anna O. falou do pai?" '
       + 'ou "o que mudou no Pequeno Hans desde junho?".\n\n'
       + 'A busca lê os registros dos analisantes que você selecionar e responde citando as '
-      + 'sessões. Aqui na demonstração ela está desligada — é o recurso que consome crédito de IA.',
+      + 'sessões. Na demonstração ela fica desligada — é o recurso que consome crédito de IA, '
+      + 'e a conta de demonstração não gasta.',
   },
   {
     rota: 'Relatorios',

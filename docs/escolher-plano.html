@@ -196,6 +196,55 @@
   let chavePublica = null;   // null = ainda não perguntamos; '' = não configurada
   let camposCartao = null;   // os iframes do Mercado Pago, quando montados
 
+  const NOME_DO_PLANO = { mensal: 'Mensal', semestral: 'Semestral', anual: 'Anual' };
+
+  function dataBR(iso) {
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? '' : d.toLocaleDateString('pt-BR');
+  }
+
+  // ─── Quem já assina não assina de novo ──────────────────────────────
+  //
+  // O link do e-mail vale para qualquer conta, e a sessão fica guardada
+  // por uma hora. Quem já tinha plano e voltava aqui conseguia criar uma
+  // SEGUNDA recorrência — a antiga sumia do perfil e seguia cobrando o
+  // cartão. O servidor recusa isso agora; esta tela explica antes.
+  async function entrar() {
+    render('<div class="carregando-tela">Carregando…</div>');
+    try {
+      const r = await chamarFuncao({ acao: 'chave' });
+      chavePublica = r.publicKey || '';
+      const s = r.situacao || {};
+      if (s.renovaSozinha || s.gratuitaPorIndicacoes) {
+        renderJaAssina(s);
+        return;
+      }
+    } catch (_) {
+      // Sem resposta, a lista de planos abre do mesmo jeito: se a conta já
+      // assinar, o servidor recusa na hora de pagar, com a mesma explicação.
+    }
+    renderPlanos();
+  }
+
+  function renderJaAssina(s) {
+    const gratuita = !!s.gratuitaPorIndicacoes;
+    const nome = NOME_DO_PLANO[s.plano] || s.plano || '';
+    const ate = s.expiraEm ? dataBR(s.expiraEm) : '';
+    render(
+      '<div class="sucesso"><div class="marca-ok">✅</div>' +
+      '<h1>' + (gratuita ? 'Seu acesso é gratuito' : 'Você já tem um plano ativo') + '</h1>' +
+      '<p class="lede">' +
+      (gratuita
+        ? 'Suas indicações cobrem o Dr.Sig inteiro — não há o que assinar. Se o número de ' +
+          'indicações ativas cair, o app avisa com antecedência.'
+        : 'O plano ' + nome + ' está valendo e renova sozinho' + (ate ? ' — a próxima cobrança é em ' + ate : '') +
+          '. Para trocar de plano, cancele o atual no app, em <strong>Meu Perfil &rsaquo; Seu plano</strong>, ' +
+          'e volte aqui: o acesso continua até o fim do período já pago, e nada é apagado.') +
+      '</p></div>' +
+      '<p class="nota">Qualquer dúvida, <a href="mailto:drsig@drsig.com.br">drsig@drsig.com.br</a>.</p>'
+    );
+  }
+
   function planoPorId(id) {
     return PLANOS.filter(function (p) { return p.id === id; })[0];
   }
@@ -268,7 +317,7 @@
         }
         accessToken = dados.access_token;
         guardarSessao(dados.access_token, dados.expires_in);
-        renderPlanos();
+        entrar();
       } catch (err) {
         mostrarErro(err.message || 'Não foi possível continuar. Tente de novo.');
         btn.disabled = false;
@@ -556,10 +605,10 @@
     // Chegou de confirmar-cadastro.html: guarda pra sobreviver a idas e
     // vindas. O token do Supabase dura 1 hora.
     guardarSessao(accessToken, 3600);
-    renderPlanos();
+    entrar();
   } else if (sessaoGuardada) {
     accessToken = sessaoGuardada;
-    renderPlanos();
+    entrar();
   } else if (tokenHash) {
     renderTrocaDeToken();
   } else {

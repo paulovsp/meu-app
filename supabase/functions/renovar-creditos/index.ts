@@ -70,14 +70,22 @@ Deno.serve(async (req) => {
       return json({ renovado: false, motivo: 'sem_plano', saldoAtual: Number(perfil.creditos_ia) });
     }
 
-    // Assinatura vencida ou cancelada não gera crédito novo. Sem isto, quem
-    // parasse de pagar seguiria ganhando o brinde todo mês, pra sempre.
+    // Só quem tem acesso valendo ganha crédito novo. Sem isto, quem parasse
+    // de pagar seguiria ganhando o brinde todo mês, pra sempre.
+    //
+    // "Acesso valendo" é a mesma regra de `assinatura_ativa`, e inclui a
+    // assinatura CANCELADA dentro do período pago: quem pagou seis meses e
+    // cancelou no segundo tem quatro meses de crédito prometido pela
+    // frente — o que foi pago está pago, inteiro. E inclui a conta
+    // gratuita por indicações, que tem o plano completo, crédito junto.
     const vencida = perfil.assinatura_expira_em
       && new Date(perfil.assinatura_expira_em as string).getTime() < Date.now();
-    if (perfil.assinatura_status !== 'ativa' && perfil.assinatura_status !== 'cortesia') {
+    const status = String(perfil.assinatura_status || '');
+    const gratuitaPorIndicacoes = status === 'gratuita_indicacao';
+    if (!gratuitaPorIndicacoes && !['ativa', 'cortesia', 'cancelada'].includes(status)) {
       return json({ renovado: false, motivo: 'assinatura_inativa', saldoAtual: Number(perfil.creditos_ia) });
     }
-    if (vencida) {
+    if (!gratuitaPorIndicacoes && vencida) {
       return json({ renovado: false, motivo: 'assinatura_vencida', saldoAtual: Number(perfil.creditos_ia) });
     }
 

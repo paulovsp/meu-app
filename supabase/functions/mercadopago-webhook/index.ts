@@ -55,6 +55,7 @@ import {
   sincronizarPreapproval,
 } from '../_shared/assinaturaMercadoPago.ts';
 import { atualizarQuemIndicou } from '../_shared/indicacoes.ts';
+import { creditarRecarga, userIdDaReferencia } from '../_shared/recargaCreditos.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -62,11 +63,6 @@ const MP_ACCESS_TOKEN = Deno.env.get('MERCADOPAGO_ACCESS_TOKEN')!;
 const MP_WEBHOOK_SECRET = Deno.env.get('MERCADOPAGO_WEBHOOK_SECRET')!;
 
 const GRACA_INADIMPLENCIA_DIAS = 7;
-
-// Só converte o valor pago (BRL) no saldo interno (US$) da recarga avulsa
-// de créditos. O brinde da assinatura NÃO usa isto — ele tem valor
-// próprio, em _shared/creditoDoPlano.ts.
-const TAXA_REFERENCIA_USD_BRL = 5.08;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -239,41 +235,23 @@ Deno.serve(async (req) => {
         return json({ ok: true, ignoradoPorSerDaAssinatura: true });
       }
 
-      if (referencia.startsWith('creditos:')) {
-        const userIdCreditos = referencia.slice('creditos:'.length);
-        if (pagamento.status === 'approved' && userIdCreditos) {
-          const { data: perfil } = await supabaseAdmin
-            .from('profiles')
-            .select('creditos_ia')
-            .eq('id', userIdCreditos)
-            .maybeSingle();
-          if (perfil) {
-            const creditoUsd = (Number(pagamento.transaction_amount) || 0) / TAXA_REFERENCIA_USD_BRL;
-            await supabaseAdmin
-              .from('profiles')
-              .update({ creditos_ia: Number(perfil.creditos_ia) + creditoUsd })
-              .eq('id', userIdCreditos);
-            await supabaseAdmin.from('uso_ia').insert({
-              user_id: userIdCreditos,
-              tipo: 'recarga_avulsa',
-              provedor: 'sistema',
-              modelo: 'creditos_mercadopago',
-              unidades: null,
-              custo_estimado: -creditoUsd,
-            });
-          } else {
-            await registrarNaoIdentificado(supabaseAdmin, {
-              mp_id: recursoId,
-              tipo,
-              valor: Number(pagamento.transaction_amount) || null,
-              status: pagamento.status ?? null,
-              email_pagador: pagamento?.payer?.email ?? null,
-              motivo: `recarga de créditos para uma conta que não existe (${userIdCreditos})`,
-            });
-          }
+      if (userIdDaReferencia(referencia)) {
+        // Idempotente pelo PAGAMENTO (tabela recargas_creditos), não só
+        // pela notificação: a página de recarga já pode ter creditado, e
+        // `payment.created`/`payment.updated` chegam com ids diferentes.
+        const resultado = await creditarRecarga(supabaseAdmin, pagamento);
+        if (!resultado.creditado && resultado.motivo === 'conta_inexistente') {
+          await registrarNaoIdentificado(supabaseAdmin, {
+            mp_id: recursoId,
+            tipo,
+            valor: Number(pagamento.transaction_amount) || null,
+            status: pagamento.status ?? null,
+            email_pagador: pagamento?.payer?.email ?? null,
+            motivo: `recarga de créditos para uma conta que não existe (${resultado.userId})`,
+          });
         }
         await marcarProcessado();
-        return json({ ok: true, recargaCreditos: true });
+        return json({ ok: true, recargaCreditos: true, ...resultado });
       }
 
       // Dinheiro que chegou sem dizer de quem é. Não se adivinha: registra,

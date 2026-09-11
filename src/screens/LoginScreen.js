@@ -11,6 +11,7 @@ import { supabase } from '../services/supabase';
 import { loginBiometricoEstaAtivo, obterEmailBiometrico, entrarComBiometria } from '../services/biometria';
 import { solicitarRedefinicaoSenha } from '../services/conta';
 import { mensagemDeErro } from '../services/erros';
+import { CONTA_DEMONSTRACAO, AVISO_DEMONSTRACAO } from '../services/demonstracao';
 
 const COLORS = {
   bg: '#F7F5F0',
@@ -42,6 +43,30 @@ function HeaderWave() {
 }
 
 export default function LoginScreen({ navigation }) {
+  const [entrandoDemo, setEntrandoDemo] = useState(false);
+
+  async function entrarComoDemonstracao() {
+    setEntrandoDemo(true);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: CONTA_DEMONSTRACAO.email,
+        password: CONTA_DEMONSTRACAO.senha,
+      });
+      if (error) throw error;
+      // O aviso vem DEPOIS de entrar, e nao antes: quem toca no botao quer
+      // ver o app, nao ler um termo. O que importa saber — que e ficticio e
+      // que nada pode ser alterado — cabe numa tela so, ja la dentro.
+      Alert.alert('Consultório de demonstração', AVISO_DEMONSTRACAO);
+    } catch (e) {
+      Alert.alert(
+        'Não foi possível abrir a demonstração',
+        (e && e.message) || 'Tente de novo em instantes.'
+      );
+    } finally {
+      setEntrandoDemo(false);
+    }
+  }
+
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [mostrarSenha, setMostrarSenha] = useState(false);
@@ -210,6 +235,36 @@ export default function LoginScreen({ navigation }) {
           <TouchableOpacity style={s.linkCadastro} onPress={() => navigation.navigate('Cadastro')}>
             <Text style={s.linkCadastroTexto}>Ainda não tem conta? Criar conta</Text>
           </TouchableOpacity>
+
+          {/* Conhecer antes de decidir.
+
+              Quem avalia um app de prontuario nao quer ler sobre ele, quer
+              ver. Este botao entra no consultorio ficticio do Freud —
+              analisantes, supervisionandos, agenda cheia, sessoes
+              transcritas — sem pedir nada em troca.
+
+              A conta e somente leitura no banco (migration 0097), entao
+              nao ha o que uma visita possa estragar. */}
+          <View style={s.demoCaixa}>
+            <Text style={s.demoTitulo}>Quer ver o app funcionando primeiro?</Text>
+            <Text style={s.demoTexto}>
+              Entre no consultório de demonstração: um consultório fictício completo, com
+              analisantes, supervisionandos, agenda, registros de sessão e transcrições.
+              Sem cadastro, sem cartão.
+            </Text>
+            <TouchableOpacity
+              style={[s.demoBtn, entrandoDemo && { opacity: 0.7 }]}
+              onPress={entrarComoDemonstracao}
+              disabled={entrandoDemo || entrando}
+            >
+              <Text style={s.demoBtnTexto}>
+                {entrandoDemo ? 'Abrindo...' : 'Conhecer o app sem criar conta'}
+              </Text>
+            </TouchableOpacity>
+            <Text style={s.demoCredenciais}>
+              Se preferir entrar na mão: {CONTA_DEMONSTRACAO.email} · senha {CONTA_DEMONSTRACAO.senha}
+            </Text>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -317,6 +372,22 @@ const s = StyleSheet.create({
   },
   linkCadastro: { alignItems: 'center', marginTop: 20 },
   linkCadastroTexto: { color: COLORS.btnLight, fontSize: 14, fontWeight: '600', lineHeight: 20 },
+  demoCaixa: {
+    marginTop: 28, padding: 18, borderRadius: 14,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: 'rgba(255,255,255,0.07)',
+  },
+  demoTitulo: { color: '#FFFFFF', fontSize: 15, fontWeight: '700', lineHeight: 21 },
+  demoTexto: { color: 'rgba(255,255,255,0.82)', fontSize: 13, lineHeight: 19, marginTop: 6 },
+  demoBtn: {
+    marginTop: 14, borderRadius: 10, paddingVertical: 12, alignItems: 'center',
+    borderWidth: 1.5, borderColor: '#FFFFFF',
+  },
+  demoBtnTexto: { color: '#FFFFFF', fontSize: 14.5, fontWeight: '700', lineHeight: 20 },
+  demoCredenciais: {
+    color: 'rgba(255,255,255,0.62)', fontSize: 11.5, lineHeight: 17,
+    marginTop: 10, textAlign: 'center',
+  },
   linkEsqueci: { alignItems: 'flex-end', marginTop: 10 },
   linkEsqueciTexto: { color: COLORS.btnLight, fontSize: 13, fontWeight: '600', lineHeight: 19 },
   modalOverlay: {

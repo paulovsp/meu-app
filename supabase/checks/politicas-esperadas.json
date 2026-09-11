@@ -36,57 +36,8 @@
  },
  {
   "detalhe": "security definer",
-  "nome": "anon",
-  "objeto": "public.forcar_email_perfil_do_login()",
-  "regra": "",
-  "tipo": "execute"
- },
- {
-  "detalhe": "security definer",
-  "nome": "authenticated",
-  "objeto": "public.forcar_email_perfil_do_login()",
-  "regra": "",
-  "tipo": "execute"
- },
- {
-  "detalhe": "security definer",
-  "nome": "anon",
-  "objeto": "public.gravacao_autorizada(p_patient_id uuid)",
-  "regra": "",
-  "tipo": "execute"
- },
- {
-  "detalhe": "security definer",
   "nome": "authenticated",
   "objeto": "public.gravacao_autorizada(p_patient_id uuid)",
-  "regra": "",
-  "tipo": "execute"
- },
- {
-  "detalhe": "security definer",
-  "nome": "anon",
-  "objeto": "public.handle_new_user()",
-  "regra": "",
-  "tipo": "execute"
- },
- {
-  "detalhe": "security definer",
-  "nome": "authenticated",
-  "objeto": "public.handle_new_user()",
-  "regra": "",
-  "tipo": "execute"
- },
- {
-  "detalhe": "security definer",
-  "nome": "anon",
-  "objeto": "public.impedir_autocadastro_analisante()",
-  "regra": "",
-  "tipo": "execute"
- },
- {
-  "detalhe": "security definer",
-  "nome": "authenticated",
-  "objeto": "public.impedir_autocadastro_analisante()",
   "regra": "",
   "tipo": "execute"
  },
@@ -113,22 +64,8 @@
  },
  {
   "detalhe": "security definer",
-  "nome": "anon",
-  "objeto": "public.owns_patient(p_patient_id uuid)",
-  "regra": "",
-  "tipo": "execute"
- },
- {
-  "detalhe": "security definer",
   "nome": "authenticated",
   "objeto": "public.owns_patient(p_patient_id uuid)",
-  "regra": "",
-  "tipo": "execute"
- },
- {
-  "detalhe": "security definer",
-  "nome": "anon",
-  "objeto": "public.owns_session(p_session_id uuid)",
   "regra": "",
   "tipo": "execute"
  },

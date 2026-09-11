@@ -109,6 +109,83 @@ async function funilHoje(admin: Admin) {
   return { dia: hoje, linhas: linhas || [] };
 }
 
+const MP_ACCESS_TOKEN = Deno.env.get('MERCADOPAGO_ACCESS_TOKEN') || '';
+
+/** Receita e custo de um mês ('AAAA-MM'; vazio = mês corrente). */
+async function financeiro(admin: Admin, mes: string) {
+  const agora = new Date();
+  const [ano, m] = /^\d{4}-\d{2}$/.test(mes)
+    ? mes.split('-').map(Number)
+    : [agora.getUTCFullYear(), agora.getUTCMonth() + 1];
+  const inicio = new Date(Date.UTC(ano, m - 1, 1));
+  const fim = new Date(Date.UTC(ano, m, 1));
+  const iso = (d: Date) => d.toISOString();
+
+  // Mercado Pago: pagamentos aprovados no mês. A busca é paginada; um mês
+  // do Dr.Sig cabe em poucas páginas.
+  const receita = { assinaturas: 0, recargas: 0, outros: 0, pagamentos: 0, erro: null as string | null };
+  if (MP_ACCESS_TOKEN) {
+    let offset = 0;
+    for (let pagina = 0; pagina < 20; pagina++) {
+      const url = `https://api.mercadopago.com/v1/payments/search?sort=date_approved&criteria=desc&range=date_approved&begin_date=${iso(inicio)}&end_date=${iso(fim)}&status=approved&limit=50&offset=${offset}`;
+      const resp = await fetch(url, { headers: { Authorization: `Bearer ${MP_ACCESS_TOKEN}` } });
+      if (!resp.ok) { receita.erro = `Mercado Pago respondeu ${resp.status}`; break; }
+      const corpo = await resp.json();
+      const resultados: Array<{ transaction_amount?: number; external_reference?: string }> = corpo?.results || [];
+      for (const p of resultados) {
+        const valor = Number(p.transaction_amount) || 0;
+        const ref = String(p.external_reference || '');
+        if (ref.startsWith('assinatura:')) receita.assinaturas += valor;
+        else if (ref.startsWith('creditos:')) receita.recargas += valor;
+        else receita.outros += valor;
+        receita.pagamentos++;
+      }
+      if (resultados.length < 50) break;
+      offset += 50;
+    }
+  } else {
+    receita.erro = 'MERCADOPAGO_ACCESS_TOKEN ausente';
+  }
+
+  const { data: uso } = await admin
+    .from('uso_ia')
+    .select('tipo, provedor, custo_estimado')
+    .gte('criado_em', iso(inicio))
+    .lt('criado_em', iso(fim));
+  const porProvedor: Record<string, { cobradoUsd: number; linhas: number }> = {};
+  let creditosConcedidosUsd = 0;
+  for (const u of uso || []) {
+    const custo = Number(u.custo_estimado) || 0;
+    if (custo < 0) { creditosConcedidosUsd += -custo; continue; }
+    const chave = String(u.provedor || 'desconhecido');
+    porProvedor[chave] = porProvedor[chave] || { cobradoUsd: 0, linhas: 0 };
+    porProvedor[chave].cobradoUsd += custo;
+    porProvedor[chave].linhas++;
+  }
+
+  const { data: statusRows } = await admin.rpc('op_status_assinaturas');
+
+  // Câmbio real (PTAX de venda, BCB) para confrontar com a taxa de
+  // referência fixa do código.
+  let ptax: number | null = null;
+  try {
+    const d = new Date(Date.now() - 86400000 * 3);
+    const dataIni = `${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}-${d.getUTCFullYear()}`;
+    const hoje = `${String(agora.getUTCMonth() + 1).padStart(2, '0')}-${String(agora.getUTCDate()).padStart(2, '0')}-${agora.getUTCFullYear()}`;
+    const r = await fetch(`https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/odata/CotacaoDolarPeriodo(dataInicial=@dataInicial,dataFinalCotacao=@dataFinalCotacao)?@dataInicial='${dataIni}'&@dataFinalCotacao='${hoje}'&$top=1&$orderby=dataHoraCotacao%20desc&$format=json`);
+    const j = await r.json();
+    ptax = Number(j?.value?.[0]?.cotacaoVenda) || null;
+  } catch (_) { /* sem câmbio, o Tesoureiro diz isso */ }
+
+  return {
+    mes: `${ano}-${String(m).padStart(2, '0')}`,
+    receitaBrl: receita,
+    ia: { cobradoPorProvedorUsd: porProvedor, creditosConcedidosUsd },
+    assinaturas: statusRows || [],
+    cambio: { ptaxVenda: ptax, taxaReferenciaDoCodigo: 5.08 },
+  };
+}
+
 Deno.serve(servir('op-agente', async (req) => {
   if (req.method !== 'POST') return json({ error: 'Método não permitido.' }, 405);
   if (!OP_SECRET || req.headers.get('x-op-secret') !== OP_SECRET) return json({ error: 'Não autorizado.' }, 401);
@@ -215,6 +292,23 @@ Deno.serve(servir('op-agente', async (req) => {
 
     case 'funil_hoje':
       return json(await funilHoje(admin));
+
+    // ── Auditor ──────────────────────────────────────────────────────
+    case 'politicas': {
+      const { data, error } = await admin.rpc('op_politicas');
+      return error ? json({ error: error.message }, 500) : json({ politicas: data });
+    }
+
+    case 'auditoria': {
+      const { data, error } = await admin.rpc('op_auditoria');
+      return error ? json({ error: error.message }, 500) : json({ auditoria: data });
+    }
+
+    // ── Tesoureiro ───────────────────────────────────────────────────
+    // O mês em números: o que entrou (Mercado Pago), o que a IA custou
+    // (uso_ia) e o câmbio de verdade contra a taxa de referência do código.
+    case 'financeiro':
+      return json(await financeiro(admin, String(body?.mes || '')));
 
     // O único jeito de um agente falar com o dono: um e-mail, no envelope
     // da marca, só quando há amarelo ou vermelho.

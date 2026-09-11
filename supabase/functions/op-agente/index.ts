@@ -20,9 +20,12 @@
 //   acao: 'marcar_eventos'       { ids: number[] }      → tratados
 //   acao: 'rodada'               { agente, resultado?, relatorio_path?, resumo?, id? } → abre/fecha uma rodada
 //   acao: 'funil_hoje'           { }                    → conta cadastros e assinaturas do dia, por origem, e grava em op_funil
+//   acao: 'instalacoes'          { }                    → lê as instalações do Google Play (mês corrente e anterior) e grava em op_funil, origem 'loja'
+//   acao: 'funil'                { dias?: 28 }          → coleta as instalações e devolve a série de op_funil, contas por status e origens
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { servir } from '../_shared/registrarEvento.ts';
 import { envelope, enviarEmail, escaparHtml } from '../_shared/emailDrSig.ts';
+import { lerInstalacoes, mesesRecentes } from '../_shared/playInstalacoes.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -107,6 +110,25 @@ async function funilHoje(admin: Admin) {
     }, { onConflict: 'dia,origem' });
   }
   return { dia: hoje, linhas: linhas || [] };
+}
+
+// As instalações não têm origem (a loja não diz de onde veio quem instalou):
+// ficam na linha origem 'loja' de cada dia, com os contadores de conta a zero.
+// Erro aqui não derruba o funil — volta como texto para o agente dizer ao dono.
+async function coletarInstalacoes(admin: Admin): Promise<{ dias: number; erro: string | null }> {
+  try {
+    const dias = await lerInstalacoes(mesesRecentes());
+    for (const d of dias) {
+      const { error } = await admin.from('op_funil').upsert(
+        { dia: d.dia, origem: 'loja', instalacoes: d.instalacoes },
+        { onConflict: 'dia,origem' },
+      );
+      if (error) throw new Error(error.message);
+    }
+    return { dias: dias.length, erro: null };
+  } catch (e) {
+    return { dias: 0, erro: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 const MP_ACCESS_TOKEN = Deno.env.get('MERCADOPAGO_ACCESS_TOKEN') || '';
@@ -293,6 +315,9 @@ Deno.serve(servir('op-agente', async (req) => {
     case 'funil_hoje':
       return json(await funilHoje(admin));
 
+    case 'instalacoes':
+      return json(await coletarInstalacoes(admin));
+
     // ── Auditor ──────────────────────────────────────────────────────
     case 'politicas': {
       const { data, error } = await admin.rpc('op_politicas');
@@ -305,16 +330,20 @@ Deno.serve(servir('op-agente', async (req) => {
     }
 
     // ── Analista de funil ────────────────────────────────────────────
-    // A série diária de op_funil por origem, mais a foto atual das contas.
+    // A série diária de op_funil por origem (instalações na linha 'loja'),
+    // mais a foto atual das contas. Coleta as instalações antes de ler.
     case 'funil': {
       const dias = Math.min(Math.max(Number(body?.dias) || 28, 1), 365);
       const desde = new Date(Date.now() - dias * 86400000).toISOString().slice(0, 10);
+      const instalacoes = await coletarInstalacoes(admin);
       const [{ data: serie, error }, { data: status }, { data: origens }] = await Promise.all([
         admin.from('op_funil').select('*').gte('dia', desde).order('dia', { ascending: true }),
         admin.rpc('op_status_assinaturas'),
         admin.rpc('op_origens_de_cadastro'),
       ]);
-      return error ? json({ error: error.message }, 500) : json({ desde, serie: serie || [], status: status || [], origens: origens || [] });
+      return error
+        ? json({ error: error.message }, 500)
+        : json({ desde, serie: serie || [], status: status || [], origens: origens || [], instalacoes });
     }
 
     // ── Tesoureiro ───────────────────────────────────────────────────

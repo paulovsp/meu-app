@@ -24,6 +24,7 @@ coluna seria um endpoint aberto, e não existe nenhuma assim.
 | `curso-transcrever-webhook` | `--no-verify-jwt` | segredo em `x-webhook-secret` (AssemblyAI) |
 | `curso-transcrever` | padrão | JWT da usuária, vindo do app |
 | `enviar-alerta-atraso` | padrão | JWT da usuária, vindo do app |
+| `enviar-convite-testador` | `--no-verify-jwt` | segredo próprio em `x-convite-secret` (CONVITE_TESTADOR_SECRET) — chamada pelo dono, pela linha de comando |
 | `enviar-digest-diario` | `--no-verify-jwt` | segredo de cron (`x-cron-secret`) |
 | `enviar-recibo` | padrão | JWT da usuária, vindo do app |
 | `excluir-conta` | padrão | JWT da usuária, vindo do app |

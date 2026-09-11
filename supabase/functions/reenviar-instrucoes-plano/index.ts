@@ -52,7 +52,7 @@ const DESTINOS = {
     assunto: 'Dr.Sig — o link para recarregar seus créditos de IA',
     pediu: 'Você pediu, pelo app, o link para recarregar seus créditos de IA. É este:',
     botao: 'Recarregar créditos',
-    depois: 'Pix ou cartão. O crédito entra na sua conta na hora em que o pagamento é confirmado.',
+    depois: 'Cartão de crédito, cobrado na própria página. O crédito entra na sua conta na hora em que o pagamento é aprovado.',
     ondePedir: 'Meu Perfil › Créditos de IA',
   },
 } as const;

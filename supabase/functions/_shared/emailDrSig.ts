@@ -73,6 +73,28 @@ export function botao(texto: string, href: string): string {
     </table>`;
 }
 
+/** Uma imagem de largura total, com cantos do cartão. Sempre com `alt`:
+ *  metade dos clientes de e-mail abre com imagens desligadas. */
+export function imagem(src: string, alt: string): string {
+  return `<img src="${src}" alt="${escaparHtml(alt)}" width="508" style="display:block;width:100%;max-width:508px;height:auto;border-radius:12px;margin:0 0 18px;" />`;
+}
+
+/** Passo numerado — para "como começar". */
+export function passo(numero: number, titulo: string, texto: string): string {
+  return `
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 14px;">
+      <tr>
+        <td valign="top" style="padding-right:12px;">
+          <span style="display:inline-block;width:28px;height:28px;line-height:28px;text-align:center;border-radius:14px;background:${SALVIA_VEU};color:${SALVIA_FUNDA};font-weight:600;font-size:14px;">${numero}</span>
+        </td>
+        <td valign="top">
+          <div style="font-size:15px;font-weight:600;color:${TINTA_900};line-height:1.4;">${titulo}</div>
+          <div style="font-size:14px;color:${TINTA_700};line-height:1.5;margin-top:2px;">${texto}</div>
+        </td>
+      </tr>
+    </table>`;
+}
+
 /** Tabela de duas colunas (plano × preço, dado × valor). */
 export function tabela(linhas: Array<[string, string]>): string {
   const trs = linhas.map(([a, b], i) => `
@@ -160,9 +182,14 @@ export async function enviarEmail(
   assunto: string,
   html: string,
   anexos?: Array<{ filename: string; content: string }>,
+  // Quem deve receber a resposta, quando o e-mail é uma conversa e não um
+  // aviso: o remetente é naoresponda@, mas o convite de testador quer que
+  // a pessoa simplesmente responda.
+  responderPara?: string,
 ): Promise<void> {
   const corpo: Record<string, unknown> = { from: REMETENTE, to: [para], subject: assunto, html };
   if (anexos?.length) corpo.attachments = anexos;
+  if (responderPara) corpo.reply_to = responderPara;
   const resp = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },

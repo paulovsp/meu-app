@@ -35,6 +35,10 @@
   // de e-mail abre todo link que chega, e queimaria o token antes da
   // pessoa. A sessão fica guardada por uma hora neste navegador, para dar
   // para voltar e comparar sem pedir outro e-mail.
+  //
+  // Só cartão de crédito, cobrado aqui mesmo, nos campos do Mercado Pago —
+  // o mesmo caminho da assinatura. Quando o Pix entrar (pela API do BTG),
+  // entra como segunda opção nesta tela.
   const params = new URLSearchParams(window.location.search);
   const tokenHash = params.get('token_hash');
   let accessToken = null;
@@ -68,8 +72,7 @@
   const REAIS_POR_HORA_DE_TRANSCRICAO = 0.23 * 2 * 5.08;
 
   function horasQueCompra(valorBRL) {
-    const horas = valorBRL / REAIS_POR_HORA_DE_TRANSCRICAO;
-    return Math.floor(horas);
+    return Math.floor(valorBRL / REAIS_POR_HORA_DE_TRANSCRICAO);
   }
 
   function reais(valor) {
@@ -78,11 +81,8 @@
 
   let pacotes = [];          // vem do servidor
   let saldoBrl = null;
-  let chavePublica = null;   // null = ainda não perguntamos; '' = não configurada
+  let chavePublica = '';
   let pacoteEscolhido = null;
-  let pagamentoPixId = null;
-  let temporizadorPix = null;
-  let contagemPix = null;
 
   function render(html) {
     card.innerHTML = html;
@@ -109,13 +109,6 @@
     const dados = await resp.json().catch(function () { return {}; });
     if (!resp.ok) throw new Error(dados.error || 'Não foi possível concluir. Tente de novo.');
     return dados;
-  }
-
-  function pararDeEsperarPix() {
-    if (temporizadorPix) clearInterval(temporizadorPix);
-    if (contagemPix) clearInterval(contagemPix);
-    temporizadorPix = null;
-    contagemPix = null;
   }
 
   function renderSemToken() {
@@ -180,15 +173,13 @@
   }
 
   function renderPacotes() {
-    pararDeEsperarPix();
     const cartoes = pacotes.map(function (valor) {
-      const horas = horasQueCompra(valor);
       return (
         '<button type="button" class="pacote" role="radio" aria-checked="false" data-valor="' + valor + '">' +
         '<span class="radio" aria-hidden="true"><span></span></span>' +
         '<span class="pacote-conteudo">' +
         '<span class="pacote-nome">' + reais(valor) + ' em créditos</span>' +
-        '<span class="pacote-detalhe">Dá para cerca de ' + horas + ' horas de transcrição, ou muitos relatórios e buscas.</span>' +
+        '<span class="pacote-detalhe">Dá para cerca de ' + horasQueCompra(valor) + ' horas de transcrição, ou muitos relatórios e buscas.</span>' +
         '</span>' +
         '</button>'
       );
@@ -196,20 +187,16 @@
 
     render(
       '<h1>Recarregar créditos de IA</h1>' +
-      '<p class="lede">O crédito entra na sua conta assim que o pagamento é confirmado, e não mexe na assinatura.</p>' +
+      '<p class="lede">O crédito entra na sua conta assim que o cartão é aprovado, e não mexe na assinatura.</p>' +
       '<div class="saldo"><span class="saldo-rotulo">Saldo atual</span><span class="saldo-valor">' + reais(saldoBrl) + '</span></div>' +
       '<div class="erro" id="erro" style="display:none"></div>' +
       '<div class="pacotes" role="radiogroup" aria-label="Valor da recarga">' + cartoes + '</div>' +
-      '<div class="meios">' +
-      '<button class="btn-grande" id="btn-pix" disabled>Pagar com Pix</button>' +
-      '<button class="btn-grande btn-secundario" id="btn-cartao" disabled>Cartão</button>' +
-      '</div>' +
-      '<p class="nota">Pagamento processado pelo Mercado Pago, sem precisar de conta lá. Pix confirma em segundos; ' +
-      'cartão de crédito, na hora. Créditos não expiram enquanto a conta existir.</p>'
+      '<button class="btn-grande" id="btn-continuar" disabled style="margin-top:20px;">Selecione um valor acima</button>' +
+      '<p class="nota">Cobrança única, em cartão de crédito, processada pelo Mercado Pago — sem precisar de conta lá. ' +
+      'Créditos não expiram enquanto a conta existir.</p>'
     );
 
-    const btnPix = document.getElementById('btn-pix');
-    const btnCartao = document.getElementById('btn-cartao');
+    const botao = document.getElementById('btn-continuar');
 
     document.querySelectorAll('[data-valor]').forEach(function (el) {
       el.addEventListener('click', function () {
@@ -217,15 +204,14 @@
         document.querySelectorAll('[data-valor]').forEach(function (outro) {
           outro.setAttribute('aria-checked', String(outro === el));
         });
-        btnPix.disabled = false;
-        btnCartao.disabled = false;
-        btnPix.textContent = 'Pix — ' + reais(pacoteEscolhido);
-        btnCartao.textContent = 'Cartão — ' + reais(pacoteEscolhido);
+        botao.disabled = false;
+        botao.textContent = 'Pagar ' + reais(pacoteEscolhido) + ' no cartão';
       });
     });
 
-    btnPix.addEventListener('click', function () { if (pacoteEscolhido) gerarPix(btnPix); });
-    btnCartao.addEventListener('click', function () { if (pacoteEscolhido) renderCartao(); });
+    botao.addEventListener('click', function () {
+      if (pacoteEscolhido) renderCartao();
+    });
 
     if (pacoteEscolhido) {
       const anterior = document.querySelector('[data-valor="' + pacoteEscolhido + '"]');
@@ -233,98 +219,14 @@
     }
   }
 
-  // ─── Pix ────────────────────────────────────────────────────────────
-  async function gerarPix(botao) {
-    botao.disabled = true;
-    const rotulo = botao.textContent;
-    botao.textContent = 'Gerando o Pix…';
-    try {
-      const r = await chamarFuncao({ acao: 'pix', valorBRL: pacoteEscolhido });
-      pagamentoPixId = r.pagamentoId;
-      renderPix(r);
-    } catch (err) {
-      mostrarErro(err.message || 'Não foi possível gerar o Pix. Tente de novo.');
-      botao.disabled = false;
-      botao.textContent = rotulo;
-    }
-  }
-
-  function renderPix(pix) {
-    render(
-      '<h1>Pague com Pix</h1>' +
-      '<div class="resumo"><span class="resumo-nome">Recarga de créditos</span>' +
-      '<span class="resumo-preco">' + reais(pix.valorBRL) + '</span></div>' +
-      '<button type="button" class="link-discreto" id="btn-voltar">Trocar o valor ou pagar com cartão</button>' +
-      '<div class="erro" id="erro" style="display:none;margin-top:16px;"></div>' +
-      '<div class="pix">' +
-      '<img alt="QR Code do Pix" src="data:image/png;base64,' + pix.qrCodeBase64 + '" />' +
-      '<textarea class="entrada pix-codigo" id="pix-codigo" rows="4" readonly aria-label="Código Pix copia e cola">' + pix.qrCode + '</textarea>' +
-      '<button class="btn-grande btn-secundario" id="btn-copiar" style="margin-top:10px;">Copiar código Pix</button>' +
-      '<p class="pix-espera"><span class="pulso" aria-hidden="true"></span>Esperando o pagamento… ' +
-      'Assim que o banco confirmar, esta tela muda sozinha. <b id="pix-vence"></b></p>' +
-      '</div>' +
-      '<p class="nota">Abra o app do seu banco, escolha pagar com Pix e leia o QR Code — ou cole o código copiado. ' +
-      'O Pix vale por 30 minutos.</p>'
-    );
-
-    document.getElementById('btn-voltar').addEventListener('click', renderPacotes);
-
-    document.getElementById('btn-copiar').addEventListener('click', async function () {
-      const btn = document.getElementById('btn-copiar');
-      const campo = document.getElementById('pix-codigo');
-      try {
-        await navigator.clipboard.writeText(campo.value);
-      } catch (_) {
-        campo.select();
-        document.execCommand('copy');
-      }
-      btn.textContent = 'Copiado!';
-      setTimeout(function () { btn.textContent = 'Copiar código Pix'; }, 2000);
-    });
-
-    // Contagem regressiva a partir do vencimento que o servidor devolveu.
-    const vence = pix.expiraEm ? new Date(pix.expiraEm).getTime() : Date.now() + 30 * 60000;
-    const elVence = document.getElementById('pix-vence');
-    function atualizarContagem() {
-      const resta = Math.max(0, Math.floor((vence - Date.now()) / 1000));
-      const m = Math.floor(resta / 60);
-      const s = resta % 60;
-      elVence.textContent = resta > 0 ? 'Vence em ' + m + ':' + (s < 10 ? '0' : '') + s + '.' : 'Este Pix venceu.';
-      if (resta <= 0) {
-        pararDeEsperarPix();
-        mostrarErro('Este Pix venceu sem pagamento. Gere outro para continuar.');
-      }
-    }
-    atualizarContagem();
-    contagemPix = setInterval(atualizarContagem, 1000);
-
-    // A cada 4 s pergunta ao servidor; quem credita é ele, na hora em que
-    // vê o pagamento aprovado — sem depender do webhook chegar.
-    temporizadorPix = setInterval(async function () {
-      try {
-        const r = await chamarFuncao({ acao: 'situacao', pagamentoId: pagamentoPixId });
-        if (r.status === 'approved') {
-          pararDeEsperarPix();
-          renderSucesso(pix.valorBRL, r.saldoBrl);
-        } else if (r.status === 'cancelled' || r.status === 'rejected') {
-          pararDeEsperarPix();
-          mostrarErro('Este Pix foi cancelado. Gere outro para continuar.');
-        }
-      } catch (_) {
-        // Uma consulta perdida não é motivo para parar de perguntar.
-      }
-    }, 4000);
-  }
-
   // ─── Cartão ─────────────────────────────────────────────────────────
   //
   // Os três campos sensíveis são iframes do Mercado Pago: o que a pessoa
   // digita neles nunca entra nesta página nem chega ao nosso servidor.
   function renderCartao() {
-    pararDeEsperarPix();
     if (!chavePublica) {
       renderPacotes();
-      mostrarErro('O pagamento com cartão não está disponível agora. Pague com Pix.');
+      mostrarErro('O pagamento não está disponível agora. Tente de novo em alguns minutos.');
       return;
     }
     const valor = pacoteEscolhido;
@@ -332,7 +234,7 @@
       '<h1>Dados do cartão</h1>' +
       '<div class="resumo"><span class="resumo-nome">Recarga de créditos</span>' +
       '<span class="resumo-preco">' + reais(valor) + '</span></div>' +
-      '<button type="button" class="link-discreto" id="btn-voltar">Trocar o valor ou pagar com Pix</button>' +
+      '<button type="button" class="link-discreto" id="btn-voltar">Trocar o valor</button>' +
       '<div class="erro" id="erro" style="display:none;margin-top:16px;"></div>' +
       '<div class="campos">' +
       '<div><label class="rotulo" for="mp-numero">Número do cartão</label>' +

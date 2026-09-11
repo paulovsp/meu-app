@@ -29,6 +29,9 @@ verify_jwt = true
 [functions.enviar-alerta-atraso]
 verify_jwt = true
 
+[functions.enviar-convite-testador]
+verify_jwt = false
+
 [functions.enviar-digest-diario]
 verify_jwt = false
 

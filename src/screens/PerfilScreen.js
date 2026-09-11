@@ -473,7 +473,7 @@ export default function PerfilScreen({ navigation }) {
 
   // Mesmo caminho do plano: o app não mostra preço nem abre pagamento
   // (política do Google Play para bens digitais); manda o link por e-mail
-  // e a página faz o resto, por Pix ou cartão.
+  // e a página faz o resto, em cartão de crédito.
   async function pedirLinkDeRecarga() {
     setPedindoRecarga(true);
     try {
@@ -481,8 +481,8 @@ export default function PerfilScreen({ navigation }) {
       Alert.alert(
         'E-mail enviado',
         `Mandamos o link para recarregar seus créditos em ${r?.email || 'seu e-mail'}.`
-        + '\n\nEle vale por 1 hora. Pix ou cartão — o crédito entra na sua conta assim que o '
-        + 'pagamento é confirmado. Confira também a caixa de spam.'
+        + '\n\nEle vale por 1 hora. O crédito entra na sua conta assim que o cartão é '
+        + 'aprovado. Confira também a caixa de spam.'
       );
     } catch (e) {
       Alert.alert('Não foi possível enviar', mensagemDeErro(e));

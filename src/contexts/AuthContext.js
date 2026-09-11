@@ -3,7 +3,7 @@
 // token) e expõe pro resto do app — substitui o padrão antigo de
 // LoginScreen checar getUser() uma vez só e navegar manualmente.
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { supabase } from '../services/supabase';
+import { supabase, definirModoSomenteLeitura } from '../services/supabase';
 import { sincronizarTokenBiometrico } from '../services/biometria';
 
 const AuthContext = createContext({ session: null, loading: true, sairLocalmente: () => {} });
@@ -19,6 +19,34 @@ export function AuthProvider({ children }) {
   // evento de auth novo (login manual ou via digital) limpa esse estado.
   const [ocultarSessao, setOcultarSessao] = useState(false);
 
+  // ─── Modo somente leitura da conta de demonstracao ──────────────────
+  //
+  // Decidido AQUI, e nao na tela de login, porque a conta tambem pode ser
+  // acessada digitando e-mail e senha na mao — a senha esta impressa na
+  // propria tela. Ligar o modo so no botao deixaria a porta da frente
+  // trancada e a de tras aberta.
+  //
+  // Na duvida, NAO liga: uma falha de rede aqui nao pode transformar a
+  // conta de alguem que paga em somente leitura. O banco continua sendo a
+  // trava de verdade (migration 0097); isto aqui existe pra que a pessoa
+  // veja uma mensagem em vez de uma tela que finge ter salvado.
+  async function ajustarModoSomenteLeitura(novaSessao) {
+    if (!novaSessao?.user?.id) {
+      definirModoSomenteLeitura(false);
+      return;
+    }
+    try {
+      const { data } = await supabase
+        .from('profiles')
+        .select('conta_demonstracao')
+        .eq('id', novaSessao.user.id)
+        .maybeSingle();
+      definirModoSomenteLeitura(data?.conta_demonstracao === true);
+    } catch (_) {
+      definirModoSomenteLeitura(false);
+    }
+  }
+
   useEffect(() => {
     // O `.catch` não é zelo: `setLoading(false)` só acontecia no caminho
     // feliz. Se a leitura da sessão falhasse — armazenamento corrompido,
@@ -30,6 +58,7 @@ export function AuthProvider({ children }) {
       .then(({ data }) => {
         setSession(data.session);
         sincronizarTokenBiometrico(data.session);
+        ajustarModoSomenteLeitura(data.session);
       })
       .catch(() => setSession(null))
       .finally(() => setLoading(false));
@@ -42,6 +71,7 @@ export function AuthProvider({ children }) {
       // pra um token já invalidado, falha no login seguinte e se desativa
       // sozinho — era por isso que o botão "não segurava" ligado.
       sincronizarTokenBiometrico(novaSessao);
+      ajustarModoSomenteLeitura(novaSessao);
     });
 
     return () => subscription.unsubscribe();

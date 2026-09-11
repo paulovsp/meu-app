@@ -304,6 +304,19 @@ Deno.serve(servir('op-agente', async (req) => {
       return error ? json({ error: error.message }, 500) : json({ auditoria: data });
     }
 
+    // ── Analista de funil ────────────────────────────────────────────
+    // A série diária de op_funil por origem, mais a foto atual das contas.
+    case 'funil': {
+      const dias = Math.min(Math.max(Number(body?.dias) || 28, 1), 365);
+      const desde = new Date(Date.now() - dias * 86400000).toISOString().slice(0, 10);
+      const [{ data: serie, error }, { data: status }, { data: origens }] = await Promise.all([
+        admin.from('op_funil').select('*').gte('dia', desde).order('dia', { ascending: true }),
+        admin.rpc('op_status_assinaturas'),
+        admin.rpc('op_origens_de_cadastro'),
+      ]);
+      return error ? json({ error: error.message }, 500) : json({ desde, serie: serie || [], status: status || [], origens: origens || [] });
+    }
+
     // ── Tesoureiro ───────────────────────────────────────────────────
     // O mês em números: o que entrou (Mercado Pago), o que a IA custou
     // (uso_ia) e o câmbio de verdade contra a taxa de referência do código.

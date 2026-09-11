@@ -15,7 +15,7 @@ Leia `KIT-DA-MARCA.md` (voz, limites, o que não fazer), o plano do mês em `mar
 
 Uma pasta `marketing/pendente/AAAA-MM-DD-<slug>/` por peça, com:
 - `peca.md` — cabeçalho YAML (`canal`, `formato`, `tema`, `funcao_do_app`, `objetivo`, `chamada`, `link` com UTM) e o texto pronto para copiar.
-- `imagens.md` — o pedido ao Designer, quadro a quadro (o que aparece, o texto de cada quadro, qual captura do app usar — só da conta de demonstração).
+- `imagens.md` — o pedido ao Designer, quadro a quadro (o que aparece, o texto de cada quadro, qual captura do app usar — só da conta de demonstração). O Designer transforma isso em `quadros.json` e nos PNGs na quarta; os tipos de quadro que ele tem estão em `marketing/designer/render.mjs` — pedir só o que existe lá (capa, tipografia, lista, destaque, cartões, ícone, captura, fecho).
 
 Formatos e medidas:
 - **Instagram carrossel**: 6 a 8 quadros; quadro 1 é a dor em uma frase; último quadro, o convite. Legenda até 900 caracteres, 3 a 5 hashtags do campo (`#psicanálise #psicoterapia #consultóriopsi #psicólogaclínica`), nunca mais que isso.

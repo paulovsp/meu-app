@@ -59,7 +59,7 @@ export async function getStatusAssinatura() {
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('assinatura_status, assinatura_plano, assinatura_expira_em, email')
+    .select('assinatura_status, assinatura_plano, assinatura_expira_em, email, mp_preapproval_id')
     .eq('id', session.user.id)
     .maybeSingle();
   if (error || !data) return { situacao: 'indefinida' };
@@ -72,6 +72,12 @@ export async function getStatusAssinatura() {
     diasRestantes: dias,
     email: data.email || session.user.email || null,
     cortesia: data.assinatura_status === 'cortesia',
+    // Tem cobranca recorrente no Mercado Pago, ou o acesso simplesmente
+    // acaba na data? A diferenca muda tudo o que a tela deve dizer: para
+    // quem renova sozinho, a data que se aproxima nao e motivo de acao
+    // nenhuma; para quem nao renova, e o dia em que o app fecha. Dizer
+    // "renova" para quem vai vencer e a pior das duas mentiras possiveis.
+    renovaSozinho: !!data.mp_preapproval_id,
   };
 
   const valendo = (data.assinatura_status === 'ativa' || data.assinatura_status === 'cortesia')

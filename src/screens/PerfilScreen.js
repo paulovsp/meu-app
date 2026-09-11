@@ -70,7 +70,7 @@ function CartaoDoPlano({ assinatura, reenviando, onPedirInstrucoes, cancelando, 
     );
   }
 
-  const { situacao, planoLabel, expiraEm, diasRestantes, cortesia, email } = assinatura;
+  const { situacao, planoLabel, expiraEm, diasRestantes, cortesia, email, renovaSozinho } = assinatura;
 
   const ATIVO = { fundo: '#E2EFE8', borda: '#CBE0D3', tinta: '#44745B' };
   const AVISO = { fundo: '#F2E9DC', borda: '#E3D5BC', tinta: '#7D6540' };
@@ -83,23 +83,40 @@ function CartaoDoPlano({ assinatura, reenviando, onPedirInstrucoes, cancelando, 
     ativa: {
       cor: ATIVO,
       titulo: cortesia ? 'Acesso liberado' : `Plano ${planoLabel || 'ativo'}`,
-      texto: expiraEm
-        ? `Tudo liberado. Renova ${emDias(diasRestantes)}, em ${dataISOParaBR(expiraEm.slice(0, 10))}.`
-        : 'Tudo liberado.',
+      // "Renova" e "termina" não são a mesma frase com palavras
+      // diferentes: uma diz que não há nada a fazer, a outra diz que há.
+      texto: !expiraEm
+        ? 'Tudo liberado.'
+        : renovaSozinho
+          ? `Tudo liberado. Renova ${emDias(diasRestantes)}, em ${dataISOParaBR(expiraEm.slice(0, 10))}.`
+          : `Tudo liberado até ${dataISOParaBR(expiraEm.slice(0, 10))} — ${emDias(diasRestantes)}. `
+            + 'Não há cobrança automática: para seguir depois dessa data, escolha um plano.',
     },
-    // Cortesia acaba e ninguém cobra nada: aí sim é um aviso de que o
-    // acesso vai fechar. Plano pago renova sozinho na data — dizer que
-    // "vence" assustaria quem não precisa fazer nada.
-    vencendo: cortesia ? {
-      cor: AVISO,
-      titulo: `Seu acesso termina ${emDias(diasRestantes)}`,
-      texto: 'Depois disso o app deixa de permitir novos registros, sessões e cadastros. O que já está salvo continua seu, e a exportação dos dados continua liberada.',
-    } : {
+    // A data que se aproxima quer dizer coisas opostas dependendo de haver
+    // ou não cobrança recorrente:
+    //
+    //   • com cartão recorrente, não é motivo de ação nenhuma — dizer
+    //     "vence" assusta quem não precisa fazer nada;
+    //   • sem cartão (cortesia, ou acesso concedido à mão), é o dia em que
+    //     o app fecha. Dizer "renova" aqui é a pior das duas mentiras: a
+    //     pessoa descobre que perdeu o acesso ao tentar usar.
+    //
+    // Por isso quem decide não é o status, é `renovaSozinho` — ter ou não
+    // uma assinatura viva no Mercado Pago.
+    vencendo: renovaSozinho ? {
       cor: ATIVO,
       titulo: `Renova ${emDias(diasRestantes)}`,
       texto: expiraEm
         ? `Seu plano ${(planoLabel || '').toLowerCase()} renova sozinho em ${dataISOParaBR(expiraEm.slice(0, 10))}, no cartão cadastrado. Se preferir não continuar, cancele antes disso — o acesso vale até o fim do período já pago.`
         : 'Seu plano renova sozinho, no cartão cadastrado.',
+    } : {
+      cor: AVISO,
+      titulo: `Seu acesso termina ${emDias(diasRestantes)}`,
+      texto: (expiraEm
+        ? `Em ${dataISOParaBR(expiraEm.slice(0, 10))} o app deixa de permitir novos registros, sessões e cadastros. `
+        : 'Depois disso o app deixa de permitir novos registros, sessões e cadastros. ')
+        + 'O que já está salvo continua seu, e a exportação dos dados continua liberada. '
+        + 'Para continuar usando, escolha um plano — o botão abaixo manda o link por e-mail.',
     },
     inadimplente: {
       cor: AVISO,
@@ -133,8 +150,11 @@ function CartaoDoPlano({ assinatura, reenviando, onPedirInstrucoes, cancelando, 
   const info = mapa[situacao] || mapa.indefinida;
   // 'vencendo' saiu daqui: plano pago renova sozinho, não há link a
   // pedir. Só a cortesia, que acaba de verdade, ainda precisa.
+  // Quem esta prestes a perder o acesso e NAO tem cobranca recorrente
+  // precisa do link: e a unica saida dentro do app. Quem renova sozinho
+  // nao tem o que pedir.
   const precisaDoLink = situacao === 'nenhuma' || situacao === 'expirada'
-    || (situacao === 'vencendo' && cortesia);
+    || (situacao === 'vencendo' && !renovaSozinho);
 
   // Onde se cancela. Até agora não existia: a única coisa parecida no
   // perfil era "Excluir conta", que apaga tudo — quem só queria parar de
@@ -145,7 +165,10 @@ function CartaoDoPlano({ assinatura, reenviando, onPedirInstrucoes, cancelando, 
   // Cortesia fica de fora porque não há o que cancelar, e 'cancelada'
   // também: já está feito, e o acesso corre até a data que o cartão do
   // topo mostra.
-  const podeCancelar = !cortesia
+  // So aparece se houver o que cancelar de verdade: sem assinatura viva no
+  // Mercado Pago, o botao levaria a um erro ("nao ha assinatura ativa nesta
+  // conta") — pior do que nao existir.
+  const podeCancelar = renovaSozinho
     && (situacao === 'ativa' || situacao === 'vencendo' || situacao === 'inadimplente');
 
   return (

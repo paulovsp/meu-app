@@ -77,7 +77,12 @@ export async function aplicarAssinaturaPorId(
   if (estado.assinatura_valor_mensal_equivalente != null) {
     patch.assinatura_valor_mensal_equivalente = estado.assinatura_valor_mensal_equivalente;
   }
-  if (estado.assinatura_status === 'ativa') patch.assinatura_renovacao_notificada_em = null;
+  if (estado.assinatura_status === 'ativa') {
+    patch.assinatura_renovacao_notificada_em = null;
+    // Ciclo novo, avisos novos: sem isto, quem recebeu "seu acesso termina
+    // em 7 dias" e assinou nunca mais receberia o aviso do ciclo seguinte.
+    patch.aviso_fim_acesso_dias = null;
+  }
   await supabaseAdmin.from('profiles').update(patch).eq('id', userId);
 
   if (estado.assinatura_status !== 'ativa' || !estado.assinatura_plano) return;

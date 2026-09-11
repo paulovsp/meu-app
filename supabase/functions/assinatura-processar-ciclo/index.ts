@@ -45,6 +45,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sincronizarPreapproval } from '../_shared/assinaturaMercadoPago.ts';
 import { aplicarDescontoDeIndicacoes } from '../_shared/indicacoes.ts';
+import { avisarFimDeAcesso } from '../_shared/avisoFimDeAcesso.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -83,6 +84,7 @@ Deno.serve(async (req) => {
     corrigidos: 0,
     inalterados: 0,
     descontosCorrigidos: 0,
+    avisosEnviados: 0,
     erros: [] as string[],
   };
 
@@ -201,6 +203,16 @@ Deno.serve(async (req) => {
         resultado.erros.push(`desconto ${conta.id}: ${String((err as Error)?.message || err)}`);
       }
     }
+
+    // ── Aviso de fim de acesso ───────────────────────────────────────
+    //
+    // Para quem NAO tem cobranca recorrente, a data nao renova: ela fecha.
+    // Ate agora isso so estava escrito no cartao dentro do app — quem nao
+    // abrisse descobria tentando usar, com a porta fechada, depois de ter
+    // organizado a semana contando com ele.
+    const avisos = await avisarFimDeAcesso(supabaseAdmin);
+    resultado.avisosEnviados = avisos.enviados;
+    resultado.erros.push(...avisos.erros);
 
     return json({ ok: true, ...resultado });
   } catch (err) {

@@ -8,8 +8,9 @@
 //
 // Push e e-mail são reforço: o status também aparece ao abrir a sessão. Por
 // isso nenhuma falha aqui pode derrubar o fluxo de quem chamou.
+import { envelope, enviarEmail, escaparHtml, p } from './emailDrSig.ts';
+
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
-const RESEND_URL = 'https://api.resend.com/emails';
 
 export async function notificarTranscricao(
   admin: any,
@@ -52,25 +53,11 @@ export async function notificarTranscricao(
   const resendKey = Deno.env.get('RESEND_API_KEY');
   if (perfil.notif_transcricao_email === true && perfil.email && resendKey) {
     try {
-      await fetch(RESEND_URL, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${resendKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          from: 'Dr.Sig <naoresponda@drsig.com.br>',
-          to: [perfil.email],
-          subject: title,
-          html: `
-            <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1A1A2E;">
-              <h2>${title}</h2>
-              <p>${corpo}</p>
-              <p>Abra o app Dr.Sig para conferir.</p>
-            </div>
-          `,
-        }),
-      });
+      await enviarEmail(resendKey, perfil.email, title, envelope({
+        titulo: escaparHtml(title),
+        corpo: p(escaparHtml(corpo)) + p('Abra o app Dr.Sig para conferir.', { pequeno: true }),
+        rodape: 'Você recebe este aviso porque ligou o e-mail de transcrição em Meu Perfil › Notificações.',
+      }));
     } catch (_) {}
   }
 }

@@ -4,83 +4,19 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Recarregar créditos — Dr.Sig</title>
-<style>
-  * { box-sizing: border-box; }
-  body { font-family: -apple-system, Arial, sans-serif; background: #F5F7FA; margin: 0; padding: 24px 16px; color: #302C28; line-height: 1.5; }
-  .card { max-width: 560px; margin: 0 auto; background: #fff; border-radius: 20px; padding: 28px 22px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); }
-  h1 { font-size: 21px; margin: 0 0 8px; }
-  .lede { color: #6B6860; font-size: 14px; margin: 0 0 24px; }
-  .saldo { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; background: #F0F4F8; border-radius: 14px; padding: 12px 16px; margin-bottom: 20px; }
-  .saldo-rotulo { font-size: 13px; color: #6B6860; }
-  .saldo-valor { font-size: 17px; font-weight: 800; color: #3A5C4F; white-space: nowrap; }
-
-  .pacotes { display: flex; flex-direction: column; gap: 12px; }
-  .pacote {
-    border: 2px solid #E8E4DD; border-radius: 16px; padding: 15px 16px;
-    display: flex; align-items: center; gap: 14px;
-    cursor: pointer; background: #FAFBFC; width: 100%; text-align: left;
-    font: inherit; color: inherit; transition: border-color .15s, background .15s;
-  }
-  .pacote:hover { border-color: #B9C6C0; }
-  .pacote:focus-visible { outline: 3px solid #3A5C4F; outline-offset: 2px; }
-  .pacote[aria-checked="true"] { border-color: #3A5C4F; background: #F0F4F8; }
-  .marca { flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; border: 2px solid #C6C1B8; display: flex; align-items: center; justify-content: center; }
-  .pacote[aria-checked="true"] .marca { border-color: #3A5C4F; background: #3A5C4F; }
-  .marca span { width: 8px; height: 8px; border-radius: 50%; background: #fff; opacity: 0; }
-  .pacote[aria-checked="true"] .marca span { opacity: 1; }
-  .pacote-conteudo { flex: 1 1 auto; min-width: 0; }
-  .pacote-nome { display: block; font-size: 15.5px; font-weight: 700; }
-  .pacote-detalhe { display: block; font-size: 12.5px; color: #6B6860; margin-top: 3px; }
-
-  .meios { display: flex; gap: 12px; margin-top: 20px; }
-  .btn-grande {
-    background: #3A5C4F; color: #fff; border: none; border-radius: 12px; width: 100%;
-    padding: 15px 18px; font-size: 15.5px; font-weight: 700; cursor: pointer;
-  }
-  .btn-grande:disabled { background: #C6C1B8; cursor: default; }
-  .btn-secundario { background: #fff; color: #3A5C4F; border: 2px solid #3A5C4F; }
-  .btn-secundario:disabled { color: #C6C1B8; border-color: #E8E4DD; background: #fff; }
-  .link-discreto { background: none; border: none; padding: 4px 0; font: inherit; font-size: 13px; color: #6B6860; text-decoration: underline; cursor: pointer; }
-  .link-discreto:focus-visible { outline: 3px solid #3A5C4F; outline-offset: 2px; }
-
-  .resumo { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; background: #F0F4F8; border-radius: 14px; padding: 14px 16px; margin-bottom: 6px; }
-  .resumo-nome { font-size: 15px; font-weight: 700; }
-  .resumo-preco { font-size: 17px; font-weight: 800; color: #3A5C4F; white-space: nowrap; }
-
-  /* ─── Pix ─── */
-  .pix { text-align: center; margin-top: 18px; }
-  .pix img { width: 220px; height: 220px; border-radius: 12px; border: 1px solid #E8E4DD; background: #fff; }
-  .pix-codigo { width: 100%; font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; padding: 10px 12px; border: 2px solid #E8E4DD; border-radius: 10px; resize: none; color: #302C28; background: #FAFBFC; margin-top: 14px; }
-  .pix-espera { margin-top: 16px; font-size: 13.5px; color: #6B6860; }
-  .pix-espera b { color: #3A5C4F; }
-  .pulso { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #3A5C4F; margin-right: 6px; animation: pulso 1.2s infinite; }
-  @keyframes pulso { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
-  @media (prefers-reduced-motion: reduce) { .pulso { animation: none; } }
-
-  /* ─── Cartão ─── */
-  .campos { display: flex; flex-direction: column; gap: 14px; margin-top: 20px; }
-  .linha { display: flex; gap: 12px; }
-  .linha > * { flex: 1 1 0; min-width: 0; }
-  .rotulo { display: block; font-size: 12.5px; font-weight: 700; margin-bottom: 6px; }
-  .entrada, .campo-mp { width: 100%; padding: 12px 14px; font: inherit; font-size: 15px; border: 2px solid #E8E4DD; border-radius: 10px; background: #fff; color: inherit; }
-  .entrada:focus { outline: none; border-color: #3A5C4F; }
-  .campo-mp { height: 48px; padding: 0 12px; display: flex; align-items: center; }
-  .campo-mp iframe { width: 100%; height: 100%; border: 0; }
-  .selo-seguro { display: flex; align-items: center; gap: 8px; margin-top: 16px; font-size: 12.5px; color: #6B6860; }
-
-  .erro { background: #FCEBEA; color: #C0392B; padding: 12px 14px; border-radius: 10px; font-size: 13.5px; margin-bottom: 20px; display: none; }
-  .aviso-sem-token { text-align: center; padding: 20px 0; }
-  .aviso-sem-token p { color: #6B6860; font-size: 14.5px; }
-  .nota { font-size: 12px; color: #A5A19A; margin-top: 20px; line-height: 1.6; }
-  .carregando-tela { text-align: center; padding: 60px 0; color: #6B6860; }
-  .sucesso { text-align: center; padding: 10px 0 4px; }
-  .sucesso .marca-ok { font-size: 42px; line-height: 1; }
-</style>
+<meta name="theme-color" content="#497363" />
+<link rel="stylesheet" href="drsig.css" />
 </head>
 <body>
-<div class="card" id="card">
+<header class="topo">
+  <a class="wordmark" href="https://drsig.com.br/">Dr.Sig</a>
+  <span class="tagline">O seu assistente clínico</span>
+  <svg class="onda" viewBox="0 0 390 60" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="onda-g" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#497363"/><stop offset="1" stop-color="#6B9E8A"/></linearGradient></defs><path d="M0,60 L390,60 L390,26 C320,12 250,46 180,20 C110,-6 50,34 0,18 Z" fill="url(#onda-g)"/></svg>
+</header>
+
+<div class="moldura"><div class="moldura-central"><div class="card" id="card">
   <div class="carregando-tela">Carregando…</div>
-</div>
+</div></div></div>
 
 <script src="https://sdk.mercadopago.com/js/v2"></script>
 <script>
@@ -197,7 +133,7 @@
     render(
       '<h1>Recarregar créditos de IA</h1>' +
       '<p class="lede">Confirme que é você para continuar.</p>' +
-      '<div class="erro" id="erro"></div>' +
+      '<div class="erro" id="erro" style="display:none"></div>' +
       '<button class="btn-grande" id="btn-entrar">Continuar</button>' +
       '<p class="nota">Este link vale por 1 hora e só pode ser usado uma vez. Depois de entrar, ' +
       'esta página continua aberta neste navegador durante esse período.</p>'
@@ -249,7 +185,7 @@
       const horas = horasQueCompra(valor);
       return (
         '<button type="button" class="pacote" role="radio" aria-checked="false" data-valor="' + valor + '">' +
-        '<span class="marca" aria-hidden="true"><span></span></span>' +
+        '<span class="radio" aria-hidden="true"><span></span></span>' +
         '<span class="pacote-conteudo">' +
         '<span class="pacote-nome">' + reais(valor) + ' em créditos</span>' +
         '<span class="pacote-detalhe">Dá para cerca de ' + horas + ' horas de transcrição, ou muitos relatórios e buscas.</span>' +
@@ -262,7 +198,7 @@
       '<h1>Recarregar créditos de IA</h1>' +
       '<p class="lede">O crédito entra na sua conta assim que o pagamento é confirmado, e não mexe na assinatura.</p>' +
       '<div class="saldo"><span class="saldo-rotulo">Saldo atual</span><span class="saldo-valor">' + reais(saldoBrl) + '</span></div>' +
-      '<div class="erro" id="erro"></div>' +
+      '<div class="erro" id="erro" style="display:none"></div>' +
       '<div class="pacotes" role="radiogroup" aria-label="Valor da recarga">' + cartoes + '</div>' +
       '<div class="meios">' +
       '<button class="btn-grande" id="btn-pix" disabled>Pagar com Pix</button>' +
@@ -319,10 +255,10 @@
       '<div class="resumo"><span class="resumo-nome">Recarga de créditos</span>' +
       '<span class="resumo-preco">' + reais(pix.valorBRL) + '</span></div>' +
       '<button type="button" class="link-discreto" id="btn-voltar">Trocar o valor ou pagar com cartão</button>' +
-      '<div class="erro" id="erro" style="margin-top:16px;"></div>' +
+      '<div class="erro" id="erro" style="display:none;margin-top:16px;"></div>' +
       '<div class="pix">' +
       '<img alt="QR Code do Pix" src="data:image/png;base64,' + pix.qrCodeBase64 + '" />' +
-      '<textarea class="pix-codigo" id="pix-codigo" rows="4" readonly aria-label="Código Pix copia e cola">' + pix.qrCode + '</textarea>' +
+      '<textarea class="entrada pix-codigo" id="pix-codigo" rows="4" readonly aria-label="Código Pix copia e cola">' + pix.qrCode + '</textarea>' +
       '<button class="btn-grande btn-secundario" id="btn-copiar" style="margin-top:10px;">Copiar código Pix</button>' +
       '<p class="pix-espera"><span class="pulso" aria-hidden="true"></span>Esperando o pagamento… ' +
       'Assim que o banco confirmar, esta tela muda sozinha. <b id="pix-vence"></b></p>' +
@@ -397,7 +333,7 @@
       '<div class="resumo"><span class="resumo-nome">Recarga de créditos</span>' +
       '<span class="resumo-preco">' + reais(valor) + '</span></div>' +
       '<button type="button" class="link-discreto" id="btn-voltar">Trocar o valor ou pagar com Pix</button>' +
-      '<div class="erro" id="erro" style="margin-top:16px;"></div>' +
+      '<div class="erro" id="erro" style="display:none;margin-top:16px;"></div>' +
       '<div class="campos">' +
       '<div><label class="rotulo" for="mp-numero">Número do cartão</label>' +
       '<div class="campo-mp" id="mp-numero"></div></div>' +

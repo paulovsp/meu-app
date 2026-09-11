@@ -1,0 +1,1318 @@
+[
+ {
+  "detalhe": "security definer",
+  "nome": "authenticated",
+  "objeto": "public.assinatura_ativa(uid uuid)",
+  "regra": "",
+  "tipo": "execute"
+ },
+ {
+  "detalhe": "invoker",
+  "nome": "anon",
+  "objeto": "public.cpf_digitos(valor text)",
+  "regra": "",
+  "tipo": "execute"
+ },
+ {
+  "detalhe": "invoker",
+  "nome": "authenticated",
+  "objeto": "public.cpf_digitos(valor text)",
+  "regra": "",
+  "tipo": "execute"
+ },
+ {
+  "detalhe": "security definer",
+  "nome": "authenticated",
+  "objeto": "public.desconto_por_indicacoes(uid uuid)",
+  "regra": "",
+  "tipo": "execute"
+ },
+ {
+  "detalhe": "security definer",
+  "nome": "authenticated",
+  "objeto": "public.eh_conta_demonstracao()",
+  "regra": "",
+  "tipo": "execute"
+ },
+ {
+  "detalhe": "security definer",
+  "nome": "anon",
+  "objeto": "public.forcar_email_perfil_do_login()",
+  "regra": "",
+  "tipo": "execute"
+ },
+ {
+  "detalhe": "security definer",
+  "nome": "authenticated",
+  "objeto": "public.forcar_email_perfil_do_login()",
+  "regra": "",
+  "tipo": "execute"
+ },
+ {
+  "detalhe": "security definer",
+  "nome": "anon",
+  "objeto": "public.gravacao_autorizada(p_patient_id uuid)",
+  "regra": "",
+  "tipo": "execute"
+ },
+ {
+  "detalhe": "security definer",
+  "nome": "authenticated",
+  "objeto": "public.gravacao_autorizada(p_patient_id uuid)",
+  "regra": "",
+  "tipo": "execute"
+ },
+ {
+  "detalhe": "security definer",
+  "nome": "anon",
+  "objeto": "public.handle_new_user()",
+  "regra": "",
+  "tipo": "execute"
+ },
+ {
+  "detalhe": "security definer",
+  "nome": "authenticated",
+  "objeto": "public.handle_new_user()",
+  "regra": "",
+  "tipo": "execute"
+ },
+ {
+  "detalhe": "security definer",
+  "nome": "anon",
+  "objeto": "public.impedir_autocadastro_analisante()",
+  "regra": "",
+  "tipo": "execute"
+ },
+ {
+  "detalhe": "security definer",
+  "nome": "authenticated",
+  "objeto": "public.impedir_autocadastro_analisante()",
+  "regra": "",
+  "tipo": "execute"
+ },
+ {
+  "detalhe": "security definer",
+  "nome": "authenticated",
+  "objeto": "public.indicados_ativos(uid uuid)",
+  "regra": "",
+  "tipo": "execute"
+ },
+ {
+  "detalhe": "invoker",
+  "nome": "anon",
+  "objeto": "public.nome_normalizado(valor text)",
+  "regra": "",
+  "tipo": "execute"
+ },
+ {
+  "detalhe": "invoker",
+  "nome": "authenticated",
+  "objeto": "public.nome_normalizado(valor text)",
+  "regra": "",
+  "tipo": "execute"
+ },
+ {
+  "detalhe": "security definer",
+  "nome": "anon",
+  "objeto": "public.owns_patient(p_patient_id uuid)",
+  "regra": "",
+  "tipo": "execute"
+ },
+ {
+  "detalhe": "security definer",
+  "nome": "authenticated",
+  "objeto": "public.owns_patient(p_patient_id uuid)",
+  "regra": "",
+  "tipo": "execute"
+ },
+ {
+  "detalhe": "security definer",
+  "nome": "anon",
+  "objeto": "public.owns_session(p_session_id uuid)",
+  "regra": "",
+  "tipo": "execute"
+ },
+ {
+  "detalhe": "security definer",
+  "nome": "authenticated",
+  "objeto": "public.owns_session(p_session_id uuid)",
+  "regra": "",
+  "tipo": "execute"
+ },
+ {
+  "detalhe": "invoker",
+  "nome": "anon",
+  "objeto": "public.profiles_nome_cpf_imutaveis()",
+  "regra": "",
+  "tipo": "execute"
+ },
+ {
+  "detalhe": "invoker",
+  "nome": "authenticated",
+  "objeto": "public.profiles_nome_cpf_imutaveis()",
+  "regra": "",
+  "tipo": "execute"
+ },
+ {
+  "detalhe": "invoker",
+  "nome": "anon",
+  "objeto": "public.reordenar_afazeres(p_ids uuid[])",
+  "regra": "",
+  "tipo": "execute"
+ },
+ {
+  "detalhe": "invoker",
+  "nome": "authenticated",
+  "objeto": "public.reordenar_afazeres(p_ids uuid[])",
+  "regra": "",
+  "tipo": "execute"
+ },
+ {
+  "detalhe": "security definer",
+  "nome": "authenticated",
+  "objeto": "public.salvar_integracao_whatsapp(p_phone_number_id text, p_access_token text, p_app_secret text)",
+  "regra": "",
+  "tipo": "execute"
+ },
+ {
+  "detalhe": "ALL PERMISSIVE {authenticated}",
+  "nome": "afazeres_all_own",
+  "objeto": "public.afazeres",
+  "regra": "(user_id = auth.uid()) | (user_id = auth.uid())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_delete_afazeres",
+  "objeto": "public.afazeres",
+  "regra": "(NOT eh_conta_demonstracao()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_insert_afazeres",
+  "objeto": "public.afazeres",
+  "regra": " | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_update_afazeres",
+  "objeto": "public.afazeres",
+  "regra": "(NOT eh_conta_demonstracao()) | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE PERMISSIVE {authenticated}",
+  "nome": "appointment_participantes_delete_own",
+  "objeto": "public.appointment_participantes",
+  "regra": "((user_id = auth.uid()) AND assinatura_ativa(auth.uid())) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT PERMISSIVE {authenticated}",
+  "nome": "appointment_participantes_insert_own",
+  "objeto": "public.appointment_participantes",
+  "regra": " | ((user_id = auth.uid()) AND assinatura_ativa(auth.uid()) AND owns_patient(patient_id) AND (EXISTS ( SELECT 1\n   FROM appointments a\n  WHERE ((a.id = appointment_participantes.appointment_id) AND (a.user_id = auth.uid())))))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "SELECT PERMISSIVE {authenticated}",
+  "nome": "appointment_participantes_select_own",
+  "objeto": "public.appointment_participantes",
+  "regra": "(user_id = auth.uid()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_delete_appointment_participantes",
+  "objeto": "public.appointment_participantes",
+  "regra": "(NOT eh_conta_demonstracao()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_insert_appointment_participantes",
+  "objeto": "public.appointment_participantes",
+  "regra": " | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_update_appointment_participantes",
+  "objeto": "public.appointment_participantes",
+  "regra": "(NOT eh_conta_demonstracao()) | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE PERMISSIVE {authenticated}",
+  "nome": "appointments_delete_own",
+  "objeto": "public.appointments",
+  "regra": "((user_id = auth.uid()) AND assinatura_ativa(auth.uid())) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT PERMISSIVE {authenticated}",
+  "nome": "appointments_insert_own",
+  "objeto": "public.appointments",
+  "regra": " | ((user_id = auth.uid()) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "SELECT PERMISSIVE {authenticated}",
+  "nome": "appointments_select_own",
+  "objeto": "public.appointments",
+  "regra": "(user_id = auth.uid()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE PERMISSIVE {authenticated}",
+  "nome": "appointments_update_own",
+  "objeto": "public.appointments",
+  "regra": "((user_id = auth.uid()) AND assinatura_ativa(auth.uid())) | ((user_id = auth.uid()) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_delete_appointments",
+  "objeto": "public.appointments",
+  "regra": "(NOT eh_conta_demonstracao()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_insert_appointments",
+  "objeto": "public.appointments",
+  "regra": " | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_update_appointments",
+  "objeto": "public.appointments",
+  "regra": "(NOT eh_conta_demonstracao()) | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT PERMISSIVE {authenticated}",
+  "nome": "autorizacoes_insert_own",
+  "objeto": "public.autorizacoes_transcricao",
+  "regra": " | ((user_id = auth.uid()) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "SELECT PERMISSIVE {authenticated}",
+  "nome": "autorizacoes_select_own",
+  "objeto": "public.autorizacoes_transcricao",
+  "regra": "(user_id = auth.uid()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_delete_autorizacoes_transcricao",
+  "objeto": "public.autorizacoes_transcricao",
+  "regra": "(NOT eh_conta_demonstracao()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_insert_autorizacoes_transcricao",
+  "objeto": "public.autorizacoes_transcricao",
+  "regra": " | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_update_autorizacoes_transcricao",
+  "objeto": "public.autorizacoes_transcricao",
+  "regra": "(NOT eh_conta_demonstracao()) | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE PERMISSIVE {authenticated}",
+  "nome": "availability_slots_delete_own",
+  "objeto": "public.availability_slots",
+  "regra": "((user_id = auth.uid()) AND assinatura_ativa(auth.uid())) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT PERMISSIVE {authenticated}",
+  "nome": "availability_slots_insert_own",
+  "objeto": "public.availability_slots",
+  "regra": " | ((user_id = auth.uid()) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "SELECT PERMISSIVE {authenticated}",
+  "nome": "availability_slots_select_own",
+  "objeto": "public.availability_slots",
+  "regra": "(user_id = auth.uid()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE PERMISSIVE {authenticated}",
+  "nome": "availability_slots_update_own",
+  "objeto": "public.availability_slots",
+  "regra": "((user_id = auth.uid()) AND assinatura_ativa(auth.uid())) | ((user_id = auth.uid()) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_delete_availability_slots",
+  "objeto": "public.availability_slots",
+  "regra": "(NOT eh_conta_demonstracao()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_insert_availability_slots",
+  "objeto": "public.availability_slots",
+  "regra": " | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_update_availability_slots",
+  "objeto": "public.availability_slots",
+  "regra": "(NOT eh_conta_demonstracao()) | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "SELECT PERMISSIVE {authenticated}",
+  "nome": "cotacoes_select_auth",
+  "objeto": "public.cotacoes_cache",
+  "regra": "true | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "ALL PERMISSIVE {authenticated}",
+  "nome": "cursos_all_own",
+  "objeto": "public.cursos",
+  "regra": "(user_id = auth.uid()) | (user_id = auth.uid())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_delete_cursos",
+  "objeto": "public.cursos",
+  "regra": "(NOT eh_conta_demonstracao()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_insert_cursos",
+  "objeto": "public.cursos",
+  "regra": " | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_update_cursos",
+  "objeto": "public.cursos",
+  "regra": "(NOT eh_conta_demonstracao()) | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_delete_despesas_consultorio",
+  "objeto": "public.despesas_consultorio",
+  "regra": "(NOT eh_conta_demonstracao()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_insert_despesas_consultorio",
+  "objeto": "public.despesas_consultorio",
+  "regra": " | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_update_despesas_consultorio",
+  "objeto": "public.despesas_consultorio",
+  "regra": "(NOT eh_conta_demonstracao()) | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "ALL PERMISSIVE {authenticated}",
+  "nome": "despesas_consultorio_all_own",
+  "objeto": "public.despesas_consultorio",
+  "regra": "(user_id = auth.uid()) | (user_id = auth.uid())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT PERMISSIVE {authenticated}",
+  "nome": "erros_app_insert_own",
+  "objeto": "public.erros_app",
+  "regra": " | ((user_id = auth.uid()) OR (user_id IS NULL))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_delete_horarios_liberados",
+  "objeto": "public.horarios_liberados",
+  "regra": "(NOT eh_conta_demonstracao()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_insert_horarios_liberados",
+  "objeto": "public.horarios_liberados",
+  "regra": " | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_update_horarios_liberados",
+  "objeto": "public.horarios_liberados",
+  "regra": "(NOT eh_conta_demonstracao()) | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "ALL PERMISSIVE {authenticated}",
+  "nome": "horarios_liberados_all_own",
+  "objeto": "public.horarios_liberados",
+  "regra": "(user_id = auth.uid()) | (user_id = auth.uid())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_delete_integracoes_videochamada",
+  "objeto": "public.integracoes_videochamada",
+  "regra": "(NOT eh_conta_demonstracao()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_insert_integracoes_videochamada",
+  "objeto": "public.integracoes_videochamada",
+  "regra": " | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_update_integracoes_videochamada",
+  "objeto": "public.integracoes_videochamada",
+  "regra": "(NOT eh_conta_demonstracao()) | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE PERMISSIVE {authenticated}",
+  "nome": "integracoes_delete_own",
+  "objeto": "public.integracoes_videochamada",
+  "regra": "(user_id = auth.uid()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "SELECT PERMISSIVE {authenticated}",
+  "nome": "integracoes_select_own",
+  "objeto": "public.integracoes_videochamada",
+  "regra": "(user_id = auth.uid()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_delete_integracoes_whatsapp",
+  "objeto": "public.integracoes_whatsapp",
+  "regra": "(NOT eh_conta_demonstracao()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_insert_integracoes_whatsapp",
+  "objeto": "public.integracoes_whatsapp",
+  "regra": " | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_update_integracoes_whatsapp",
+  "objeto": "public.integracoes_whatsapp",
+  "regra": "(NOT eh_conta_demonstracao()) | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE PERMISSIVE {authenticated}",
+  "nome": "integracoes_whatsapp_delete_own",
+  "objeto": "public.integracoes_whatsapp",
+  "regra": "(user_id = auth.uid()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT PERMISSIVE {authenticated}",
+  "nome": "integracoes_whatsapp_insert_own",
+  "objeto": "public.integracoes_whatsapp",
+  "regra": " | (user_id = auth.uid())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "SELECT PERMISSIVE {authenticated}",
+  "nome": "integracoes_whatsapp_select_own",
+  "objeto": "public.integracoes_whatsapp",
+  "regra": "(user_id = auth.uid()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE PERMISSIVE {authenticated}",
+  "nome": "integracoes_whatsapp_update_own",
+  "objeto": "public.integracoes_whatsapp",
+  "regra": "(user_id = auth.uid()) | (user_id = auth.uid())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_delete_nucleos_evidencias",
+  "objeto": "public.nucleos_evidencias",
+  "regra": "(NOT eh_conta_demonstracao()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_insert_nucleos_evidencias",
+  "objeto": "public.nucleos_evidencias",
+  "regra": " | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_update_nucleos_evidencias",
+  "objeto": "public.nucleos_evidencias",
+  "regra": "(NOT eh_conta_demonstracao()) | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE PERMISSIVE {authenticated}",
+  "nome": "nucleos_evidencias_delete_own",
+  "objeto": "public.nucleos_evidencias",
+  "regra": "(owns_patient(patient_id) AND assinatura_ativa(auth.uid())) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT PERMISSIVE {authenticated}",
+  "nome": "nucleos_evidencias_insert_own",
+  "objeto": "public.nucleos_evidencias",
+  "regra": " | (owns_patient(patient_id) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "SELECT PERMISSIVE {authenticated}",
+  "nome": "nucleos_evidencias_select_own",
+  "objeto": "public.nucleos_evidencias",
+  "regra": "owns_patient(patient_id) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE PERMISSIVE {authenticated}",
+  "nome": "nucleos_evidencias_update_own",
+  "objeto": "public.nucleos_evidencias",
+  "regra": "(owns_patient(patient_id) AND assinatura_ativa(auth.uid())) | (owns_patient(patient_id) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_delete_nucleos_perguntas",
+  "objeto": "public.nucleos_perguntas",
+  "regra": "(NOT eh_conta_demonstracao()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_insert_nucleos_perguntas",
+  "objeto": "public.nucleos_perguntas",
+  "regra": " | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_update_nucleos_perguntas",
+  "objeto": "public.nucleos_perguntas",
+  "regra": "(NOT eh_conta_demonstracao()) | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE PERMISSIVE {authenticated}",
+  "nome": "nucleos_perguntas_delete_own",
+  "objeto": "public.nucleos_perguntas",
+  "regra": "(owns_patient(patient_id) AND assinatura_ativa(auth.uid())) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT PERMISSIVE {authenticated}",
+  "nome": "nucleos_perguntas_insert_own",
+  "objeto": "public.nucleos_perguntas",
+  "regra": " | (owns_patient(patient_id) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "SELECT PERMISSIVE {authenticated}",
+  "nome": "nucleos_perguntas_select_own",
+  "objeto": "public.nucleos_perguntas",
+  "regra": "owns_patient(patient_id) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE PERMISSIVE {authenticated}",
+  "nome": "nucleos_perguntas_update_own",
+  "objeto": "public.nucleos_perguntas",
+  "regra": "(owns_patient(patient_id) AND assinatura_ativa(auth.uid())) | (owns_patient(patient_id) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_delete_nucleos_snapshots",
+  "objeto": "public.nucleos_snapshots",
+  "regra": "(NOT eh_conta_demonstracao()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_insert_nucleos_snapshots",
+  "objeto": "public.nucleos_snapshots",
+  "regra": " | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_update_nucleos_snapshots",
+  "objeto": "public.nucleos_snapshots",
+  "regra": "(NOT eh_conta_demonstracao()) | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE PERMISSIVE {authenticated}",
+  "nome": "nucleos_snapshots_delete_own",
+  "objeto": "public.nucleos_snapshots",
+  "regra": "(owns_patient(patient_id) AND assinatura_ativa(auth.uid())) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT PERMISSIVE {authenticated}",
+  "nome": "nucleos_snapshots_insert_own",
+  "objeto": "public.nucleos_snapshots",
+  "regra": " | (owns_patient(patient_id) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "SELECT PERMISSIVE {authenticated}",
+  "nome": "nucleos_snapshots_select_own",
+  "objeto": "public.nucleos_snapshots",
+  "regra": "owns_patient(patient_id) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE PERMISSIVE {authenticated}",
+  "nome": "nucleos_snapshots_update_own",
+  "objeto": "public.nucleos_snapshots",
+  "regra": "(owns_patient(patient_id) AND assinatura_ativa(auth.uid())) | (owns_patient(patient_id) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_delete_nucleos_transicoes",
+  "objeto": "public.nucleos_transicoes",
+  "regra": "(NOT eh_conta_demonstracao()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_insert_nucleos_transicoes",
+  "objeto": "public.nucleos_transicoes",
+  "regra": " | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_update_nucleos_transicoes",
+  "objeto": "public.nucleos_transicoes",
+  "regra": "(NOT eh_conta_demonstracao()) | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE PERMISSIVE {authenticated}",
+  "nome": "nucleos_transicoes_delete_own",
+  "objeto": "public.nucleos_transicoes",
+  "regra": "(owns_patient(patient_id) AND assinatura_ativa(auth.uid())) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT PERMISSIVE {authenticated}",
+  "nome": "nucleos_transicoes_insert_own",
+  "objeto": "public.nucleos_transicoes",
+  "regra": " | (owns_patient(patient_id) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "SELECT PERMISSIVE {authenticated}",
+  "nome": "nucleos_transicoes_select_own",
+  "objeto": "public.nucleos_transicoes",
+  "regra": "owns_patient(patient_id) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE PERMISSIVE {authenticated}",
+  "nome": "nucleos_transicoes_update_own",
+  "objeto": "public.nucleos_transicoes",
+  "regra": "(owns_patient(patient_id) AND assinatura_ativa(auth.uid())) | (owns_patient(patient_id) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_delete_objetivo_evidencias",
+  "objeto": "public.objetivo_evidencias",
+  "regra": "(NOT eh_conta_demonstracao()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_insert_objetivo_evidencias",
+  "objeto": "public.objetivo_evidencias",
+  "regra": " | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_update_objetivo_evidencias",
+  "objeto": "public.objetivo_evidencias",
+  "regra": "(NOT eh_conta_demonstracao()) | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE PERMISSIVE {authenticated}",
+  "nome": "objetivo_evidencias_delete_own",
+  "objeto": "public.objetivo_evidencias",
+  "regra": "(owns_patient(patient_id) AND assinatura_ativa(auth.uid())) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT PERMISSIVE {authenticated}",
+  "nome": "objetivo_evidencias_insert_own",
+  "objeto": "public.objetivo_evidencias",
+  "regra": " | (owns_patient(patient_id) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "SELECT PERMISSIVE {authenticated}",
+  "nome": "objetivo_evidencias_select_own",
+  "objeto": "public.objetivo_evidencias",
+  "regra": "owns_patient(patient_id) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE PERMISSIVE {authenticated}",
+  "nome": "objetivo_evidencias_update_own",
+  "objeto": "public.objetivo_evidencias",
+  "regra": "(owns_patient(patient_id) AND assinatura_ativa(auth.uid())) | (owns_patient(patient_id) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_delete_pagamentos",
+  "objeto": "public.pagamentos",
+  "regra": "(NOT eh_conta_demonstracao()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_insert_pagamentos",
+  "objeto": "public.pagamentos",
+  "regra": " | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_update_pagamentos",
+  "objeto": "public.pagamentos",
+  "regra": "(NOT eh_conta_demonstracao()) | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE PERMISSIVE {authenticated}",
+  "nome": "pagamentos_delete_own",
+  "objeto": "public.pagamentos",
+  "regra": "(owns_patient(patient_id) AND assinatura_ativa(auth.uid())) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT PERMISSIVE {authenticated}",
+  "nome": "pagamentos_insert_own",
+  "objeto": "public.pagamentos",
+  "regra": " | (owns_patient(patient_id) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "SELECT PERMISSIVE {authenticated}",
+  "nome": "pagamentos_select_own",
+  "objeto": "public.pagamentos",
+  "regra": "owns_patient(patient_id) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE PERMISSIVE {authenticated}",
+  "nome": "pagamentos_update_own",
+  "objeto": "public.pagamentos",
+  "regra": "(owns_patient(patient_id) AND assinatura_ativa(auth.uid())) | (owns_patient(patient_id) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_delete_patient_paralizacoes",
+  "objeto": "public.patient_paralizacoes",
+  "regra": "(NOT eh_conta_demonstracao()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_insert_patient_paralizacoes",
+  "objeto": "public.patient_paralizacoes",
+  "regra": " | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_update_patient_paralizacoes",
+  "objeto": "public.patient_paralizacoes",
+  "regra": "(NOT eh_conta_demonstracao()) | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE PERMISSIVE {authenticated}",
+  "nome": "patient_paralizacoes_delete_own",
+  "objeto": "public.patient_paralizacoes",
+  "regra": "(owns_patient(patient_id) AND assinatura_ativa(auth.uid())) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT PERMISSIVE {authenticated}",
+  "nome": "patient_paralizacoes_insert_own",
+  "objeto": "public.patient_paralizacoes",
+  "regra": " | (owns_patient(patient_id) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "SELECT PERMISSIVE {authenticated}",
+  "nome": "patient_paralizacoes_select_own",
+  "objeto": "public.patient_paralizacoes",
+  "regra": "owns_patient(patient_id) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE PERMISSIVE {authenticated}",
+  "nome": "patient_paralizacoes_update_own",
+  "objeto": "public.patient_paralizacoes",
+  "regra": "(owns_patient(patient_id) AND assinatura_ativa(auth.uid())) | (owns_patient(patient_id) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_delete_patients",
+  "objeto": "public.patients",
+  "regra": "(NOT eh_conta_demonstracao()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_insert_patients",
+  "objeto": "public.patients",
+  "regra": " | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_update_patients",
+  "objeto": "public.patients",
+  "regra": "(NOT eh_conta_demonstracao()) | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE PERMISSIVE {authenticated}",
+  "nome": "patients_delete_own",
+  "objeto": "public.patients",
+  "regra": "((user_id = auth.uid()) AND assinatura_ativa(auth.uid())) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT PERMISSIVE {authenticated}",
+  "nome": "patients_insert_own",
+  "objeto": "public.patients",
+  "regra": " | ((user_id = auth.uid()) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "SELECT PERMISSIVE {authenticated}",
+  "nome": "patients_select_own",
+  "objeto": "public.patients",
+  "regra": "(user_id = auth.uid()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE PERMISSIVE {authenticated}",
+  "nome": "patients_update_own",
+  "objeto": "public.patients",
+  "regra": "((user_id = auth.uid()) AND assinatura_ativa(auth.uid())) | ((user_id = auth.uid()) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_delete_profiles",
+  "objeto": "public.profiles",
+  "regra": "(NOT eh_conta_demonstracao()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_insert_profiles",
+  "objeto": "public.profiles",
+  "regra": " | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_update_profiles",
+  "objeto": "public.profiles",
+  "regra": "(NOT eh_conta_demonstracao()) | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "SELECT PERMISSIVE {authenticated}",
+  "nome": "profiles_select_own",
+  "objeto": "public.profiles",
+  "regra": "(id = auth.uid()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE PERMISSIVE {authenticated}",
+  "nome": "profiles_update_own",
+  "objeto": "public.profiles",
+  "regra": "(id = auth.uid()) | (id = auth.uid())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "SELECT PERMISSIVE {authenticated}",
+  "nome": "recargas_creditos_select_own",
+  "objeto": "public.recargas_creditos",
+  "regra": "(user_id = auth.uid()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_delete_records",
+  "objeto": "public.records",
+  "regra": "(NOT eh_conta_demonstracao()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_insert_records",
+  "objeto": "public.records",
+  "regra": " | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_update_records",
+  "objeto": "public.records",
+  "regra": "(NOT eh_conta_demonstracao()) | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE PERMISSIVE {authenticated}",
+  "nome": "records_delete_own",
+  "objeto": "public.records",
+  "regra": "(owns_patient(patient_id) AND assinatura_ativa(auth.uid())) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT PERMISSIVE {authenticated}",
+  "nome": "records_insert_own",
+  "objeto": "public.records",
+  "regra": " | (owns_patient(patient_id) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "SELECT PERMISSIVE {authenticated}",
+  "nome": "records_select_own",
+  "objeto": "public.records",
+  "regra": "owns_patient(patient_id) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE PERMISSIVE {authenticated}",
+  "nome": "records_update_own",
+  "objeto": "public.records",
+  "regra": "(owns_patient(patient_id) AND assinatura_ativa(auth.uid())) | (owns_patient(patient_id) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_delete_relatorios",
+  "objeto": "public.relatorios",
+  "regra": "(NOT eh_conta_demonstracao()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_insert_relatorios",
+  "objeto": "public.relatorios",
+  "regra": " | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_update_relatorios",
+  "objeto": "public.relatorios",
+  "regra": "(NOT eh_conta_demonstracao()) | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE PERMISSIVE {authenticated}",
+  "nome": "relatorios_delete_own",
+  "objeto": "public.relatorios",
+  "regra": "(owns_patient(patient_id) AND assinatura_ativa(auth.uid())) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT PERMISSIVE {authenticated}",
+  "nome": "relatorios_insert_own",
+  "objeto": "public.relatorios",
+  "regra": " | (owns_patient(patient_id) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "SELECT PERMISSIVE {authenticated}",
+  "nome": "relatorios_select_own",
+  "objeto": "public.relatorios",
+  "regra": "owns_patient(patient_id) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE PERMISSIVE {authenticated}",
+  "nome": "relatorios_update_own",
+  "objeto": "public.relatorios",
+  "regra": "(owns_patient(patient_id) AND assinatura_ativa(auth.uid())) | (owns_patient(patient_id) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "SELECT PERMISSIVE {authenticated}",
+  "nome": "rubricas_select_auth",
+  "objeto": "public.rubricas_config",
+  "regra": "true | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_delete_sessions",
+  "objeto": "public.sessions",
+  "regra": "(NOT eh_conta_demonstracao()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_insert_sessions",
+  "objeto": "public.sessions",
+  "regra": " | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_update_sessions",
+  "objeto": "public.sessions",
+  "regra": "(NOT eh_conta_demonstracao()) | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE PERMISSIVE {authenticated}",
+  "nome": "sessions_delete_own",
+  "objeto": "public.sessions",
+  "regra": "(owns_patient(patient_id) AND assinatura_ativa(auth.uid())) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT PERMISSIVE {authenticated}",
+  "nome": "sessions_insert_own",
+  "objeto": "public.sessions",
+  "regra": " | (owns_patient(patient_id) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "SELECT PERMISSIVE {authenticated}",
+  "nome": "sessions_select_own",
+  "objeto": "public.sessions",
+  "regra": "owns_patient(patient_id) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE PERMISSIVE {authenticated}",
+  "nome": "sessions_update_own",
+  "objeto": "public.sessions",
+  "regra": "(owns_patient(patient_id) AND assinatura_ativa(auth.uid())) | (owns_patient(patient_id) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_delete_slot_participantes",
+  "objeto": "public.slot_participantes",
+  "regra": "(NOT eh_conta_demonstracao()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_insert_slot_participantes",
+  "objeto": "public.slot_participantes",
+  "regra": " | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_update_slot_participantes",
+  "objeto": "public.slot_participantes",
+  "regra": "(NOT eh_conta_demonstracao()) | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE PERMISSIVE {authenticated}",
+  "nome": "slot_participantes_delete_own",
+  "objeto": "public.slot_participantes",
+  "regra": "((user_id = auth.uid()) AND assinatura_ativa(auth.uid())) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT PERMISSIVE {authenticated}",
+  "nome": "slot_participantes_insert_own",
+  "objeto": "public.slot_participantes",
+  "regra": " | ((user_id = auth.uid()) AND assinatura_ativa(auth.uid()) AND owns_patient(patient_id) AND (EXISTS ( SELECT 1\n   FROM availability_slots s\n  WHERE ((s.id = slot_participantes.slot_id) AND (s.user_id = auth.uid())))))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "SELECT PERMISSIVE {authenticated}",
+  "nome": "slot_participantes_select_own",
+  "objeto": "public.slot_participantes",
+  "regra": "(user_id = auth.uid()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "SELECT PERMISSIVE {authenticated}",
+  "nome": "transcript_segments_select_own",
+  "objeto": "public.transcript_segments",
+  "regra": "(((session_id IS NOT NULL) AND owns_session(session_id)) OR ((curso_id IS NOT NULL) AND (EXISTS ( SELECT 1\n   FROM cursos c\n  WHERE ((c.id = transcript_segments.curso_id) AND (c.user_id = auth.uid())))))) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_delete_transcript_turns",
+  "objeto": "public.transcript_turns",
+  "regra": "(NOT eh_conta_demonstracao()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_insert_transcript_turns",
+  "objeto": "public.transcript_turns",
+  "regra": " | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_update_transcript_turns",
+  "objeto": "public.transcript_turns",
+  "regra": "(NOT eh_conta_demonstracao()) | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE PERMISSIVE {authenticated}",
+  "nome": "transcript_turns_delete_own",
+  "objeto": "public.transcript_turns",
+  "regra": "(owns_session(session_id) AND assinatura_ativa(auth.uid())) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT PERMISSIVE {authenticated}",
+  "nome": "transcript_turns_insert_own",
+  "objeto": "public.transcript_turns",
+  "regra": " | (owns_session(session_id) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "SELECT PERMISSIVE {authenticated}",
+  "nome": "transcript_turns_select_own",
+  "objeto": "public.transcript_turns",
+  "regra": "owns_session(session_id) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE PERMISSIVE {authenticated}",
+  "nome": "transcript_turns_update_own",
+  "objeto": "public.transcript_turns",
+  "regra": "(owns_session(session_id) AND assinatura_ativa(auth.uid())) | (owns_session(session_id) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "SELECT PERMISSIVE {authenticated}",
+  "nome": "uso_ia_select_own",
+  "objeto": "public.uso_ia",
+  "regra": "(user_id = auth.uid()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_delete_whatsapp_comprovantes",
+  "objeto": "public.whatsapp_comprovantes",
+  "regra": "(NOT eh_conta_demonstracao()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_insert_whatsapp_comprovantes",
+  "objeto": "public.whatsapp_comprovantes",
+  "regra": " | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE RESTRICTIVE {authenticated}",
+  "nome": "demo_sem_update_whatsapp_comprovantes",
+  "objeto": "public.whatsapp_comprovantes",
+  "regra": "(NOT eh_conta_demonstracao()) | (NOT eh_conta_demonstracao())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "SELECT PERMISSIVE {authenticated}",
+  "nome": "whatsapp_comprovantes_select_own",
+  "objeto": "public.whatsapp_comprovantes",
+  "regra": "(user_id = auth.uid()) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE PERMISSIVE {authenticated}",
+  "nome": "whatsapp_comprovantes_update_own",
+  "objeto": "public.whatsapp_comprovantes",
+  "regra": "(user_id = auth.uid()) | (user_id = auth.uid())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "DELETE PERMISSIVE {public}",
+  "nome": "avatars_delete_own",
+  "objeto": "storage.objects",
+  "regra": "((bucket_id = 'avatars'::text) AND ((storage.foldername(name))[1] = (auth.uid())::text)) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT PERMISSIVE {public}",
+  "nome": "avatars_insert_own",
+  "objeto": "storage.objects",
+  "regra": " | ((bucket_id = 'avatars'::text) AND ((storage.foldername(name))[1] = (auth.uid())::text))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "SELECT PERMISSIVE {public}",
+  "nome": "avatars_select_public",
+  "objeto": "storage.objects",
+  "regra": "(bucket_id = 'avatars'::text) | ",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE PERMISSIVE {public}",
+  "nome": "avatars_update_own",
+  "objeto": "storage.objects",
+  "regra": "((bucket_id = 'avatars'::text) AND ((storage.foldername(name))[1] = (auth.uid())::text)) | ",
+  "tipo": "policy"
+ }
+]

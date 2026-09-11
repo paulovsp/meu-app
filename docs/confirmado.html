@@ -4,72 +4,25 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Conta confirmada — Dr.Sig</title>
-<style>
-  body {
-    font-family: -apple-system, Arial, sans-serif;
-    background: #3A5C4F;
-    margin: 0;
-    padding: 24px;
-    color: #302C28;
-    line-height: 1.6;
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .card {
-    max-width: 420px;
-    width: 100%;
-    background: #fff;
-    border-radius: 20px;
-    padding: 40px 32px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.18);
-    text-align: center;
-  }
-  .selo {
-    width: 64px; height: 64px;
-    border-radius: 50%;
-    background: #E6F5EE;
-    display: flex; align-items: center; justify-content: center;
-    margin: 0 auto 20px;
-    font-size: 32px;
-  }
-  h1 {
-    font-size: 22px;
-    margin: 0 0 12px;
-    color: #302C28;
-  }
-  p {
-    font-size: 14.5px;
-    color: #6B6860;
-    margin: 0 0 24px;
-  }
-  a.btn {
-    display: inline-block;
-    background: #3A5C4F;
-    color: #fff;
-    text-decoration: none;
-    font-weight: 700;
-    font-size: 15px;
-    padding: 14px 28px;
-    border-radius: 12px;
-  }
-  .marca {
-    margin-top: 28px;
-    font-size: 12px;
-    color: #B0ADA6;
-    font-style: italic;
-  }
-</style>
+<meta name="theme-color" content="#497363" />
+<link rel="stylesheet" href="drsig.css" />
 </head>
 <body>
-  <div class="card">
+<header class="topo">
+  <a class="wordmark" href="https://drsig.com.br/">Dr.Sig</a>
+  <span class="tagline">O seu assistente clínico</span>
+  <svg class="onda" viewBox="0 0 390 60" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="onda-g" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#497363"/><stop offset="1" stop-color="#6B9E8A"/></linearGradient></defs><path d="M0,60 L390,60 L390,26 C320,12 250,46 180,20 C110,-6 50,34 0,18 Z" fill="url(#onda-g)"/></svg>
+</header>
+
+<div class="moldura"><div class="moldura-central">
+  <div class="card centro">
     <div class="selo">✅</div>
     <h1>Conta confirmada!</h1>
-    <p>Sua conta no Dr.Sig está confirmada. Abra o app no seu celular e faça login com o e-mail e a senha que você cadastrou.</p>
-    <p>Enquanto você não escolher um plano, dá pra entrar e conhecer o app, mas criar sessões, registros e cadastros fica bloqueado. O link para escolher o plano está no e-mail de boas-vindas — e você pode pedi-lo de novo a qualquer momento pelo app, em <strong>Meu Perfil &rsaquo; Seu plano</strong>.</p>
+    <p class="lede">Sua conta no Dr.Sig está confirmada. Abra o app no seu celular e faça login com o e-mail e a senha que você cadastrou.</p>
+    <p class="lede">Enquanto você não escolher um plano, dá para entrar e conhecer o app, mas criar sessões, registros e cadastros fica bloqueado. O link para escolher o plano está no e-mail de boas-vindas — e você pode pedi-lo de novo a qualquer momento pelo app, em <strong>Meu Perfil &rsaquo; Seu plano</strong>.</p>
     <a class="btn" href="https://play.google.com/store/apps/details?id=br.com.drsig.app">Abrir / baixar o Dr.Sig</a>
-    <p class="marca">O consultório e a escuta, no mesmo lugar.</p>
+    <p class="tagline-fim">O consultório e a escuta, no mesmo lugar.</p>
   </div>
+</div></div>
 </body>
 </html>

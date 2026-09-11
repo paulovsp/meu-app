@@ -6,6 +6,7 @@
 // injetadas automaticamente pelo Supabase — só RESEND_API_KEY precisa ser
 // configurada manualmente como secret desta função.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { botao, envelope, enviarEmail, escaparHtml, p } from '../_shared/emailDrSig.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -100,32 +101,23 @@ Deno.serve(async (req) => {
     const linkConfirmacao = `https://app.drsig.com.br/autorizacao.html?token=${token}`;
     const primeiroNome = String(nome).trim().split(' ')[0];
 
-    const emailResp = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: 'Dr.Sig <naoresponda@drsig.com.br>',
-        to: [email],
-        subject: `${nomePsicanalista} está pedindo sua autorização`,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #302C28;">
-            <h2>Autorização de gravação e transcrição</h2>
-            <p>Olá, ${primeiroNome}.</p>
-            <p><strong>${nomePsicanalista}</strong> está pedindo sua autorização para gravar em áudio e transcrever suas sessões, como parte do seu acompanhamento clínico.</p>
-            <p>Clique no link abaixo e escolha se autoriza ou não. Se autorizar, vamos pedir uma foto de um documento com foto (RG, CNH ou passaporte) só pra confirmar que é você — a foto não fica guardada, é usada apenas nessa conferência.</p>
-            <p><a href="${linkConfirmacao}" style="background:#3A5C4F;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;display:inline-block;">Responder à solicitação</a></p>
-            <p style="color:#888;font-size:12px;">Se você não é ${primeiroNome} ou não reconhece essa solicitação, ignore este e-mail. O link expira em 48 horas.</p>
-          </div>
-        `,
-      }),
+    const profissional = escaparHtml(nomePsicanalista);
+    const html = envelope({
+      titulo: 'Autorização de gravação e transcrição',
+      saudacao: `Olá, ${escaparHtml(primeiroNome)}.`,
+      previa: `${nomePsicanalista} pede sua autorização para gravar e transcrever as sessões.`,
+      corpo:
+        p(`<strong>${profissional}</strong> está pedindo sua autorização para gravar em áudio e transcrever suas sessões, como parte do seu acompanhamento clínico.`)
+        + p('Toque no botão e escolha se autoriza ou não. Se autorizar, vamos pedir uma foto de um documento com foto (RG, CNH ou passaporte) só para confirmar que é você — a foto não fica guardada, é usada apenas nessa conferência.')
+        + botao('Responder à solicitação', linkConfirmacao)
+        + p('O link expira em 48 horas. Você pode revogar a autorização a qualquer momento, conversando com sua psicanalista.', { pequeno: true }),
+      rodape: `Se você não é ${escaparHtml(primeiroNome)} ou não reconhece esta solicitação, ignore este e-mail.`,
     });
 
-    if (!emailResp.ok) {
-      const erro = await emailResp.text();
-      return new Response(JSON.stringify({ error: `Falha ao enviar e-mail: ${erro}` }), { status: 500 });
+    try {
+      await enviarEmail(RESEND_API_KEY, email, `${nomePsicanalista} está pedindo sua autorização`, html);
+    } catch (erro) {
+      return new Response(JSON.stringify({ error: String((erro as Error).message || erro) }), { status: 500 });
     }
 
     return new Response(JSON.stringify({ ok: true }), {

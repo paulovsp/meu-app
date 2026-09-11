@@ -3,35 +3,33 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Conectar Zoom</title>
-<style>
-  body { font-family: -apple-system, Arial, sans-serif; background: #F5F7FA; margin: 0; padding: 24px; color: #302C28; }
-  .card { max-width: 420px; margin: 0 auto; background: #fff; border-radius: 16px; padding: 28px; box-shadow: 0 2px 10px rgba(0,0,0,0.06); }
-  h2 { margin-top: 0; }
-  p { line-height: 1.55; }
-  .carregando { text-align: center; color: #6B6860; padding: 40px 0; }
-  .erro { background: #FCEBEA; color: #C0392B; padding: 12px; border-radius: 10px; font-size: 13.5px; line-height: 1.5; }
-  .aviso { background: #FFF4E5; color: #B36B00; padding: 12px 14px; border-radius: 10px; font-size: 13.5px; line-height: 1.55; margin-top: 14px; }
-  .ok { color: #2E6B4F; font-weight: 700; }
-  .conta { background: #F5F7FA; border-left: 3px solid #3A5C4F; padding: 10px 14px; border-radius: 4px; font-size: 13px; color: #33333d; margin-top: 14px; }
-  .voltar { color: #6B6860; font-size: 13px; margin-top: 22px; }
-</style>
+<title>Conectar Zoom — Dr.Sig</title>
+<meta name="theme-color" content="#497363" />
+<link rel="stylesheet" href="drsig.css" />
 </head>
 <body>
+<header class="topo">
+  <a class="wordmark" href="https://drsig.com.br/">Dr.Sig</a>
+  <span class="tagline">O seu assistente clínico</span>
+  <svg class="onda" viewBox="0 0 390 60" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="onda-g" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#497363"/><stop offset="1" stop-color="#6B9E8A"/></linearGradient></defs><path d="M0,60 L390,60 L390,26 C320,12 250,46 180,20 C110,-6 50,34 0,18 Z" fill="url(#onda-g)"/></svg>
+</header>
+
+<div class="moldura"><div class="moldura-central">
   <div class="card" id="card">
     <div class="carregando">Conectando sua conta do Zoom…</div>
   </div>
+</div></div>
 
   <script>
     // Esta página existe porque o Supabase reescreve respostas text/html das
     // Edge Functions pra text/plain (proteção antiphishing deles) — então o
-    // Google redireciona pra cá, e daqui a gente chama a function.
+    // Zoom redireciona pra cá, e daqui a gente chama a function.
     const SUPABASE_URL = 'https://iahtyvqjgukdgrftpyxm.supabase.co';
     const API_URL = SUPABASE_URL + '/functions/v1/zoom-oauth-callback';
     const card = document.getElementById('card');
 
     function mostrarErro(msg) {
-      card.innerHTML = '<h2>Não deu para conectar</h2>'
+      card.innerHTML = '<h1>Não deu para conectar</h1>'
         + '<div class="erro">' + msg + '</div>'
         + '<p class="voltar">Feche esta janela e tente de novo pelo app.</p>';
     }
@@ -57,7 +55,7 @@
         const corpo = await resp.json();
         if (!resp.ok || corpo.error) { mostrarErro(corpo.error || ('Erro ' + resp.status + '.')); return; }
 
-        var html = '<h2><span class="ok">Conta conectada</span></h2>'
+        var html = '<h1><span class="ok">Conta conectada</span></h1>'
           + '<p>Agora o Dr.Sig pode criar as reuniões das suas sessões online e trazer a transcrição automaticamente.</p>';
         if (corpo.contaEmail) {
           html += '<div class="conta">Conectado como <strong>' + corpo.contaEmail + '</strong></div>';

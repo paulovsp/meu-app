@@ -24,6 +24,7 @@
 // aqui, escapado. Não há como este servidor mandar e-mail para alguém que
 // não seja um analisante ou o contador de quem chamou.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { envelope, enviarEmail as enviarPelaResend, escaparHtml, p } from '../_shared/emailDrSig.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -46,42 +47,21 @@ function formatarMoedaBRL(valor: number) {
   return (valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
-function escaparHtml(texto: string) {
-  return texto.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
 // Texto autoral da profissional vira o corpo do e-mail: escapado, e cada
 // quebra de linha vira um parágrafo próprio.
 function textoParaHtml(texto: string) {
   const escapado = escaparHtml(String(texto || ''));
-  const paragrafos = escapado.split('\n').filter((l) => l.trim()).map((l) => `<p>${l}</p>`);
-  return paragrafos.join('') || `<p>${escapado}</p>`;
+  const paragrafos = escapado.split('\n').filter((l) => l.trim()).map((l) => p(l));
+  return paragrafos.join('') || p(escapado);
 }
 
-async function enviarEmail({ to, subject, html, pdfBase64 }: {
-  to: string; subject: string; html: string; pdfBase64?: string;
+/** Manda o e-mail no envelope do Dr.Sig, com o recibo em anexo quando houver. */
+async function enviarEmail({ to, subject, titulo, html, pdfBase64, rodape }: {
+  to: string; subject: string; titulo: string; html: string; pdfBase64?: string; rodape: string;
 }) {
-  const body: Record<string, unknown> = {
-    from: 'Dr.Sig <naoresponda@drsig.com.br>',
-    to: [to],
-    subject,
-    html,
-  };
-  if (pdfBase64) {
-    body.attachments = [{ filename: 'recibo.pdf', content: pdfBase64 }];
-  }
-  const resp = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${RESEND_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
-  if (!resp.ok) {
-    const erro = await resp.text();
-    throw new Error(`Falha ao enviar e-mail pra ${to}: ${erro}`);
-  }
+  const corpo = envelope({ titulo, corpo: html, rodape });
+  const anexos = pdfBase64 ? [{ filename: 'recibo.pdf', content: pdfBase64 }] : undefined;
+  await enviarPelaResend(RESEND_API_KEY, to, subject, corpo, anexos);
 }
 
 Deno.serve(async (req) => {
@@ -151,11 +131,13 @@ Deno.serve(async (req) => {
         const cpfTexto = paciente.cpf ? ` (CPF ${escaparHtml(String(paciente.cpf))})` : '';
         const html = mensagemContador
           ? textoParaHtml(mensagemContador)
-          : `<p>Olá.</p><p>Segue o resumo para emissão da nota fiscal referente a <strong>${patientNome}</strong>${cpfTexto}, ${periodoTexto}, no valor de <strong>${formatarMoedaBRL(Number(valor))}</strong>.</p><p>Solicitação enviada por ${escaparHtml(nomePsicanalista)}. Por favor, emita a nota fiscal e a envie diretamente ao analisante.</p>`;
+          : p('Olá.') + p(`Segue o resumo para emissão da nota fiscal referente a <strong>${patientNome}</strong>${cpfTexto}, ${periodoTexto}, no valor de <strong>${formatarMoedaBRL(Number(valor))}</strong>.`) + p(`Solicitação enviada por ${escaparHtml(nomePsicanalista)}. Por favor, emita a nota fiscal e a envie diretamente ao analisante.`);
         await enviarEmail({
           to: contadorEmail!,
           subject: `Emissão de nota fiscal — ${paciente.nome} — ${periodo}`,
+          titulo: 'Emissão de nota fiscal',
           html,
+          rodape: `Enviado pelo Dr.Sig a pedido de ${escaparHtml(nomePsicanalista)}.`,
         });
         enviadoContador = true;
       } catch (e) {
@@ -166,8 +148,15 @@ Deno.serve(async (req) => {
         try {
           const html = mensagemPaciente
             ? textoParaHtml(mensagemPaciente)
-            : `<p>Olá, ${patientNome}.</p><p>Segue em anexo o recibo de prestação de serviços referente a ${periodoTexto}, emitido por ${escaparHtml(nomePsicanalista)}.</p>`;
-          await enviarEmail({ to: pacienteEmail, subject: `Seu recibo — ${periodo}`, html, pdfBase64 });
+            : p(`Olá, ${patientNome}.`) + p(`Segue em anexo o recibo de prestação de serviços referente a ${periodoTexto}, emitido por ${escaparHtml(nomePsicanalista)}.`);
+          await enviarEmail({
+            to: pacienteEmail,
+            subject: `Seu recibo — ${periodo}`,
+            titulo: 'Seu recibo',
+            html,
+            pdfBase64,
+            rodape: `O recibo está em anexo, em PDF. Enviado pelo Dr.Sig a pedido de ${escaparHtml(nomePsicanalista)}.`,
+          });
           enviadoPaciente = true;
         } catch (e) {
           erros.push(String((e as Error).message || e));
@@ -178,12 +167,14 @@ Deno.serve(async (req) => {
         try {
           const html = mensagemContador
             ? textoParaHtml(mensagemContador)
-            : `<p>Segue em anexo o recibo emitido para ${patientNome}, referente a ${periodoTexto}.</p>`;
+            : p(`Segue em anexo o recibo emitido para ${patientNome}, referente a ${periodoTexto}.`);
           await enviarEmail({
             to: contadorEmail,
             subject: `Recibo — ${paciente.nome} — ${periodo}`,
+            titulo: `Recibo — ${patientNome}`,
             html,
             pdfBase64,
+            rodape: `O recibo está em anexo, em PDF. Enviado pelo Dr.Sig a pedido de ${escaparHtml(nomePsicanalista)}.`,
           });
           enviadoContador = true;
         } catch (e) {

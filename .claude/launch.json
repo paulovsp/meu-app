@@ -2,10 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "expo-go",
+      "name": "docs",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["expo", "start"],
-      "port": 8081
+      "runtimeArgs": ["http-server", "docs", "-p", "8765", "-c-1", "--silent"],
+      "port": 8765
     }
   ]
 }

@@ -4,66 +4,24 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Confirmar cadastro — Dr.Sig</title>
-<style>
-  body {
-    font-family: -apple-system, Arial, sans-serif;
-    background: #3A5C4F;
-    margin: 0;
-    padding: 24px;
-    color: #302C28;
-    line-height: 1.6;
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .card {
-    max-width: 420px;
-    width: 100%;
-    background: #fff;
-    border-radius: 20px;
-    padding: 40px 32px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.18);
-    text-align: center;
-  }
-  h1 { font-size: 21px; margin: 0 0 12px; color: #302C28; }
-  p { font-size: 14.5px; color: #6B6860; margin: 0 0 22px; }
-  button {
-    background: #3A5C4F;
-    color: #fff;
-    border: none;
-    font-weight: 700;
-    font-size: 15px;
-    padding: 14px 28px;
-    border-radius: 12px;
-    cursor: pointer;
-    width: 100%;
-  }
-  button:disabled { opacity: 0.6; cursor: default; }
-  a.btn {
-    display: inline-block;
-    background: #3A5C4F;
-    color: #fff;
-    text-decoration: none;
-    font-weight: 700;
-    font-size: 15px;
-    padding: 14px 28px;
-    border-radius: 12px;
-  }
-  .selo { width: 64px; height: 64px; border-radius: 50%; background: #E6F5EE; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; font-size: 32px; }
-  .erro-selo { background: #FCEBEA; }
-  .erro-msg { background: #FCEBEA; color: #C0392B; padding: 12px 14px; border-radius: 10px; font-size: 13.5px; margin: 0 0 20px; text-align: left; display: none; }
-  .marca { margin-top: 24px; font-size: 12px; color: #B0ADA6; font-style: italic; }
-</style>
+<meta name="theme-color" content="#497363" />
+<link rel="stylesheet" href="drsig.css" />
 </head>
 <body>
-  <div class="card" id="card">
-    <p style="font-size:22px;font-weight:800;font-style:italic;color:#3A5C4F;margin:0 0 4px;">Dr.Sig</p>
+<header class="topo">
+  <a class="wordmark" href="https://drsig.com.br/">Dr.Sig</a>
+  <span class="tagline">O seu assistente clínico</span>
+  <svg class="onda" viewBox="0 0 390 60" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="onda-g" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#497363"/><stop offset="1" stop-color="#6B9E8A"/></linearGradient></defs><path d="M0,60 L390,60 L390,26 C320,12 250,46 180,20 C110,-6 50,34 0,18 Z" fill="url(#onda-g)"/></svg>
+</header>
+
+<div class="moldura"><div class="moldura-central">
+  <div class="card centro" id="card">
     <h1>Confirmar seu cadastro</h1>
-    <p>Toque no botão abaixo pra confirmar sua conta e continuar pra escolha de plano.</p>
-    <div class="erro-msg" id="erro"></div>
-    <button id="btnConfirmar">Confirmar minha conta</button>
+    <p class="lede">Toque no botão abaixo para confirmar sua conta e continuar para a escolha do plano.</p>
+    <div class="erro-msg" id="erro" style="display:none;text-align:left;"></div>
+    <button class="btn" id="btnConfirmar">Confirmar minha conta</button>
   </div>
+</div></div>
 
   <script>
     // Confirmação de cadastro em 2 passos (link do e-mail -> esta página ->
@@ -91,11 +49,11 @@
 
     function mostrarSemToken() {
       card.innerHTML =
-        '<div class="selo erro-selo">⚠️</div>' +
+        '<div class="selo atencao-selo">⚠️</div>' +
         '<h1>Link incompleto</h1>' +
-        '<p>Este link não tem as informações necessárias pra confirmar sua conta. ' +
+        '<p class="lede">Este link não tem as informações necessárias para confirmar sua conta. ' +
         'Copie o link direto do e-mail, sem alterações, ou peça um novo.</p>' +
-        '<p style="margin-top:20px;"><a href="mailto:drsig@drsig.com.br">drsig@drsig.com.br</a></p>';
+        '<p><a href="mailto:drsig@drsig.com.br">drsig@drsig.com.br</a></p>';
     }
 
     if (!tokenHash) {

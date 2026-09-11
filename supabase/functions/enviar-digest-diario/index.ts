@@ -12,6 +12,7 @@
 // por evento. enviar-alerta-atraso continua existindo só pro push (mais
 // imediato, não é "caixa de entrada" — menos incômodo que e-mail repetido).
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { envelope, enviarEmail, escaparHtml, h2, p } from '../_shared/emailDrSig.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -127,31 +128,29 @@ function montarHtml(
   const partes: string[] = [];
   if (aguardandoConfirmacao > 0) {
     partes.push(
-      `<h3>${plural(aguardandoConfirmacao, 'sessão', 'sessões')} aguardando confirmação</h3>` +
-      `<p>Abra o app e responda se ${aguardandoConfirmacao === 1 ? 'ela aconteceu' : 'elas aconteceram'} — ` +
-      `é isso que atualiza cobrança, financeiro e fiscal.</p>`
+      h2(`${plural(aguardandoConfirmacao, 'sessão', 'sessões')} aguardando confirmação`) +
+      p(`Abra o app e responda se ${aguardandoConfirmacao === 1 ? 'ela aconteceu' : 'elas aconteceram'} — ` +
+        'é isso que atualiza cobrança, financeiro e fiscal.')
     );
   }
   if (atrasados.length > 0) {
     partes.push(
-      `<h3>${plural(atrasados.length, 'pagamento em atraso', 'pagamentos em atraso')}</h3><p>` +
-      atrasados.map((a) => `${a.nome} — ${a.diasAtraso} dia${a.diasAtraso === 1 ? '' : 's'} de atraso`).join('<br/>') +
-      `</p>`
+      h2(plural(atrasados.length, 'pagamento em atraso', 'pagamentos em atraso')) +
+      p(atrasados.map((a) => `${escaparHtml(a.nome)} — ${a.diasAtraso} dia${a.diasAtraso === 1 ? '' : 's'} de atraso`).join('<br/>'))
     );
   }
   if (sessoesSemRelato > 0) {
     partes.push(
-      `<h3>${plural(sessoesSemRelato, 'sessão', 'sessões')} sem relato</h3>` +
-      `<p>Adicione a transcrição ou anotação pra manter o prontuário em dia.</p>`
+      h2(`${plural(sessoesSemRelato, 'sessão', 'sessões')} sem relato`) +
+      p('Adicione a transcrição ou a anotação para manter o prontuário em dia.')
     );
   }
-  return `
-    <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #302C28;">
-      <h2>Seu resumo diário — Dr.Sig</h2>
-      ${partes.join('')}
-      <p><a href="https://drsig.com.br" style="color:#3A5C4F;">Abra o app pra ver os detalhes.</a></p>
-    </div>
-  `;
+  return envelope({
+    titulo: 'Seu resumo de hoje',
+    previa: partes.length === 1 ? 'Uma pendência no consultório.' : `${partes.length} pendências no consultório.`,
+    corpo: partes.join('') + p('Abra o app Dr.Sig para resolver cada item.', { pequeno: true }),
+    rodape: 'Você recebe este resumo porque ligou o aviso por e-mail em Meu Perfil › Notificações. Dá para desligar lá, item a item.',
+  });
 }
 
 Deno.serve(async (req) => {
@@ -249,18 +248,15 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        const resp = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            from: 'Dr.Sig <naoresponda@drsig.com.br>',
-            to: [perfil.email],
-            subject: 'Seu resumo diário',
-            html: montarHtml(atrasados, sessoesSemRelato, sessaoEmail ? aguardandoConfirmacao : 0),
-          }),
-        });
-        if (!resp.ok) {
-          resultado.erros.push(`${perfil.id}: ${await resp.text()}`);
+        try {
+          await enviarEmail(
+            RESEND_API_KEY,
+            perfil.email,
+            'Seu resumo de hoje — Dr.Sig',
+            montarHtml(atrasados, sessoesSemRelato, sessaoEmail ? aguardandoConfirmacao : 0),
+          );
+        } catch (erro) {
+          resultado.erros.push(`${perfil.id}: ${String((erro as Error).message || erro)}`);
           continue;
         }
         resultado.enviados++;

@@ -4,32 +4,19 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Autorização de gravação</title>
-<style>
-  body { font-family: -apple-system, Arial, sans-serif; background: #F5F7FA; margin: 0; padding: 24px; color: #302C28; }
-  .card { max-width: 420px; margin: 0 auto; background: #fff; border-radius: 16px; padding: 28px; box-shadow: 0 2px 10px rgba(0,0,0,0.06); }
-  h2 { margin-top: 0; }
-  label { display: block; font-size: 13px; font-weight: 600; margin: 16px 0 6px; }
-  input[type="file"] { width: 100%; box-sizing: border-box; padding: 12px; border-radius: 10px; border: 1px dashed #B8C2D0; font-size: 14px; background: #FAFBFC; }
-  button { width: 100%; padding: 14px; border-radius: 12px; border: none; font-size: 15px; font-weight: 700; margin-top: 14px; cursor: pointer; }
-  button:disabled { opacity: 0.6; }
-  .btn-autorizar { background: #3A5C4F; color: #fff; }
-  .btn-negar { background: #F0F0F0; color: #6B6860; margin-top: 10px; }
-  .erro { background: #FCEBEA; color: #C0392B; padding: 12px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; line-height: 1.5; }
-  .aviso { color: #6B6860; font-size: 12px; margin-top: 20px; line-height: 1.5; }
-  .privacidade { background: #F5F7FA; border-left: 3px solid #3A5C4F; padding: 10px 14px; border-radius: 4px; font-size: 12.5px; color: #33333d; margin-top: 16px; line-height: 1.5; }
-  .carregando { text-align: center; color: #6B6860; padding: 40px 0; }
-  .preview { width: 100%; border-radius: 10px; margin-top: 10px; display: none; }
-  .dicas { background: #F5F7FA; border-radius: 10px; padding: 12px 14px 12px 30px; margin: 14px 0 0; font-size: 12.5px; color: #33333d; line-height: 1.6; }
-  .dicas li { margin-bottom: 2px; }
-  .tentativas { font-size: 13px; font-weight: 700; margin: 0 0 14px; padding: 10px 12px; border-radius: 10px; }
-  .tentativas.ok { background: #FFF4E5; color: #B36B00; }
-  .tentativas.critico { background: #FCEBEA; color: #C0392B; }
-</style>
+<meta name="theme-color" content="#497363" />
+<link rel="stylesheet" href="drsig.css" />
 </head>
 <body>
-  <div class="card" id="card">
+<header class="topo">
+  <a class="wordmark" href="https://drsig.com.br/">Dr.Sig</a>
+  <span class="tagline">O seu assistente clínico</span>
+  <svg class="onda" viewBox="0 0 390 60" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="onda-g" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#497363"/><stop offset="1" stop-color="#6B9E8A"/></linearGradient></defs><path d="M0,60 L390,60 L390,26 C320,12 250,46 180,20 C110,-6 50,34 0,18 Z" fill="url(#onda-g)"/></svg>
+</header>
+
+<div class="moldura"><div class="moldura-central"><div class="card" id="card">
     <div class="carregando">Carregando…</div>
-  </div>
+  </div></div></div>
 
   <script>
     const SUPABASE_URL = 'https://iahtyvqjgukdgrftpyxm.supabase.co';
@@ -51,7 +38,7 @@
     }
 
     function mensagemSimples(titulo, texto) {
-      render('<h2>' + titulo + '</h2><p>' + texto + '</p>');
+      render('<h1>' + titulo + '</h1><p class="lede">' + texto + '</p>');
     }
 
     // Mensagem específica por motivo de rejeição (a Edge Function devolve o
@@ -117,15 +104,15 @@
       render(
         (erro ? '<div class="erro">' + erro + '</div>' : '') +
         (tentativasHtml || '') +
-        '<h2>Autorização de gravação e transcrição</h2>' +
+        '<h1>Autorização de gravação e transcrição</h1>' +
         '<p>Para confirmar que é você, envie uma foto de um documento com foto (RG, CNH ou passaporte). É só pra essa conferência automática — a foto não fica guardada.</p>' +
         '<form id="form">' +
         '  <label>Foto do documento</label>' +
         '  <input type="file" name="documento" accept="image/*" capture="environment" required />' +
         '  <img class="preview" id="preview" />' +
         DICAS_FOTO +
-        '  <button type="submit" data-acao="autorizar" class="btn-autorizar">Enviar documento e autorizar</button>' +
-        '  <button type="submit" data-acao="negar" class="btn-negar">Não autorizo</button>' +
+        '  <button type="submit" data-acao="autorizar" class="btn-grande" style="margin-top:14px">Enviar documento e autorizar</button>' +
+        '  <button type="submit" data-acao="negar" class="btn-grande btn-neutro" style="margin-top:10px">Não autorizo</button>' +
         '</form>' +
         '<p class="aviso">Ao autorizar, você concorda que suas sessões podem ser gravadas em áudio e transcritas para uso no seu acompanhamento clínico. Você pode revogar essa autorização a qualquer momento, conversando diretamente com sua psicanalista.</p>' +
         '<p class="privacidade">A foto do documento é usada só para conferir seus dados automaticamente e é descartada logo em seguida — não fica armazenada em nenhum momento. Detalhes na <a href="https://app.drsig.com.br/privacidade.html" target="_blank" rel="noopener">Política de Privacidade</a>.</p>'

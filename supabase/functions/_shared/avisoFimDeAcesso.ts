@@ -20,6 +20,7 @@
 // transacional, da mesma natureza de um recibo. Desligar o aviso de que o
 // acesso vai acabar não é uma preferência que sirva a alguém.
 import type { Cliente } from './assinaturaMercadoPago.ts';
+import { envelope, enviarEmail, escaparHtml, p } from './emailDrSig.ts';
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!;
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
@@ -34,41 +35,22 @@ function formatarData(iso: string): string {
 
 function corpoDoEmail(nome: string, dias: number, dataFim: string): string {
   const quando = dias === 1 ? 'amanhã' : `em ${dias} dias`;
-  const saudacao = nome ? `Olá, ${nome.split(' ')[0]}.` : 'Olá.';
-  return `
-    <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #302C28; line-height: 1.55;">
-      <h2 style="font-size:19px;margin:0 0 14px;">Seu acesso ao Dr.Sig termina ${quando}</h2>
-      <p>${saudacao}</p>
-      <p>Em <strong>${dataFim}</strong> sua conta deixa de permitir criar sessões, registros e
-      cadastros. Não há cobrança automática nesta conta — nada será debitado, e nada acontece
-      sozinho.</p>
-      <p><strong>Nada é apagado.</strong> Tudo que você já registrou continua aí, e a exportação
-      dos seus dados segue liberada, com ou sem plano.</p>
-      <p>Para continuar usando, abra o app em <strong>${PAGINA_APP}</strong> e toque em
-      <strong>Receber o link por e-mail</strong> — o link para escolher um plano chega na hora.</p>
-      <p style="color:#8A857D;font-size:12.5px;margin-top:26px;">
-        Se você já escolheu um plano nas últimas horas, pode ignorar este e-mail.
-      </p>
-    </div>
-  `;
+  return envelope({
+    titulo: `Seu acesso ao Dr.Sig termina ${quando}`,
+    saudacao: nome ? `Olá, ${escaparHtml(nome.split(' ')[0])}.` : 'Olá.',
+    previa: `Em ${dataFim} o app deixa de permitir novos registros. Nada é apagado.`,
+    corpo:
+      p(`Em <strong>${dataFim}</strong> sua conta deixa de permitir criar sessões, registros e cadastros. Não há cobrança automática nesta conta — nada será debitado, e nada acontece sozinho.`)
+      + p('<strong>Nada é apagado.</strong> Tudo que você já registrou continua aí, e a exportação dos seus dados segue liberada, com ou sem plano.')
+      + p(`Para continuar usando, abra o app em <strong>${PAGINA_APP}</strong> e toque em <strong>Receber o link por e-mail</strong> — o link para escolher um plano chega na hora.`),
+    rodape: 'Se você já escolheu um plano nas últimas horas, pode ignorar este e-mail.',
+  });
 }
 
-async function enviarEmail(para: string, assunto: string, html: string): Promise<boolean> {
+async function enviarEmailSemDerrubar(para: string, assunto: string, html: string): Promise<boolean> {
   try {
-    const resp = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: 'Dr.Sig <naoresponda@drsig.com.br>',
-        to: [para],
-        subject: assunto,
-        html,
-      }),
-    });
-    return resp.ok;
+    await enviarEmail(RESEND_API_KEY, para, assunto, html);
+    return true;
   } catch (_) {
     return false;
   }
@@ -150,7 +132,7 @@ export async function avisarFimDeAcesso(admin: Cliente): Promise<ResumoAvisos> {
 
       let algumSaiu = false;
       if (conta.email) {
-        algumSaiu = await enviarEmail(
+        algumSaiu = await enviarEmailSemDerrubar(
           String(conta.email),
           `Seu acesso ao Dr.Sig termina ${quando}`,
           corpoDoEmail(String(conta.nome || ''), dias, dataFim),

@@ -27,6 +27,7 @@
 //
 // JWT normal: quem pede é a própria dona da conta, autenticada no app.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { botao, envelope, enviarEmail, escaparHtml, p } from '../_shared/emailDrSig.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -71,39 +72,19 @@ function json(body: unknown, status = 200) {
   });
 }
 
-async function enviarEmail(to: string, subject: string, html: string) {
-  const resp = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${RESEND_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ from: 'Dr.Sig <naoresponda@drsig.com.br>', to: [to], subject, html }),
-  });
-  if (!resp.ok) throw new Error(`Falha ao enviar e-mail: ${await resp.text()}`);
-}
-
 function corpo(nome: string, link: string, destino: Destino) {
-  const saudacao = nome ? `Olá, ${nome}!` : 'Olá!';
   const d = DESTINOS[destino];
-  return `
-    <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #302C28; line-height: 1.55;">
-      <p style="font-size:22px;font-weight:800;font-style:italic;color:#3A5C4F;margin:0 0 4px;">Dr.Sig</p>
-      <p style="font-size:11px;font-weight:700;color:#6B9E8A;letter-spacing:1.5px;text-transform:uppercase;margin:0 0 24px;">O seu assistente clínico</p>
-
-      <h1 style="font-size:20px;margin:0 0 14px;">${saudacao}</h1>
-      <p>${d.pediu}</p>
-
-      <p style="margin:26px 0;">
-        <a href="${link}" style="background:#497363;color:#fff;padding:14px 26px;border-radius:10px;text-decoration:none;display:inline-block;font-weight:700;font-size:15px;">${d.botao}</a>
-      </p>
-
-      <p style="font-size:13.5px;color:#756E66;">O link vale por 1 hora e só pode ser usado uma vez. Se expirar, é só pedir outro pelo app, em ${d.ondePedir}.</p>
-      <p style="font-size:13.5px;color:#756E66;">${d.depois}</p>
-
-      <p style="color:#A9A299;font-size:12px;margin-top:28px;">Se não foi você que pediu, ignore este e-mail: nada acontece sem que o link seja aberto.</p>
-    </div>
-  `;
+  return envelope({
+    titulo: d.botao,
+    saudacao: nome ? `Olá, ${escaparHtml(nome.split(' ')[0])}!` : 'Olá!',
+    previa: d.pediu,
+    corpo:
+      p(d.pediu)
+      + botao(d.botao, link)
+      + p(`O link vale por 1 hora e só pode ser usado uma vez. Se expirar, é só pedir outro pelo app, em ${d.ondePedir}.`, { pequeno: true })
+      + p(d.depois, { pequeno: true }),
+    rodape: 'Se não foi você que pediu, ignore este e-mail: nada acontece sem que o link seja aberto.',
+  });
 }
 
 Deno.serve(async (req) => {
@@ -151,7 +132,7 @@ Deno.serve(async (req) => {
     // nota no topo: scanner de e-mail queima token de uso único).
     const link = `${d.pagina}?token_hash=${encodeURIComponent(linkData.properties.hashed_token)}`;
 
-    await enviarEmail(email, d.assunto, corpo(perfil?.nome || '', link, destino));
+    await enviarEmail(RESEND_API_KEY, email, d.assunto, corpo(perfil?.nome || '', link, destino));
 
     // Devolve o e-mail pra tela poder dizer PARA ONDE mandou — a dúvida
     // mais comum de quem não recebe é se foi pro endereço certo.

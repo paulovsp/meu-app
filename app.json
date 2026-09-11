@@ -30,7 +30,7 @@
         "android.permission.POST_NOTIFICATIONS"
       ],
       "package": "br.com.drsig.app",
-      "versionCode": 23,
+      "versionCode": 24,
       "predictiveBackGestureEnabled": true
     },
     "web": {

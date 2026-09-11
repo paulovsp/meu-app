@@ -5,6 +5,12 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import Guia from '../components/Guia';
+import {
+  PASSOS_DEMONSTRACAO, PASSOS_PRIMEIRO_USO,
+  GUIA_DEMONSTRACAO, GUIA_PRIMEIRO_USO, guiaJaVisto,
+} from '../services/guia';
+import { ehSessaoDeDemonstracao } from '../services/demonstracao';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { getResumoAgendaHoje, listarCompromissosAguardandoCheckin } from '../services/database';
@@ -191,6 +197,11 @@ export default function InicioScreen({ navigation }) {
   const [modo, setModo] = useState('inicio'); // 'inicio' | 'clinica' | 'administrativa'
   const [menuAberto, setMenuAberto] = useState(false);
 
+  // Qual guia mostrar — ou nenhum. A decisao depende do PERFIL (a conta de
+  // demonstracao recebe o passeio; quem assinou recebe o roteiro de
+  // preenchimento), entao so acontece depois que o perfil carrega.
+  const [guia, setGuia] = useState(null);
+
   // Item 2 (leva pós-v13): altura de fato disponível dentro da área segura
   // — SH sozinho (Dimensions) inclui notch/barra de gestos, que a
   // SafeAreaView já desconta visualmente mas a conta de layout ignorava.
@@ -206,6 +217,26 @@ export default function InicioScreen({ navigation }) {
   useEffect(() => {
     registrarPushToken();
   }, [session.user.id]);
+
+  // Guia de primeira entrada.
+  //
+  // Roda uma vez por instalacao, e so depois do perfil carregado: sem
+  // saber se a conta e a de demonstracao, mostrar o guia errado seria
+  // pedir a quem esta so olhando que cadastre o primeiro analisante numa
+  // conta que nao aceita escrita.
+  //
+  // Falha de leitura do armazenamento local devolve "ja visto" — guia que
+  // reaparece toda vez que o app abre irrita muito mais do que guia que
+  // nunca apareceu.
+  useEffect(() => {
+    if (!user) return;
+    let cancelado = false;
+    const qual = ehSessaoDeDemonstracao(user) ? GUIA_DEMONSTRACAO : GUIA_PRIMEIRO_USO;
+    guiaJaVisto(qual).then((visto) => {
+      if (!cancelado && !visto) setGuia(qual);
+    });
+    return () => { cancelado = true; };
+  }, [user]);
 
   // ─── Deslize de verdade entre Início ⇄ Clínica ⇄ Administrativa ───────
   // Acompanha o dedo ao vivo durante o arraste (não só anima na soltura) —
@@ -663,6 +694,14 @@ export default function InicioScreen({ navigation }) {
         clinicaButtons={CLINICA_BUTTONS}
         adminButtons={ADMIN_BUTTONS}
       />
+
+      {!!guia && (
+        <Guia
+          qual={guia}
+          passos={guia === GUIA_DEMONSTRACAO ? PASSOS_DEMONSTRACAO : PASSOS_PRIMEIRO_USO}
+          aoTerminar={() => setGuia(null)}
+        />
+      )}
     </SafeAreaView>
   );
 }

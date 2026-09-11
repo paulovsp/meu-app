@@ -21,6 +21,12 @@ import {
 } from '../services/validacao';
 import TelefoneInput from '../components/TelefoneInput';
 import { getResumoIndicacoes, convite, MAXIMO_INDICADOS } from '../services/indicacoes';
+import Guia from '../components/Guia';
+import {
+  PASSOS_DEMONSTRACAO, PASSOS_PRIMEIRO_USO,
+  GUIA_DEMONSTRACAO, GUIA_PRIMEIRO_USO,
+} from '../services/guia';
+import { ehSessaoDeDemonstracao } from '../services/demonstracao';
 import { mensagemDeErro } from '../services/erros';
 import { getStatusAssinatura, reenviarInstrucoesDePlano, cancelarAssinatura } from '../services/assinatura';
 import Constants from 'expo-constants';
@@ -218,6 +224,7 @@ export default function PerfilScreen({ navigation }) {
   const [reenviando, setReenviando] = useState(false);
   const [cancelando, setCancelando] = useState(false);
   const [indicacoes, setIndicacoes] = useState(null);
+  const [guiaAberto, setGuiaAberto] = useState(false);
   // Estado real das notificações no sistema. Sem isto, os interruptores
   // abaixo prometiam avisos que o Android podia estar descartando.
   const [notifSistema, setNotifSistema] = useState(null);
@@ -1169,6 +1176,22 @@ export default function PerfilScreen({ navigation }) {
             {/* "Assinatura" nesta tela significava duas coisas diferentes:
                 a rubrica desenhada e o plano pago. Cada uma tem nome
                 próprio agora. */}
+            {/* Rever o guia.
+
+                O ultimo passo do guia de primeiro uso diz, com essas
+                palavras, que ele fica em Meu Perfil. Prometer isso e nao
+                por o botao e a maneira mais barata de perder a confianca
+                de quem acabou de chegar. */}
+            <Text style={st.sectionTitle}>Guia do app</Text>
+            <TouchableOpacity style={st.guiaBtn} onPress={() => setGuiaAberto(true)}>
+              <Ionicons name="compass-outline" size={19} color="#497363" />
+              <Text style={st.guiaBtnTexto}>
+                {ehSessaoDeDemonstracao(user)
+                  ? 'Rever o passeio pelo consultório'
+                  : 'Rever o guia de primeiros passos'}
+              </Text>
+            </TouchableOpacity>
+
             <Text style={st.sectionTitle}>Sua rubrica</Text>
             <Text style={st.sectionAjuda}>
               Usada nos recibos e documentos que o app gera.
@@ -1566,6 +1589,14 @@ export default function PerfilScreen({ navigation }) {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {guiaAberto && (
+        <Guia
+          qual={ehSessaoDeDemonstracao(user) ? GUIA_DEMONSTRACAO : GUIA_PRIMEIRO_USO}
+          passos={ehSessaoDeDemonstracao(user) ? PASSOS_DEMONSTRACAO : PASSOS_PRIMEIRO_USO}
+          aoTerminar={() => setGuiaAberto(false)}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -1904,6 +1935,12 @@ const st = StyleSheet.create({
   // Cancelar é uma saída legítima, não um botão de perigo: fica visível e
   // fácil de achar, mas discreto — contorno, não preenchimento, pra não
   // competir com a ação principal do cartão.
+  guiaBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#F2F6F3', borderRadius: 12, paddingVertical: 14, paddingHorizontal: 16,
+    borderWidth: 1, borderColor: '#DCE8E0',
+  },
+  guiaBtnTexto: { fontSize: 14.5, fontWeight: '600', color: '#3A5C4F', lineHeight: 20 },
   planoBtnSecundario: {
     marginTop: 14, borderRadius: 10, paddingVertical: 11, alignItems: 'center',
     borderWidth: 1, borderColor: '#D9C4BF', backgroundColor: 'transparent',

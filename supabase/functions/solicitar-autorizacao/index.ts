@@ -7,6 +7,7 @@
 // configurada manualmente como secret desta função.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { botao, envelope, enviarEmail, escaparHtml, p } from '../_shared/emailDrSig.ts';
+import { servir } from '../_shared/registrarEvento.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -19,7 +20,7 @@ function gerarToken() {
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-Deno.serve(async (req) => {
+Deno.serve(servir('solicitar-autorizacao', async (req) => {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Método não permitido.' }), { status: 405 });
   }
@@ -127,4 +128,4 @@ Deno.serve(async (req) => {
   } catch (err) {
     return new Response(JSON.stringify({ error: String(err?.message || err) }), { status: 500 });
   }
-});
+}));

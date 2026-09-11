@@ -24,6 +24,7 @@
 // `autorizacoes_transcricao` (colunas `metodo_verificacao`/`motivo_rejeicao`,
 // migration 0034).
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { servir } from '../_shared/registrarEvento.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -124,7 +125,7 @@ async function verificarDocumento(
   return { ok: false, motivo: 'documento_ilegivel' };
 }
 
-Deno.serve(async (req) => {
+Deno.serve(servir('confirmar-autorizacao', async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
   }
@@ -242,4 +243,4 @@ Deno.serve(async (req) => {
   }
 
   return json({ state: 'method_not_allowed' }, 405);
-});
+}));

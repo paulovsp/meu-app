@@ -56,6 +56,7 @@ import {
 } from '../_shared/assinaturaMercadoPago.ts';
 import { atualizarQuemIndicou } from '../_shared/indicacoes.ts';
 import { creditarRecarga, userIdDaReferencia } from '../_shared/recargaCreditos.ts';
+import { servir } from '../_shared/registrarEvento.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -108,7 +109,7 @@ async function validarAssinatura(req: Request): Promise<boolean> {
   return v1Calculado === v1Recebido;
 }
 
-Deno.serve(async (req) => {
+Deno.serve(servir('mercadopago-webhook', async (req) => {
   if (req.method !== 'POST') return json({ error: 'Método não permitido.' }, 405);
 
   const assinaturaValida = await validarAssinatura(req).catch(() => false);
@@ -277,4 +278,4 @@ Deno.serve(async (req) => {
   } catch (err) {
     return json({ error: String((err as Error)?.message || err) }, 500);
   }
-});
+}));

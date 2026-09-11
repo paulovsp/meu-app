@@ -46,6 +46,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sincronizarPreapproval } from '../_shared/assinaturaMercadoPago.ts';
 import { aplicarDescontoDeIndicacoes } from '../_shared/indicacoes.ts';
 import { avisarFimDeAcesso } from '../_shared/avisoFimDeAcesso.ts';
+import { servir } from '../_shared/registrarEvento.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -69,7 +70,7 @@ function json(body: unknown, status = 200) {
   });
 }
 
-Deno.serve(async (req) => {
+Deno.serve(servir('assinatura-processar-ciclo', async (req) => {
   if (req.headers.get('x-cron-secret') !== CRON_SECRET) {
     return json({ error: 'Não autorizado.' }, 401);
   }
@@ -218,4 +219,4 @@ Deno.serve(async (req) => {
   } catch (err) {
     return json({ error: String((err as Error)?.message || err), ...resultado }, 500);
   }
-});
+}));

@@ -10,6 +10,7 @@ import { precosAtuais } from '../_shared/precificacaoDeepSeek.ts';
 import { MULTIPLICADOR_COBRANCA_USUARIO } from '../_shared/margemCobranca.ts';
 import { ajustarCreditoIA } from '../_shared/creditoIA.ts';
 import { ehContaDemonstracao, respostaDemonstracao } from '../_shared/contaDemonstracao.ts';
+import { servir } from '../_shared/registrarEvento.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -31,7 +32,7 @@ function json(body: unknown, status = 200) {
   });
 }
 
-Deno.serve(async (req) => {
+Deno.serve(servir('ia-busca', async (req) => {
   if (req.method !== 'POST') {
     return json({ error: 'Método não permitido.' }, 405);
   }
@@ -141,4 +142,4 @@ Deno.serve(async (req) => {
   } catch (err) {
     return json({ error: String((err as Error)?.message || err) }, 500);
   }
-});
+}));

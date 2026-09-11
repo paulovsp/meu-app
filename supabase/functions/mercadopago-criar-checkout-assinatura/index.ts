@@ -42,6 +42,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sincronizarPreapproval } from '../_shared/assinaturaMercadoPago.ts';
 import { aplicarDescontoDeIndicacoes, precoComDesconto } from '../_shared/indicacoes.ts';
 import { mensagemDeRecusa } from '../_shared/recusaMercadoPago.ts';
+import { servir } from '../_shared/registrarEvento.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -89,7 +90,7 @@ function json(body: unknown, status = 200) {
   });
 }
 
-Deno.serve(async (req) => {
+Deno.serve(servir('mercadopago-criar-checkout-assinatura', async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Método não permitido.' }, 405);
 
@@ -275,4 +276,4 @@ Deno.serve(async (req) => {
   } catch (err) {
     return json({ error: String((err as Error)?.message || err) }, 500);
   }
-});
+}));

@@ -71,11 +71,17 @@ verify_jwt = true
 [functions.mercadopago-webhook]
 verify_jwt = false
 
+[functions.op-agente]
+verify_jwt = false
+
 [functions.reenviar-instrucoes-plano]
 verify_jwt = true
 
 [functions.renovar-creditos]
 verify_jwt = true
+
+[functions.resend-webhook]
+verify_jwt = false
 
 [functions.solicitar-autorizacao]
 verify_jwt = true

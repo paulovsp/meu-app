@@ -22,6 +22,7 @@
 // desativado por eles. É só isso que este arquivo faz.
 //
 // Roda com --no-verify-jwt: quem chama é o Zoom, não o app.
+import { servir } from '../_shared/registrarEvento.ts';
 const ZOOM_WEBHOOK_SECRET = Deno.env.get('ZOOM_WEBHOOK_SECRET') ?? '';
 
 const enc = new TextEncoder();
@@ -50,7 +51,7 @@ async function assinaturaConfere(req: Request, corpoBruto: string) {
   return assinaturaRecebida === esperada;
 }
 
-Deno.serve(async (req) => {
+Deno.serve(servir('zoom-webhook', async (req) => {
   if (req.method !== 'POST') return json({ error: 'Método não permitido.' }, 405);
 
   const corpoBruto = await req.text();
@@ -79,4 +80,4 @@ Deno.serve(async (req) => {
   // do Zoom aqui seria pior do que não fazer nada: gravaria texto em inglês
   // por cima do que a AssemblyAI produziu em português.
   return json({ ok: true, transcricaoDelegadaAIA: true });
-});
+}));

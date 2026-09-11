@@ -17,6 +17,7 @@
 // O visual vem de _shared/emailDrSig.ts — o mesmo envelope de todo e-mail
 // do app. Aqui só se escreve o conteúdo.
 import { botao, destaque, envelope, enviarEmail, escaparHtml, h2, lista, p, tabela } from '../_shared/emailDrSig.ts';
+import { servir } from '../_shared/registrarEvento.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!;
@@ -135,7 +136,7 @@ function emailDeBoasVindas(nome: string, linkSignup: string): string {
   });
 }
 
-Deno.serve(async (req) => {
+Deno.serve(servir('auth-send-email', async (req) => {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Método não permitido.' }), { status: 405 });
   }
@@ -195,4 +196,4 @@ Deno.serve(async (req) => {
   } catch (err) {
     return new Response(JSON.stringify({ error: String((err as Error)?.message || err) }), { status: 500 });
   }
-});
+}));

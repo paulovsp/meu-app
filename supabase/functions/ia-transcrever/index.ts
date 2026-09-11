@@ -28,6 +28,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { registrarBloco } from '../_shared/blocosTranscricao.ts';
 import { ehContaDemonstracao, respostaDemonstracao } from '../_shared/contaDemonstracao.ts';
+import { servir } from '../_shared/registrarEvento.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -45,7 +46,7 @@ function json(body: unknown, status = 200) {
   });
 }
 
-Deno.serve(async (req) => {
+Deno.serve(servir('ia-transcrever', async (req) => {
   if (req.method !== 'POST') {
     return json({ error: 'Método não permitido.' }, 405);
   }
@@ -227,4 +228,4 @@ Deno.serve(async (req) => {
   } catch (err) {
     return json({ error: String((err as Error)?.message || err) }, 500);
   }
-});
+}));

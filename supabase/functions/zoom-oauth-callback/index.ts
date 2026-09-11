@@ -9,6 +9,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { trocarCodigoPorTokens, chamarZoom } from '../_shared/zoom.ts';
 import { lerEstado } from '../_shared/estadoOauth.ts';
+import { servir } from '../_shared/registrarEvento.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -73,7 +74,7 @@ async function emailEnomeDaConta(accessToken: string) {
   }
 }
 
-Deno.serve(async (req) => {
+Deno.serve(servir('zoom-oauth-callback', async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Método não permitido.' }, 405);
 
@@ -120,4 +121,4 @@ Deno.serve(async (req) => {
   } catch (err) {
     return json({ error: String((err as Error)?.message || err) }, 500);
   }
-});
+}));

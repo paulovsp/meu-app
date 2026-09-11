@@ -14,6 +14,7 @@
 // Agora o valor não vem mais do cliente: vem do Banco Central, buscado
 // aqui. O app só diz QUAL moeda quer — nunca quanto ela vale.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { servir } from '../_shared/registrarEvento.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -35,7 +36,7 @@ function ddmmaaaa(d: Date) {
   return `${p(d.getMonth() + 1)}-${p(d.getDate())}-${d.getFullYear()}`;
 }
 
-Deno.serve(async (req) => {
+Deno.serve(servir('cotacao-atualizar', async (req) => {
   if (req.method !== 'POST') return json({ error: 'Método não permitido.' }, 405);
 
   try {
@@ -88,4 +89,4 @@ Deno.serve(async (req) => {
   } catch (err) {
     return json({ error: String((err as Error)?.message || err) }, 500);
   }
-});
+}));

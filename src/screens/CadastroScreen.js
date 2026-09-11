@@ -26,6 +26,17 @@ const COLORS = {
 
 const HEADER_H = 220;
 
+// Os valores vão para `profiles.origem_cadastro` (migration 0105) e são o
+// que o funil de divulgação mede. Se um canal novo entrar, entra aqui e
+// na leitura do op-agente.
+const ORIGENS_DE_CADASTRO = [
+  { valor: 'indicacao', rotulo: 'Indicação de colega' },
+  { valor: 'instagram', rotulo: 'Instagram' },
+  { valor: 'google', rotulo: 'Google' },
+  { valor: 'instituto', rotulo: 'Instituto ou evento' },
+  { valor: 'outro', rotulo: 'Outro' },
+];
+
 function HeaderWave() {
   return (
     <Svg width="100%" height={HEADER_H} style={StyleSheet.absoluteFill} viewBox="0 0 390 220">
@@ -54,6 +65,7 @@ export default function CadastroScreen({ navigation }) {
 
   const [crp, setCrp] = useState('');
   const [codigoIndicacao, setCodigoIndicacao] = useState('');
+  const [origemCadastro, setOrigemCadastro] = useState('');
   const [telefone, setTelefone] = useState('');
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
@@ -157,6 +169,7 @@ export default function CadastroScreen({ navigation }) {
             // isso — um campo que responde "esse codigo existe" seria um
             // verificador de quem usa o Dr.Sig.
             codigo_indicacao: codigoIndicacao || null,
+            origem_cadastro: origemCadastro || null,
           },
         },
       });
@@ -327,6 +340,22 @@ export default function CadastroScreen({ navigation }) {
             código depois, em Meu Perfil.
           </Text>
 
+          {/* De onde a pessoa veio. Opcional, um toque só. É a única forma de
+              a divulgação saber o que funcionou: sem isso, todo cadastro
+              é "desconhecido" e nenhum canal pode ser avaliado. */}
+          <Text style={s.label}>Como você conheceu o Dr.Sig?</Text>
+          <View style={s.origens}>
+            {ORIGENS_DE_CADASTRO.map((o) => (
+              <TouchableOpacity
+                key={o.valor}
+                style={[s.origem, origemCadastro === o.valor && s.origemAtiva]}
+                onPress={() => setOrigemCadastro(origemCadastro === o.valor ? '' : o.valor)}
+              >
+                <Text style={[s.origemTexto, origemCadastro === o.valor && s.origemTextoAtivo]}>{o.rotulo}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
           <Text style={s.label}>Senha *</Text>
           <View style={s.senhaRow}>
             <TextInput
@@ -402,6 +431,14 @@ const s = StyleSheet.create({
     fontSize: 13, fontWeight: '600', color: COLORS.textDark,
     marginBottom: 6, marginTop: 16,
   },
+  origens: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 2 },
+  origem: {
+    paddingVertical: 8, paddingHorizontal: 14, borderRadius: 20,
+    borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.bg,
+  },
+  origemAtiva: { borderColor: COLORS.accent, backgroundColor: '#E4EFE9' },
+  origemTexto: { fontSize: 13, color: COLORS.textMid },
+  origemTextoAtivo: { color: COLORS.accent, fontWeight: '600' },
   ajudaCampo: {
     fontSize: 12.5, color: COLORS.textMid, lineHeight: 18, marginTop: 7,
   },

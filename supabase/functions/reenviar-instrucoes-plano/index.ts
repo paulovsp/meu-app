@@ -28,6 +28,7 @@
 // JWT normal: quem pede é a própria dona da conta, autenticada no app.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { botao, envelope, enviarEmail, escaparHtml, p } from '../_shared/emailDrSig.ts';
+import { servir } from '../_shared/registrarEvento.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -87,7 +88,7 @@ function corpo(nome: string, link: string, destino: Destino) {
   });
 }
 
-Deno.serve(async (req) => {
+Deno.serve(servir('reenviar-instrucoes-plano', async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Método não permitido.' }, 405);
 
@@ -140,4 +141,4 @@ Deno.serve(async (req) => {
   } catch (err) {
     return json({ error: String((err as Error)?.message || err) }, 500);
   }
-});
+}));

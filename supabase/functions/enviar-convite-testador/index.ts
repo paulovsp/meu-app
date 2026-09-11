@@ -22,6 +22,7 @@
 // cortesia precisa estar pronta antes de a pessoa se cadastrar.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { botao, destaque, envelope, enviarEmail, escaparHtml, h2, imagem, lista, p, passo } from '../_shared/emailDrSig.ts';
+import { servir } from '../_shared/registrarEvento.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -81,7 +82,7 @@ function emailDeConvite(email: string, validoAte: string): string {
   });
 }
 
-Deno.serve(async (req) => {
+Deno.serve(servir('enviar-convite-testador', async (req) => {
   if (req.method !== 'POST') return json({ error: 'Método não permitido.' }, 405);
   if (!CONVITE_SECRET || req.headers.get('x-convite-secret') !== CONVITE_SECRET) {
     return json({ error: 'Não autorizado.' }, 401);
@@ -137,4 +138,4 @@ Deno.serve(async (req) => {
   } catch (err) {
     return json({ error: String((err as Error)?.message || err) }, 500);
   }
-});
+}));

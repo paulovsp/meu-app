@@ -25,6 +25,7 @@
 // não seja um analisante ou o contador de quem chamou.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { envelope, enviarEmail as enviarPelaResend, escaparHtml, p } from '../_shared/emailDrSig.ts';
+import { servir } from '../_shared/registrarEvento.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -64,7 +65,7 @@ async function enviarEmail({ to, subject, titulo, html, pdfBase64, rodape }: {
   await enviarPelaResend(RESEND_API_KEY, to, subject, corpo, anexos);
 }
 
-Deno.serve(async (req) => {
+Deno.serve(servir('enviar-recibo', async (req) => {
   if (req.method !== 'POST') return json({ error: 'Método não permitido.' }, 405);
 
   try {
@@ -194,4 +195,4 @@ Deno.serve(async (req) => {
   } catch (err) {
     return json({ error: String((err as Error)?.message || err) }, 500);
   }
-});
+}));

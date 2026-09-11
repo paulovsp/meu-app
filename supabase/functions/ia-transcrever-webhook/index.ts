@@ -13,6 +13,7 @@ import { notificarTranscricao } from '../_shared/notificarTranscricao.ts';
 import { calcularCobrancaIA } from '../_shared/precificacaoIA.ts';
 import { ajustarCreditoIA } from '../_shared/creditoIA.ts';
 import { acharBloco, marcarBlocoComErro, salvarBlocoEMontarTexto } from '../_shared/blocosTranscricao.ts';
+import { servir } from '../_shared/registrarEvento.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -48,7 +49,7 @@ function formatarTranscricao(transcript: any): string {
   return `A: ${String(transcript?.text || '').trim()}`;
 }
 
-Deno.serve(async (req) => {
+Deno.serve(servir('ia-transcrever-webhook', async (req) => {
   if (req.method !== 'POST') {
     return json({ error: 'Método não permitido.' }, 405);
   }
@@ -175,7 +176,7 @@ Deno.serve(async (req) => {
   } catch (err) {
     return json({ error: String((err as Error)?.message || err) }, 500);
   }
-});
+}));
 
 // Manda pelos canais que a pessoa escolheu (item D.10: app e e-mail
 // independentes) — nenhum dos dois é crítico, o status também aparece ao

@@ -12,6 +12,7 @@ const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
 import { CREDITO_MENSAL_BRL, creditoMensalUsd } from '../_shared/creditoDoPlano.ts';
+import { servir } from '../_shared/registrarEvento.ts';
 
 const MAX_RENOVACOES_DE_UMA_VEZ = 24;
 
@@ -37,7 +38,7 @@ function addMonthsUTC(d: Date, n: number) {
   return nd;
 }
 
-Deno.serve(async (req) => {
+Deno.serve(servir('renovar-creditos', async (req) => {
   if (req.method !== 'POST') {
     return json({ error: 'Método não permitido.' }, 405);
   }
@@ -132,4 +133,4 @@ Deno.serve(async (req) => {
   } catch (err) {
     return json({ error: String((err as Error)?.message || err) }, 500);
   }
-});
+}));

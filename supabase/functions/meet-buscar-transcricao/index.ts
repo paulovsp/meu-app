@@ -13,6 +13,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { notificarTranscricao } from '../_shared/notificarTranscricao.ts';
 import { accessTokenDoUsuario, chamarMeet, IntegracaoInvalidaError } from '../_shared/google.ts';
+import { servir } from '../_shared/registrarEvento.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -176,7 +177,7 @@ async function processarSessao(admin: any, sessao: any): Promise<string> {
 
 const COLUNAS = 'id, transcript, meet_space_name, created_at, patients(user_id)';
 
-Deno.serve(async (req) => {
+Deno.serve(servir('meet-buscar-transcricao', async (req) => {
   if (req.method !== 'POST') return json({ error: 'Método não permitido.' }, 405);
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
@@ -231,4 +232,4 @@ Deno.serve(async (req) => {
     }
     return json({ error: String((err as Error)?.message || err) }, 500);
   }
-});
+}));

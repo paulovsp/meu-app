@@ -38,6 +38,7 @@
 // que o app nem consegue ler.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { assinaturaMetaConfere } from '../_shared/assinaturaMeta.ts';
+import { servir } from '../_shared/registrarEvento.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -165,7 +166,7 @@ async function extrairTexto(base64: string, mimeType: string): Promise<string> {
   return partes.join('\n');
 }
 
-Deno.serve(async (req) => {
+Deno.serve(servir('whatsapp-webhook', async (req) => {
   const url = new URL(req.url);
 
   // Handshake de verificação do webhook. Acontece ANTES de a pessoa ter as
@@ -283,4 +284,4 @@ Deno.serve(async (req) => {
   }
 
   return json({ received: true });
-});
+}));

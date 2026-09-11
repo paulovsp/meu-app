@@ -27,6 +27,7 @@
 // texto, debita o crédito e avisa. Aqui o trabalho termina no envio.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { notificarTranscricao } from '../_shared/notificarTranscricao.ts';
+import { servir } from '../_shared/registrarEvento.ts';
 import {
   accessTokenDoUsuario, chamarZoom, IntegracaoInvalidaError,
 } from '../_shared/zoom.ts';
@@ -161,7 +162,7 @@ async function processarSessao(admin: any, sessao: any): Promise<string> {
 
 const COLUNAS = 'id, transcript, zoom_meeting_id, created_at, zoom_audio_enviado_em, patients(user_id)';
 
-Deno.serve(async (req) => {
+Deno.serve(servir('zoom-buscar-transcricao', async (req) => {
   if (req.method !== 'POST') return json({ error: 'Método não permitido.' }, 405);
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
@@ -224,4 +225,4 @@ Deno.serve(async (req) => {
     }
     return json({ error: String((err as Error)?.message || err) }, 500);
   }
-});
+}));

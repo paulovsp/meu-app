@@ -38,8 +38,10 @@ coluna seria um endpoint aberto, e não existe nenhuma assim.
 | `mercadopago-criar-checkout-assinatura` | padrão | JWT da usuária, vindo do app |
 | `mercadopago-criar-recarga` | padrão | JWT da usuária — vindo da página de recarga (docs/recarregar-creditos.html), com o token no header |
 | `mercadopago-webhook` | `--no-verify-jwt` | assinatura do Mercado Pago |
+| `op-agente` | `--no-verify-jwt` | segredo de operação em `x-op-secret` (OP_SECRET) — chamada pelos agentes |
 | `reenviar-instrucoes-plano` | padrão | JWT da usuária, vindo do app |
 | `renovar-creditos` | padrão | JWT da usuária, vindo do app |
+| `resend-webhook` | `--no-verify-jwt` | assinatura Svix da Resend (RESEND_WEBHOOK_SECRET) |
 | `solicitar-autorizacao` | padrão | JWT da usuária, vindo do app |
 | `whatsapp-webhook` | `--no-verify-jwt` | assinatura da Meta (`X-Hub-Signature-256`) + verify token no handshake |
 | `zoom-buscar-transcricao` | `--no-verify-jwt` | segredo de cron — e também aceita JWT do app, pro botão "buscar agora" |

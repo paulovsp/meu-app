@@ -13,6 +13,7 @@
 // imediato, não é "caixa de entrada" — menos incômodo que e-mail repetido).
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { envelope, enviarEmail, escaparHtml, h2, p } from '../_shared/emailDrSig.ts';
+import { servir } from '../_shared/registrarEvento.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -153,7 +154,7 @@ function montarHtml(
   });
 }
 
-Deno.serve(async (req) => {
+Deno.serve(servir('enviar-digest-diario', async (req) => {
   if (req.method !== 'POST') return json({ error: 'Método não permitido.' }, 405);
   if (req.headers.get('x-cron-secret') !== CRON_SECRET) {
     return json({ error: 'Não autorizado.' }, 401);
@@ -269,4 +270,4 @@ Deno.serve(async (req) => {
   } catch (err) {
     return json({ error: String((err as Error)?.message || err), ...resultado }, 500);
   }
-});
+}));

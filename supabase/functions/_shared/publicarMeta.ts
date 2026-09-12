@@ -89,7 +89,9 @@ export async function publicarFacebook(imagens: string[], texto: string): Promis
   fotos.forEach((id, i) => { params[`attached_media[${i}]`] = JSON.stringify({ media_fbid: id }); });
   const post = await graph(`${pageId}/feed`, params);
   const id = String(post.id);
-  return { id, permalink: `https://www.facebook.com/${id}` };
+  // O id "pagina_post" não vira link válido; o permalink real vem da API.
+  const info = await graph(id, { fields: 'permalink_url' }, 'GET').catch(() => ({} as Record<string, unknown>));
+  return { id, permalink: info.permalink_url ? String(info.permalink_url) : `https://www.facebook.com/${id.split('_')[1] || id}` };
 }
 
 /** Diagnóstico: o token vale? Que Página e que conta do Instagram ele vê? */

@@ -22,10 +22,13 @@
 //   acao: 'funil_hoje'           { }                    → conta cadastros e assinaturas do dia, por origem, e grava em op_funil
 //   acao: 'instalacoes'          { }                    → lê as instalações do Google Play (mês corrente e anterior) e grava em op_funil, origem 'loja'
 //   acao: 'funil'                { dias?: 28 }          → coleta as instalações e devolve a série de op_funil, contas por status e origens
+//   acao: 'publicar'             { canal: 'instagram'|'facebook', imagens: [url], texto, peca? } → publica e devolve id e link
+//   acao: 'verificar_meta'       { }                    → o token da Meta vale? que Página e que Instagram ele vê?
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { servir } from '../_shared/registrarEvento.ts';
 import { envelope, enviarEmail, escaparHtml } from '../_shared/emailDrSig.ts';
 import { lerInstalacoes, mesesRecentes } from '../_shared/playInstalacoes.ts';
+import { publicarFacebook, publicarInstagram, verificarMeta } from '../_shared/publicarMeta.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -354,6 +357,37 @@ Deno.serve(servir('op-agente', async (req) => {
 
     // O único jeito de um agente falar com o dono: um e-mail, no envelope
     // da marca, só quando há amarelo ou vermelho.
+    // ── Publicador ───────────────────────────────────────────────────
+    // Publica uma peça aprovada. Só o que o dono aprovou chega aqui: o
+    // agente lê `publicar_em` no peca.md e chama por canal. Cada
+    // publicação, com sucesso ou não, deixa um evento — é o registro.
+    case 'publicar': {
+      const canal = String(body?.canal || '');
+      const imagens = Array.isArray(body?.imagens) ? body.imagens.map(String) : [];
+      const texto = String(body?.texto || '');
+      const peca = String(body?.peca || '');
+      if (!['instagram', 'facebook'].includes(canal)) return json({ error: 'canal deve ser instagram ou facebook.' }, 400);
+      if (!imagens.length || !texto) return json({ error: 'imagens e texto são obrigatórios.' }, 400);
+      if (imagens.some((u: string) => !u.startsWith('https://drsig.com.br/'))) return json({ error: 'imagens só de https://drsig.com.br/.' }, 400);
+      try {
+        const pub = canal === 'instagram' ? await publicarInstagram(imagens, texto) : await publicarFacebook(imagens, texto);
+        await admin.from('op_eventos').insert({ origem: 'publicador', severidade: 'info', mensagem: `Publicado no ${canal}: ${peca || '(peça sem nome)'}`, contexto: { canal, peca, ...pub, imagens: imagens.length } });
+        return json({ ok: true, canal, ...pub });
+      } catch (err) {
+        const mensagem = String((err as Error).message || err);
+        await admin.from('op_eventos').insert({ origem: 'publicador', severidade: 'erro', mensagem: `Falha ao publicar no ${canal}: ${mensagem}`, contexto: { canal, peca } });
+        return json({ error: mensagem }, 502);
+      }
+    }
+
+    case 'verificar_meta': {
+      try {
+        return json(await verificarMeta());
+      } catch (err) {
+        return json({ error: String((err as Error).message || err) }, 502);
+      }
+    }
+
     case 'avisar_dono': {
       const assunto = String(body?.assunto || 'Operação Dr.Sig');
       const corpoHtml = String(body?.corpo_html || '');

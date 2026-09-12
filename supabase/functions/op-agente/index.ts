@@ -380,11 +380,15 @@ Deno.serve(servir('op-agente', async (req) => {
       }
     }
 
+    // Sem os segredos, não é falha: é "ainda não ligado" (200, configurado:false),
+    // para não virar evento de 502 na ronda. Token inválido, aí sim, é 502.
     case 'verificar_meta': {
       try {
-        return json(await verificarMeta());
+        return json({ configurado: true, ...(await verificarMeta()) });
       } catch (err) {
-        return json({ error: String((err as Error).message || err) }, 502);
+        const mensagem = String((err as Error).message || err);
+        if (mensagem.includes('não configurad')) return json({ configurado: false, erro: mensagem });
+        return json({ error: mensagem }, 502);
       }
     }
 

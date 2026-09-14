@@ -380,6 +380,78 @@ Deno.serve(servir('op-agente', async (req) => {
       }
     }
 
+    // ── Arquivista ───────────────────────────────────────────────────
+    // Importa, para a conta do dono, uma analisante e seus registros vindos
+    // do Google Drive. Idempotente: a analisante é achada pelo nome (sem
+    // sobrescrever campo já preenchido) e cada registro pelo arquivo de
+    // origem (`file_uri = drive:<id>`), então rodar de novo não duplica.
+    // `modo: 'ensaio'` só conta o que faria.
+    case 'importar_analisante': {
+      const donoEmail = String(body?.dono_email || '').trim().toLowerCase();
+      const ficha = body?.ficha || {};
+      const registros = Array.isArray(body?.registros) ? body.registros : [];
+      const ensaio = body?.modo !== 'gravar';
+      const nome = String(ficha?.nome || '').trim();
+      if (!donoEmail || !nome) return json({ error: 'dono_email e ficha.nome são obrigatórios.' }, 400);
+
+      const { data: usuarios, error: errU } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+      if (errU) return json({ error: errU.message }, 500);
+      const dono = (usuarios?.users || []).find((u) => (u.email || '').toLowerCase() === donoEmail);
+      if (!dono) return json({ error: 'Conta do dono não encontrada.' }, 404);
+
+      const { data: existentes } = await admin.from('patients').select('*').eq('user_id', dono.id).ilike('nome', nome);
+      const existente = (existentes || [])[0] || null;
+      const CAMPOS = ['nascimento', 'data_inicio', 'telefone', 'email', 'horario', 'preco_sessao', 'modalidade', 'endereco', 'contato_emergencia', 'como_chegou', 'info_relevantes', 'dia_pagamento', 'cpf', 'data_paralizacao'];
+      const novos: Record<string, unknown> = {};
+      for (const c of CAMPOS) {
+        const v = ficha[c];
+        if (v === undefined || v === null || v === '') continue;
+        if (existente && existente[c] !== null && existente[c] !== undefined && existente[c] !== '') continue;
+        novos[c] = v;
+      }
+
+      let patientId = existente?.id || null;
+      if (!ensaio) {
+        if (existente) {
+          if (Object.keys(novos).length) {
+            const { error } = await admin.from('patients').update(novos).eq('id', existente.id);
+            if (error) return json({ error: error.message }, 500);
+          }
+        } else {
+          const { data, error } = await admin.from('patients').insert({ user_id: dono.id, nome, eh_analisante: true, ...novos }).select('id').single();
+          if (error) return json({ error: error.message }, 500);
+          patientId = data.id;
+        }
+      }
+
+      const uris = registros.map((r: Record<string, unknown>) => `drive:${String(r.fonte || '')}`);
+      const { data: jaImportados } = patientId
+        ? await admin.from('records').select('file_uri').eq('patient_id', patientId).in('file_uri', uris)
+        : { data: [] };
+      const jaTem = new Set((jaImportados || []).map((r) => r.file_uri));
+      const pendentes = registros.filter((r: Record<string, unknown>) => r.fonte && !jaTem.has(`drive:${String(r.fonte)}`));
+      let gravados = 0;
+      if (!ensaio && patientId) {
+        for (const r of pendentes) {
+          const categoria = r.categoria === 'estudo' ? 'estudo' : 'sessao';
+          const { error } = await admin.from('records').insert({
+            patient_id: patientId,
+            type: 'text',
+            category: categoria,
+            title: String(r.titulo || '').slice(0, 200),
+            content: String(r.conteudo || ''),
+            date: r.data ? new Date(`${String(r.data)}T12:00:00-03:00`).toISOString() : null,
+            author: 'analyst',
+            file_uri: `drive:${String(r.fonte)}`,
+          });
+          if (error) return json({ error: error.message, gravados }, 500);
+          gravados++;
+        }
+      }
+      await admin.from('op_eventos').insert({ origem: 'arquivista', severidade: 'info', mensagem: `${ensaio ? 'Ensaio' : 'Importação'}: ${registros.length} registros (${pendentes.length} novos)`, contexto: { ensaio, analisanteNova: !existente, camposNovos: Object.keys(novos), registros: registros.length, novos: pendentes.length, gravados } });
+      return json({ ok: true, ensaio, analisante: existente ? 'existente' : 'nova', camposNovos: Object.keys(novos), registrosRecebidos: registros.length, registrosNovos: pendentes.length, gravados });
+    }
+
     // Só para peça substituída (cabeçalho `substituida_por`): apaga o post
     // antigo da Página depois que o novo saiu. O Instagram só apaga no app.
     case 'apagar_facebook': {

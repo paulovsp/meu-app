@@ -12,7 +12,7 @@ Delegue ao agente **publicador** (`.claude/agents/publicador.md`), seção "Todo
 1. Credenciais: `OP_SECRET` e `EXPO_PUBLIC_SUPABASE_URL`. `{"acao":"rodada","agente":"publicador"}` → guarde o `id`.
 2. `{"acao":"verificar_meta"}`. Falhou: registro do dia + incidente `aviso` se não houver um aberto (`{"acao":"resumo","horas":168}` lista os abertos) + rodada `amarelo`, e pare.
 3. Data de hoje em Brasília: `TZ=America/Sao_Paulo date +%F`. Peças em `marketing/aprovado/*/peca.md` com `publicar_em:` igual a hoje e sem `publicado_em:`.
-4. Para cada uma: imagens = `https://drsig.com.br/marketing/aprovado/<peça>/quadro-NN.png` na ordem; texto conforme o perfil; `{"acao":"publicar","canal":"instagram","imagens":[…],"texto":"…","peca":"<peça>"}` e depois `"canal":"facebook"`. Anote os links no cabeçalho, `git mv` para `publicado/`.
+4. Para cada uma: imagens = `https://drsig.com.br/marketing/aprovado/<peça>/quadro-NN.png` na ordem; texto conforme o perfil; `{"acao":"publicar","canal":"instagram","imagens":[…],"texto":"…","peca":"<peça>"}` e depois `"canal":"facebook"`. Anote os links e o `facebook_id` no cabeçalho, `git mv` para `publicado/`. Peça com `substitui:` no cabeçalho: apague o post antigo do Facebook (`apagar_facebook`) e avise o dono para apagar o do Instagram, como diz o perfil.
 5. `marketing/publicador/AAAA-MM-DD.md`. Commit e push no repositório do site.
 6. `{"acao":"rodada","id":…,"resultado":"verde"|"amarelo","relatorio_path":"drsig-site/marketing/publicador/AAAA-MM-DD.md","resumo":"N publicadas, M falhas"}`.
 

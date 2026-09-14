@@ -28,7 +28,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { servir } from '../_shared/registrarEvento.ts';
 import { envelope, enviarEmail, escaparHtml } from '../_shared/emailDrSig.ts';
 import { lerInstalacoes, mesesRecentes } from '../_shared/playInstalacoes.ts';
-import { publicarFacebook, publicarInstagram, verificarMeta } from '../_shared/publicarMeta.ts';
+import { apagarFacebook, publicarFacebook, publicarInstagram, verificarMeta } from '../_shared/publicarMeta.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -377,6 +377,21 @@ Deno.serve(servir('op-agente', async (req) => {
         const mensagem = String((err as Error).message || err);
         await admin.from('op_eventos').insert({ origem: 'publicador', severidade: 'erro', mensagem: `Falha ao publicar no ${canal}: ${mensagem}`, contexto: { canal, peca } });
         return json({ error: mensagem }, 502);
+      }
+    }
+
+    // Só para peça substituída (cabeçalho `substituida_por`): apaga o post
+    // antigo da Página depois que o novo saiu. O Instagram só apaga no app.
+    case 'apagar_facebook': {
+      const postId = String(body?.post_id || '');
+      const peca = String(body?.peca || '');
+      if (!/^\d+_\d+$/.test(postId)) return json({ error: 'post_id deve ter o formato pagina_post.' }, 400);
+      try {
+        await apagarFacebook(postId);
+        await admin.from('op_eventos').insert({ origem: 'publicador', severidade: 'info', mensagem: `Apagado no facebook: ${peca || postId}`, contexto: { postId, peca } });
+        return json({ ok: true });
+      } catch (err) {
+        return json({ error: String((err as Error).message || err) }, 502);
       }
     }
 

@@ -94,6 +94,14 @@ export async function publicarFacebook(imagens: string[], texto: string): Promis
   return { id, permalink: info.permalink_url ? String(info.permalink_url) : `https://www.facebook.com/${id.split('_')[1] || id}` };
 }
 
+/** Apaga um post da Página (id no formato "pagina_post"). O Instagram não permite apagar pela API. */
+export async function apagarFacebook(postId: string): Promise<void> {
+  const { token } = segredos();
+  const r = await fetch(`${GRAPH}/${postId}`, { method: 'DELETE', body: new URLSearchParams({ access_token: token }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.error || j.success === false) throw new Error(`Meta apagar ${postId}: ${(j.error && j.error.message) || r.status}`);
+}
+
 /** Diagnóstico: o token vale? Que Página e que conta do Instagram ele vê? */
 export async function verificarMeta(): Promise<Record<string, unknown>> {
   const { pageId, igId } = segredos();

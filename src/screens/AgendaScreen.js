@@ -506,33 +506,31 @@ export default function AgendaScreen({ navigation }) {
     );
   }
 
-  function renderAgendamentosSemSlot(dataISO, slots, renderFn = renderSlotBotao) {
-    const agendamentosDia = appointments.filter((a) => a.date === dataISO);
-
-    const semSlot = agendamentosDia.filter((appointment) => {
-      return !slots.some(
-        (slot) => slot.start_time === appointment.start_time
-      );
-    });
-
-    return semSlot
-      .sort(compararHorarios)
-      .map((appointment) =>
-        renderFn({
-          slot: {
-            id: `virtual-${appointment.id}`,
-            start_time: appointment.start_time,
-            end_time: appointment.end_time,
-            modality: appointment.modality,
-            tipo: appointment.tipo,
-            titulo: appointment.titulo,
-            participantes: appointment.participantes,
-            day_of_week: diaSemanaDeISO(dataISO),
-          },
-          dataISO,
-          key: `virtual-${dataISO}-${appointment.id}`,
-        })
-      );
+  // Tudo o que aparece num dia, na ordem do relógio: os horários recorrentes
+  // do dia da semana e, entre eles, os compromissos que não batem com
+  // nenhum horário recorrente (avulsos, ou um recorrente remarcado "só
+  // este"). Um compromisso desses vira um slot virtual e entra na posição do
+  // seu horário — não no fim da coluna, como acontecia quando os dois grupos
+  // eram desenhados um depois do outro.
+  function itensDoDia(dataISO, slots) {
+    const semSlot = appointments
+      .filter((a) => a.date === dataISO)
+      .filter((appointment) => !slots.some((slot) => slot.start_time === appointment.start_time))
+      .map((appointment) => ({
+        slot: {
+          id: `virtual-${appointment.id}`,
+          start_time: appointment.start_time,
+          end_time: appointment.end_time,
+          modality: appointment.modality,
+          tipo: appointment.tipo,
+          titulo: appointment.titulo,
+          participantes: appointment.participantes,
+          day_of_week: diaSemanaDeISO(dataISO),
+        },
+        key: `virtual-${dataISO}-${appointment.id}`,
+      }));
+    const recorrentes = slots.map((slot) => ({ slot, key: `availability-${dataISO}-${slot.id}` }));
+    return [...recorrentes, ...semSlot].sort((a, b) => compararHorarios(a.slot, b.slot));
   }
 
   function renderColunaDia(data) {
@@ -562,15 +560,7 @@ export default function AgendaScreen({ navigation }) {
         >
           {slots.length === 0 && <Text style={styles.semHorarios}>—</Text>}
 
-          {slots.map((slot) =>
-            renderSlotBotao({
-              slot,
-              dataISO,
-              key: `availability-${dataISO}-${slot.id}`,
-            })
-          )}
-
-          {renderAgendamentosSemSlot(dataISO, slots)}
+          {itensDoDia(dataISO, slots).map(({ slot, key }) => renderSlotBotao({ slot, dataISO, key }))}
         </ScrollView>
       </View>
     );
@@ -641,15 +631,7 @@ export default function AgendaScreen({ navigation }) {
             </Text>
           )}
 
-          {slots.map((slot) =>
-            renderSlotDiarioCard({
-              slot,
-              dataISO,
-              key: `availability-${dataISO}-${slot.id}`,
-            })
-          )}
-
-          {renderAgendamentosSemSlot(dataISO, slots, renderSlotDiarioCard)}
+          {itensDoDia(dataISO, slots).map(({ slot, key }) => renderSlotDiarioCard({ slot, dataISO, key }))}
         </ScrollView>
       </View>
     );

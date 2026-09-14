@@ -24,7 +24,7 @@ jest.mock('../erros', () => ({ mensagemDeErro: (e) => String(e) }));
 
 const { Alert } = require('react-native');
 const {
-  perguntarCheckin, perguntarTipoNaoRealizada,
+  perguntarCheckin, perguntarTipoNaoRealizada, perguntarCobrancaDoCancelamento,
 } = require('../checkinCompromisso');
 
 const COMPROMISSO = {
@@ -62,6 +62,27 @@ describe('nenhum alerta da fila pode sumir sozinho', () => {
   it('o "cancelada ou falta?" também não', () => {
     perguntarTipoNaoRealizada(COMPROMISSO, jest.fn());
     expect(ultimo().opcoes).toEqual({ cancelable: false });
+  });
+
+  it('o "cancelar e cobrar?" também não, e cada resposta vira o status certo', async () => {
+    const { updateAppointmentStatus } = require('../database');
+    const aoConcluir = jest.fn();
+    perguntarCobrancaDoCancelamento(COMPROMISSO, aoConcluir);
+    expect(ultimo().opcoes).toEqual({ cancelable: false });
+    expect(ultimo().botoes.map((b) => b.text)).toEqual(['Não cobrar', 'Cobrar', 'Voltar']);
+
+    await apertar('Não cobrar');
+    expect(updateAppointmentStatus).toHaveBeenLastCalledWith('c1', 'cancelado');
+    expect(aoConcluir).toHaveBeenCalledTimes(1);
+
+    perguntarCobrancaDoCancelamento(COMPROMISSO, aoConcluir);
+    await apertar('Cobrar');
+    expect(updateAppointmentStatus).toHaveBeenLastCalledWith('c1', 'nao_realizado');
+    expect(aoConcluir).toHaveBeenCalledTimes(2);
+
+    perguntarCobrancaDoCancelamento(COMPROMISSO, aoConcluir);
+    apertar('Voltar');
+    expect(aoConcluir).toHaveBeenLastCalledWith({ fechado: true });
   });
 
   it('a pergunta de pagamento por sessão também não', async () => {

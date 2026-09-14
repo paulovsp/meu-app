@@ -30,6 +30,7 @@ import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
 import { infoTipoEvento, ehTipoGrupo } from '../services/tiposEvento';
 import {
   nomeExibicaoCompromisso, perguntarPagamentoSessao, perguntarCheckin, perguntarTipoNaoRealizada,
+  perguntarCobrancaDoCancelamento,
 } from '../services/checkinCompromisso';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -276,35 +277,22 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
     }
   }
 
-  // Cancelar "só este" um compromisso que ainda não aconteceu (data/hora no
-  // futuro) é sempre cancelamento de verdade — não tem como ter sido falta
-  // de algo que ainda vai acontecer. Mas nada muda o status sozinho quando
-  // o horário passa: "Cancelar Compromisso" também fica disponível pra um
-  // compromisso já vencido que ninguém confirmou ainda (mesmo estado que
-  // dispara o popup de check-in) — nesse caso precisa perguntar se foi
-  // cancelado com antecedência ou se foi falta, porque isso decide se conta
-  // como cobrança (falta cobra normalmente; cancelamento nunca cobra) —
-  // reflete direto em Financeiro/Recebíveis/Fiscal pra quem é cobrado por
-  // sessão (ver getSessoesCobrancaDoMes, que só considera 'realizado' e
-  // 'nao_realizado' como cobráveis).
+  // Cancelar "só este". Nada muda o status sozinho quando o horário passa:
+  // "Cancelar Compromisso" também fica disponível pra um compromisso já
+  // vencido que ninguém confirmou ainda (mesmo estado que dispara o popup
+  // de check-in) — nesse caso pergunta se foi cancelado com antecedência ou
+  // se foi falta. Para um compromisso ainda por vir, pergunta se a sessão
+  // cancelada é cobrada — a regra (cancelou em cima da hora, cobra) é de cada
+  // consultório, não do app. Nos dois casos a resposta decide o status
+  // ('nao_realizado' é cobrável; 'cancelado' não), o que reflete direto em
+  // Financeiro/Recebíveis/Fiscal pra quem é cobrado por sessão (ver
+  // getSessoesCobrancaDoMes).
   function cancelarCompromisso() {
     if (horarioJaPassou(compromisso.date, compromisso.end_time)) {
       perguntarTipoNaoRealizada(compromisso, carregar);
       return;
     }
-    efetivarCancelamentoDireto();
-  }
-
-  async function efetivarCancelamentoDireto() {
-    setAgindo(true);
-    try {
-      await updateAppointmentStatus(compromisso.id, 'cancelado');
-      await carregar();
-    } catch (e) {
-      Alert.alert('Erro ao cancelar', mensagemDeErro(e));
-    } finally {
-      setAgindo(false);
-    }
+    perguntarCobrancaDoCancelamento(compromisso, carregar);
   }
 
   function perguntarEscopoCancelamento() {

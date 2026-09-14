@@ -192,6 +192,50 @@ export function perguntarTipoNaoRealizada(compromisso, aoConcluir) {
   );
 }
 
+// Cancelar um compromisso que ainda não aconteceu: o app não decide sozinho
+// se a sessão é cobrada. Cancelamento em cima da hora costuma ser cobrado;
+// com antecedência, não. Quem sabe a regra do consultório é quem cancela.
+// "Cobrar" registra como 'nao_realizado' (o mesmo status da falta, que é o
+// que Financeiro/Recebíveis/Fiscal consideram cobrável); "Não cobrar", como
+// 'cancelado'. `aoConcluir` roda depois de toda a sequência.
+export function perguntarCobrancaDoCancelamento(compromisso, aoConcluir) {
+  Alert.alert(
+    'Cancelar e cobrar?',
+    `${nomeExibicaoCompromisso(compromisso)}: esta sessão cancelada é cobrada?`,
+    [
+      {
+        text: 'Não cobrar',
+        onPress: async () => {
+          try {
+            await updateAppointmentStatus(compromisso.id, 'cancelado');
+            Alert.alert('Cancelamento registrado', 'Essa sessão foi cancelada sem cobrança.');
+          } catch (e) {
+            Alert.alert('Erro ao cancelar', mensagemDeErro(e));
+          } finally {
+            aoConcluir?.();
+          }
+        },
+      },
+      {
+        text: 'Cobrar',
+        onPress: async () => {
+          try {
+            await updateAppointmentStatus(compromisso.id, 'nao_realizado');
+            Alert.alert('Cancelamento registrado', 'Essa sessão foi cancelada e a cobrança dela segue normalmente.');
+            await perguntarPagamentoSessao(compromisso);
+          } catch (e) {
+            Alert.alert('Erro ao cancelar', mensagemDeErro(e));
+          } finally {
+            aoConcluir?.();
+          }
+        },
+      },
+      { text: 'Voltar', style: 'cancel', onPress: () => aoConcluir?.({ fechado: true }) },
+    ],
+    { cancelable: false },
+  );
+}
+
 /** Pergunta se um compromisso passado (ainda 'agendado') aconteceu, e
  * encadeia a pergunta de cobrança e o "cancelada ou falta?" conforme a
  * resposta — é o ponto de entrada único do fluxo de check-in, usado tanto

@@ -28,7 +28,10 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { servir } from '../_shared/registrarEvento.ts';
 import { envelope, enviarEmail, escaparHtml } from '../_shared/emailDrSig.ts';
 import { lerInstalacoes, mesesRecentes } from '../_shared/playInstalacoes.ts';
-import { apagarFacebook, publicarFacebook, publicarInstagram, verificarMeta } from '../_shared/publicarMeta.ts';
+import {
+  apagarFacebook, listarFacebook, listarInstagram, publicarFacebook, publicarInstagram,
+  validarImagens, validarTexto, verificarMeta,
+} from '../_shared/publicarMeta.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -369,9 +372,25 @@ Deno.serve(servir('op-agente', async (req) => {
       if (!['instagram', 'facebook'].includes(canal)) return json({ error: 'canal deve ser instagram ou facebook.' }, 400);
       if (!imagens.length || !texto) return json({ error: 'imagens e texto são obrigatórios.' }, 400);
       if (imagens.some((u: string) => !u.startsWith('https://drsig.com.br/'))) return json({ error: 'imagens só de https://drsig.com.br/.' }, 400);
+      // Antes de tocar na Meta: imagens alcançáveis e texto dentro dos
+      // limites. Um erro aqui é 400 (é da peça, não da rede) e não cria
+      // container nenhum.
+      try {
+        validarTexto(canal as 'instagram' | 'facebook', texto);
+        await validarImagens(imagens);
+      } catch (err) {
+        const mensagem = String((err as Error).message || err);
+        await admin.from('op_eventos').insert({ origem: 'publicador', severidade: 'erro', mensagem: `Peça recusada antes de publicar no ${canal}: ${mensagem}`, contexto: { canal, peca } });
+        return json({ error: mensagem }, 400);
+      }
       try {
         const pub = canal === 'instagram' ? await publicarInstagram(imagens, texto) : await publicarFacebook(imagens, texto);
         await admin.from('op_eventos').insert({ origem: 'publicador', severidade: 'info', mensagem: `Publicado no ${canal}: ${peca || '(peça sem nome)'}`, contexto: { canal, peca, ...pub, imagens: imagens.length } });
+        // Publicou, mas o que ficou no ar não é o que foi pedido: fica no
+        // ar (apagar seria pior) e vira aviso na ronda e na resposta.
+        if (pub.alerta) {
+          await admin.from('op_eventos').insert({ origem: 'publicador', severidade: 'aviso', mensagem: `Conferência divergente no ${canal}: ${peca || pub.id} — ${pub.alerta}`, contexto: { canal, peca, id: pub.id, permalink: pub.permalink } });
+        }
         return json({ ok: true, canal, ...pub });
       } catch (err) {
         const mensagem = String((err as Error).message || err);
@@ -462,6 +481,21 @@ Deno.serve(servir('op-agente', async (req) => {
         await apagarFacebook(postId);
         await admin.from('op_eventos').insert({ origem: 'publicador', severidade: 'info', mensagem: `Apagado no facebook: ${peca || postId}`, contexto: { postId, peca } });
         return json({ ok: true });
+      } catch (err) {
+        return json({ error: String((err as Error).message || err) }, 502);
+      }
+    }
+
+    // O que está no ar, lido da própria rede. É com isto que o Publicador
+    // confere o dia e que a curadoria mostra ao dono o estado do perfil —
+    // o registro em git diz o que foi pedido; a rede diz o que existe.
+    case 'midias_meta': {
+      const canal = String(body?.canal || 'ambos');
+      const limite = Math.min(Math.max(Number(body?.limite) || 50, 1), 100);
+      try {
+        const instagram = canal !== 'facebook' ? await listarInstagram(limite) : undefined;
+        const facebook = canal !== 'instagram' ? await listarFacebook(limite) : undefined;
+        return json({ instagram, facebook });
       } catch (err) {
         return json({ error: String((err as Error).message || err) }, 502);
       }

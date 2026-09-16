@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Image,
-  StatusBar, Dimensions, ScrollView, Animated, Alert,
+  StatusBar, Dimensions, ScrollView, Animated, Alert, AppState,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -201,6 +201,9 @@ export default function InicioScreen({ navigation }) {
   // demonstracao recebe o passeio; quem assinou recebe o roteiro de
   // preenchimento), entao so acontece depois que o perfil carrega.
   const [guia, setGuia] = useState(null);
+  // Já se sabe se o guia vai aparecer ou não. Os avisos da tela (check-in,
+  // atraso, transcrição) esperam por isso — ver dispararAvisos.
+  const [guiaDecidido, setGuiaDecidido] = useState(false);
 
   // Item 2 (leva pós-v13): altura de fato disponível dentro da área segura
   // — SH sozinho (Dimensions) inclui notch/barra de gestos, que a
@@ -233,7 +236,9 @@ export default function InicioScreen({ navigation }) {
     let cancelado = false;
     const qual = ehSessaoDeDemonstracao(user) ? GUIA_DEMONSTRACAO : GUIA_PRIMEIRO_USO;
     guiaJaVisto(qual).then((visto) => {
-      if (!cancelado && !visto) setGuia(qual);
+      if (cancelado) return;
+      if (!visto) setGuia(qual);
+      setGuiaDecidido(true);
     });
     return () => { cancelado = true; };
   }, [user]);
@@ -287,6 +292,13 @@ export default function InicioScreen({ navigation }) {
   // respondidos (continuam 'agendado' — responder muda o status) voltam a
   // ser perguntados.
   const processandoCheckinRef = useRef(false);
+  // Geração da fila. Sair da Início (blur) muda a geração: uma fila que
+  // ainda estivesse pendurada — Alert nativo que perdeu os callbacks quando
+  // o Android recriou a Activity, por exemplo — para de valer e deixa a
+  // próxima entrada na tela perguntar de novo. Sem isto, um Alert perdido
+  // deixava `processandoCheckinRef` em `true` pelo resto da vida do
+  // processo, e a pergunta nunca mais aparecia.
+  const geracaoFilaRef = useRef(0);
 
   // Devolve uma Promise que só resolve quando a fila inteira de check-in
   // termina (fila vazia, fechada, ou a pessoa navegou pra escrever/gravar
@@ -300,10 +312,10 @@ export default function InicioScreen({ navigation }) {
   // sem relato no card da Início — o controle não depende do popup.
   const perguntarRelatoRef = useRef(true);
 
-  function processarFilaCheckin(fila, indice) {
+  function processarFilaCheckin(fila, indice, geracao) {
     return new Promise((resolveFila) => {
-      if (indice >= fila.length) {
-        processandoCheckinRef.current = false;
+      if (indice >= fila.length || geracao !== geracaoFilaRef.current) {
+        if (geracao === geracaoFilaRef.current) processandoCheckinRef.current = false;
         resolveFila();
         return;
       }
@@ -372,7 +384,7 @@ export default function InicioScreen({ navigation }) {
           // Sem `.catch`, uma falha no meio da fila deixava
           // `processandoCheckinRef` travado em `true` — e aí a pergunta de
           // check-in nunca mais aparecia, nem depois de reabrir a tela.
-          processarFilaCheckin(fila, indice + 1)
+          processarFilaCheckin(fila, indice + 1, geracao)
             .catch(() => { processandoCheckinRef.current = false; })
             .finally(resolveFila);
         },
@@ -390,7 +402,7 @@ export default function InicioScreen({ navigation }) {
       const pendentes = candidatos.filter((c) => horarioJaPassou(c.date, c.end_time));
       if (pendentes.length === 0) return;
       processandoCheckinRef.current = true;
-      await processarFilaCheckin(pendentes, 0);
+      await processarFilaCheckin(pendentes, 0, geracaoFilaRef.current);
     } catch (e) {
       console.error('Falha ao verificar compromissos pendentes de check-in:', e?.message || e);
     }
@@ -486,16 +498,6 @@ export default function InicioScreen({ navigation }) {
       })();
       processarEnviosFiscaisAutomaticos().catch((e) => console.error('Falha no catch-up fiscal automático:', e?.message || e));
       verificarEEnviarAlertaAtraso().catch((e) => console.error('Falha no alerta de atraso:', e?.message || e));
-      // Em sequência, não em paralelo — Alert.alert é um modal nativo
-      // único; disparar os dois populars ao mesmo tempo fazia o de atraso
-      // substituir o de check-in na tela (o de baixo nunca mais aparecia).
-      // Cada popup de check-in agora só cede vez ao de atraso depois que a
-      // fila inteira terminar (ver processarFilaCheckin).
-      (async () => {
-        await perguntarCheckinsPendentes();
-        await avisarRecebimentosAtrasados();
-        await avisarTranscricoesProntas();
-      })();
       let cancelado = false;
       supabase
         .from('profiles')
@@ -506,10 +508,74 @@ export default function InicioScreen({ navigation }) {
           if (cancelado) return;
           if (error) console.error('Erro ao carregar profile (Home):', error.message, error);
           setUser(data || null);
+          // Sem perfil não há guia; os avisos da tela não podem esperar
+          // para sempre por uma decisão que não vem.
+          if (!data) setGuiaDecidido(true);
         });
       return () => { cancelado = true; };
     }, [session.user.id])
   );
+
+  // ─── Os avisos da tela: check-in, atraso, transcrição pronta ──────────
+  //
+  // Em sequência, não em paralelo — Alert.alert é um modal nativo único;
+  // disparar dois ao mesmo tempo fazia o de atraso substituir o de
+  // check-in na tela (o de baixo nunca mais aparecia). Cada popup de
+  // check-in só cede vez ao de atraso depois que a fila inteira terminar
+  // (ver processarFilaCheckin).
+  //
+  // Só depois do guia de primeira entrada: o guia é um Modal que navega
+  // entre telas, e um Alert disparado por baixo dele ficava escondido, sem
+  // resposta, travando a fila (v24, primeira abertura de uma reinstalação
+  // com sessões pendentes).
+  //
+  // E também ao voltar do segundo plano: quem deixa o app aberto na Início
+  // e volta horas depois não passa por um novo foco de tela — sem isto, a
+  // sessão que terminou nesse meio-tempo só era perguntada depois de
+  // navegar para outra tela e voltar (ou de o Android matar o processo).
+  const focadaRef = useRef(false);
+  const avisosEmAndamentoRef = useRef(false);
+
+  async function dispararAvisos() {
+    if (avisosEmAndamentoRef.current) return;
+    avisosEmAndamentoRef.current = true;
+    const geracao = geracaoFilaRef.current;
+    try {
+      await perguntarCheckinsPendentes();
+      if (geracao !== geracaoFilaRef.current) return;
+      await avisarRecebimentosAtrasados();
+      if (geracao !== geracaoFilaRef.current) return;
+      await avisarTranscricoesProntas();
+    } finally {
+      if (geracao === geracaoFilaRef.current) avisosEmAndamentoRef.current = false;
+    }
+  }
+
+  // Os efeitos abaixo chamam a versão mais recente de dispararAvisos sem
+  // precisar depender dela (é recriada a cada render).
+  const dispararAvisosRef = useRef(dispararAvisos);
+  dispararAvisosRef.current = dispararAvisos;
+
+  useFocusEffect(
+    useCallback(() => {
+      focadaRef.current = true;
+      if (guiaDecidido && !guia) dispararAvisosRef.current();
+      return () => {
+        focadaRef.current = false;
+        // Invalida qualquer fila pendurada (ver geracaoFilaRef).
+        geracaoFilaRef.current += 1;
+        processandoCheckinRef.current = false;
+        avisosEmAndamentoRef.current = false;
+      };
+    }, [guiaDecidido, guia])
+  );
+
+  useEffect(() => {
+    const assinatura = AppState.addEventListener('change', (estado) => {
+      if (estado === 'active' && focadaRef.current && guiaDecidido && !guia) dispararAvisosRef.current();
+    });
+    return () => assinatura.remove();
+  }, [guiaDecidido, guia]);
 
   const sessaoLabel =
     resumoAgenda.total === 0

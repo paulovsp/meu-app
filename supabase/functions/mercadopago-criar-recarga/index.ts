@@ -38,9 +38,13 @@ import {
   MP_API,
   PACOTES_BRL,
   PREFIXO_REFERENCIA,
-  TAXA_REFERENCIA_USD_BRL,
   creditarRecarga,
 } from '../_shared/recargaCreditos.ts';
+// A taxa vem do módulo que a define. Importá-la via recargaCreditos.ts, que
+// só a consome e não a reexporta, derrubava esta função na partida
+// (BOOT_ERROR) — o link de recarga por e-mail terminava em 'Este link
+// expirou' sem nunca ter expirado.
+import { TAXA_REFERENCIA_USD_BRL } from '../_shared/creditoDoPlano.ts';
 import { mensagemDeRecusa } from '../_shared/recusaMercadoPago.ts';
 import { servir } from '../_shared/registrarEvento.ts';
 

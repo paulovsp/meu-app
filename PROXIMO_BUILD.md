@@ -11,9 +11,18 @@ provisória fica documentada no código, com o motivo.
 
 ---
 
-## Nada pendente
+## Pendente
 
-Tudo o que estava acumulado entrou na v23. Registro do que foi:
+- **Notificações push no Android.** O app não tem `google-services.json`
+  (credencial do Firebase Cloud Messaging) nem `googleServicesFile` no
+  `app.json`; sem isso o Android não emite token de push e nenhuma conta
+  tem `expo_push_token` — os avisos de check-in, atraso e transcrição só
+  chegam por e-mail (incidente #3, aberto em 16/09/2026). Resolver exige:
+  criar o projeto no Firebase com a conta da Dr.Sig, baixar o
+  `google-services.json`, apontar em `app.json`, subir a chave do FCM no
+  EAS (`eas credentials`) e buildar. Detectado depois do lançamento da v24.
+
+## O que entrou na v23 (registro)
 
 - **Splash screen.** Não existia nenhuma configuração: o app abria numa tela
   branca vazia, que era a primeira coisa que se via toda vez. O
@@ -41,4 +50,5 @@ npx expo-updates fingerprint:generate --platform android
 ```
 
 O valor tem que bater com o runtime da versão que está na Play Console.
-Runtimes conhecidos: **v22 = `3be34136…`**, **v21 = `283bd312…`**.
+Runtimes conhecidos: **v24 = `d80c4d17…` (produção desde 17/09/2026)**,
+v23 = `c01a7a5f…`, v22 = `3be34136…`, v21 = `283bd312…`.

@@ -3,136 +3,121 @@
 Este arquivo existe pra uma coisa só: colar no início de qualquer conversa nova
 com uma IA (Claude Code, chat, o que for) e ela entender rápido o que é este
 projeto, onde as coisas estão, e como este trabalho tem sido feito até aqui.
-Atualizado em 22/08/2026.
+Atualizado em 17/09/2026.
 
 ## O que é
 
 Dr.Sig é um app de prontuário, agenda e gestão financeira/fiscal pra
 profissionais de **psicanálise** (não terapia genérica — o vocabulário do
 app inteiro usa "analisante", "análise", "paralização da análise", etc.).
-Quem cadastra é a psicanalista/psicanalista; quem ela cadastra é o
-analisante (paciente). O projeto nasceu como uma ferramenta pessoal do Paulo
-(o dono/desenvolvedor, ele mesmo psicanalista) pra uso próprio, e no meio do
-caminho virou produto — hoje está na Play Store.
+Quem cadastra é a psicanalista; quem ela cadastra é o analisante
+(paciente). O projeto nasceu como uma ferramenta pessoal do Paulo (o dono,
+ele mesmo psicanalista, que não programa) pra uso próprio, e virou produto.
 
-## Estado atual (22/08/2026)
+## Estado atual (17/09/2026)
 
-- **Versão 13** já foi buildada e subida manualmente pro Play Console (AAB,
-  versionCode 13). Só o Paulo está testando por enquanto.
-- Meta: deixar o app "redondo" antes de abrir um teste fechado de 14 dias
-  com pelo menos 12 pessoas.
-- Uma leva de ~13 pontos de correção foi levantada após o uso da v13 e — por
-  avaliação do próprio Paulo — só uma parte pequena foi corrigida direito na
-  primeira passada (a maioria ficou incompleta ou mal resolvida). Por isso a
-  forma de trabalhar mudou (ver seção "Como este projeto é trabalhado" abaixo).
-- O editor de texto rico novo (`@10play/tentap-editor`, usado em Novo
-  Registro) **ainda não foi testado de verdade num aparelho** — é um risco
-  conhecido, em aberto.
+- **Lançado oficialmente na Play Store.** Produção = build 24 (1.0.0),
+  pacote `br.com.drsig.app`, aprovada e publicada a 100 % em 17/09/2026.
+  Runtime (fingerprint) `d80c4d17344acc54822cf2e1d1e9fcb355556ce9`.
+- **Primeira atualização OTA** publicada no mesmo dia, no canal
+  `production`, para esse runtime (avisos da Início, cancelamento de
+  compromisso futuro, ordenação da agenda, origem no cadastro, recarga em
+  cartão).
+- **Faixas de teste vazias.** O teste fechado (versão 23) foi esvaziado em
+  17/09; o Paulo usa o app oficial da loja como qualquer usuária. Para
+  testar uma versão futura antes de publicar, usa-se o *compartilhamento
+  interno de apps* (link que instala uma build específica sem inscrever
+  ninguém em faixa nenhuma) — nunca uma faixa de teste, que põe "(Beta)" na
+  ficha e impede a pessoa de avaliar o app.
+- **Próximo build** (`PROXIMO_BUILD.md`): notificações push no Android —
+  falta o `google-services.json` do Firebase; hoje os avisos só chegam por
+  e-mail.
+- Conta do Play Console é de organização (D-U-N-S verificado em 08/2026,
+  exigência da categoria saúde).
 
 ## Arquitetura técnica
 
-- **App**: React Native + Expo (SDK 54), navegação com React Navigation.
-- **Backend**: Supabase (Postgres + Auth + Edge Functions em Deno + Storage).
+- **App**: React Native + Expo (SDK 54, *managed*, sem pasta nativa),
+  navegação com React Navigation. `runtimeVersion` por fingerprint — por
+  isso o `scripts` do `package.json` não pode mudar (ver `AGENTS.md`).
+- **Backend**: Supabase (Postgres + Auth + 34 Edge Functions em Deno +
+  Storage). Migrations em `supabase/migrations/`, aplicadas com
+  `supabase db push` (CLI linkado; 0001–0110 aplicadas). `verify_jwt` de
+  cada função declarado em `supabase/config.toml` e explicado em
+  `supabase/functions/DEPLOY.md`.
 - **IA**: DeepSeek (chat/relatórios/análises), AssemblyAI (transcrição de
   áudio), OCR.space (leitura de documento/comprovante), tudo via Edge
   Functions — o app nunca tem as chaves de API direto.
 - **Pagamentos**: Mercado Pago (assinatura mensal = cartão recorrente;
-  semestral/anual = Pix, pagamento único — arquiteturas diferentes, ver
-  memória `project_pagamento_pix_vs_cartao`).
-- **E-mail**: Resend.
-- **WhatsApp** (opcional, por profissional): cada uma cola a própria
-  credencial da API oficial da Meta Business no perfil dela — o Dr.Sig só
-  hospeda o webhook compartilhado que roteia por `phone_number_id`.
+  semestral/anual = Pix, pagamento único). Recarga de créditos de IA só
+  em cartão.
+- **E-mail**: Resend. **Videochamada**: Google Meet e Zoom (OAuth por
+  usuária). **WhatsApp** (opcional): cada profissional cola a própria
+  credencial da Meta; o Dr.Sig só hospeda o webhook.
+- **Build/publicação**: `eas build` (só com "sim" explícito do Paulo —
+  custa dinheiro) e `eas update` (OTA, depois do `/pre-voo ota`). Tudo sai
+  deste repositório (`meu-app`); o antigo `meu-app-standalone` foi
+  aposentado em 08/2026.
 
-### `meu-app-standalone` foi aposentado (22/08/2026)
+## Operação por agentes
 
-Até aqui existiam **dois diretórios** do mesmo app — `meu-app` (histórico
-git real) e `meu-app-standalone` (de onde os builds EAS realmente saíam,
-com arquivos copiados manualmente a cada sessão, git congelado desde
-20/06/2026). Isso já causou pelo menos um bug real chegando em produção
-sem a correção mais recente (telefone internacional, item de 22/08) porque
-a cópia manual não foi feita antes de um build.
-
-Decisão tomada em 22/08/2026: **parar de usar `meu-app-standalone` como
-fonte de build.** O app é Expo *managed* (sem pasta `android/`/`ios/`
-nativa), então não há motivo técnico pra precisar de uma segunda pasta —
-`eas build` sobe o código pros servidores da Expo de qualquer lugar que
-tenha os arquivos certos, e já existe `.github/workflows/eas-build.yml`
-nesse repositório pra buildar/submeter direto do `meu-app` via GitHub
-Actions (disparável pelo app do GitHub no celular). Builds a partir daqui
-em diante devem sair só do `meu-app`. Se ainda houver algo em
-`meu-app-standalone` que não esteja neste repositório (ex: um `.env`
-local com `EXPO_PUBLIC_SUPABASE_URL`/`EXPO_PUBLIC_SUPABASE_ANON_KEY`),
-precisa ser recriado aqui antes de apagar aquela pasta de vez.
-
-### Migrations do Supabase — risco recorrente
-
-As migrations SQL (`supabase/migrations/*.sql`) são coladas manualmente no
-SQL Editor do Supabase, **sem nenhum mecanismo de tracking** (não é
-`supabase db push`). Isso já causou gaps sérios e silenciosos: em 21-22/08
-uma auditoria encontrou **5 migrations nunca aplicadas** em produção,
-incluindo duas que deixavam cron jobs inteiros (`pg_cron`) nunca
-rodando desde que foram criados — sem nenhum erro visível pro usuário, só
-"a automação simplesmente nunca disparava". Sempre que mexer no banco,
-vale reconferir contra `information_schema` antes de assumir que uma
-migration antiga já foi aplicada.
+Desde 09/2026 a manutenção é feita por agentes do Claude Code
+(`.claude/agents/` + `.claude/skills/`), todos passando pela Edge Function
+`op-agente` (segredo `x-op-secret`): Vigia (ronda diária), Zelador
+(feedbacks), Diagnosticador (incidentes → PR), Guardião (dependências),
+Auditor (RLS/grants/segredos), Tesoureiro (fechamento mensal),
+Estrategista/Redator/Designer/Publicador (divulgação, no repositório
+`drsig-site`), Analista (funil), Arquivista (importação do consultório do
+Google Drive). Relatórios em `operacao/` (aqui) e `marketing/` (no site).
+Nenhum agente faz deploy, migration, OTA ou build.
 
 ## Funcionalidades principais
 
-Agenda (com exceções por horário, zoom por pinça, cores por tipo de
-evento) · Analisantes/Supervisionandos (cadastro, histórico, autorização de
-gravação com verificação de documento) · Sessões (gravação, transcrição
+Agenda (horários fixos, faltas, cancelamentos, remarcações) ·
+Analisantes/Supervisionandos (ficha, histórico, autorização de gravação
+com verificação de documento) · Sessões (gravação, transcrição
 assíncrona, turnos por falante) · Registros/Estudos (editor rico) ·
-Financeiro/Pagamentos/Recebíveis · Fiscal (recibo/nota, emissão automática) ·
-Cursos (transcrição e controle de gastos) · Busca Dr.Sig (chat com IA sobre
-o histórico de um analisante) · Relatórios (2 tipos via IA com prompt
-psicanalítico elaborado — resumo de sessões recentes e resumo geral do
-caso — e 2 tipos determinísticos sem IA — frequência e pagamento) ·
-Assinatura (3 planos, Mercado Pago) · WhatsApp Business (opcional, leitura
-de comprovante de pagamento por OCR) · Exportação de dados (LGPD) ·
-Notificações (push + e-mail, digest diário agregado).
+Financeiro/Pagamentos/Recebíveis · Fiscal (recibo/nota) · Cursos · Busca
+Dr.Sig (chat com IA sobre o histórico de um analisante) · Relatórios (2
+via IA, 2 determinísticos) · Assinatura (3 planos, Mercado Pago) ·
+Consultório de demonstração · Exportação de dados (LGPD) · Notificações
+(e-mail e digest diário; push depende do próximo build).
 
 ## Como este projeto é trabalhado
 
-- Todo o código/comentário é em português.
-- Testes com Jest (`src/services/__tests__/`) — rodar antes de considerar
-  algo pronto.
-- Build/submit sai só do `meu-app` (GitHub Actions, `.github/workflows/eas-build.yml`)
-  — sem cópia manual pra `meu-app-standalone`, aposentado em 22/08/2026
-  (ver seção acima).
-- Commits em português, heredoc, terminando com
-  `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>`.
-- **Mudança recente de dinâmica (21/08/2026):** o Paulo decidiu não mais
-  passar listas grandes de itens pra execução autônoma de uma vez — a
-  experiência da v13 mostrou que isso produz resultado raso/incompleto em
-  itens complexos. Agora o trabalho é **item por item**, com ele definindo
-  a estratégia de cada um antes de pedir a execução.
-- Nunca trocar o provedor de IA (DeepSeek/Groq/etc) sem um pedido explícito
-  naquela mesma conversa.
-- Nenhum build EAS ou submit ao Play Console deve ser feito sem confirmação
-  explícita — builds custam dinheiro/tempo, e o Paulo já foi pego de
-  surpresa por isso uma vez.
+- Todo o código/comentário é em português. Commits em português.
+- Testes com Jest (`npx jest`), lint com `npx eslint src App.js index.js`
+  — rodar direto, nunca adicionar scripts ao `package.json`.
+- O Paulo não programa: resultado em uma frase primeiro, detalhe técnico
+  só quando muda uma decisão dele; o Claude faz tudo o que puder sozinho
+  e deixa para o Paulo só o que exige a conta, o cartão ou o celular dele.
+  Permissões da pasta liberadas em `.claude/settings.local.json`; só
+  `eas build/submit/update`, `db push/reset`, `push --force` e `rm -rf`
+  ainda pedem confirmação.
+- Trabalho **item por item**: o Paulo define a estratégia de cada item
+  antes da execução; nada de listas grandes executadas de uma vez.
+- Nunca trocar o provedor de IA sem pedido explícito na mesma conversa.
+- Com produção "em análise" no Play Console, nunca enviar nada para
+  revisão (reinicia a fila). Fora disso, mudanças na loja seguem normais.
 
 ## Empresa (dados legais)
 
 Razão social **Paulo Von Schwerin Pimentel LTDA**, CNPJ 68.542.896/0001-74,
 nome comercial **Dr.Sig Soluções Digitais**. Usado em política de
-privacidade, termos, rodapé do site. Site institucional
-(drsig.com.br) é um **repositório separado**: github.com/paulovsp/drsig-site
-— não confundir com `meu-app/docs/` (que serve `app.drsig.com.br`, páginas
-de apoio como confirmação de cadastro e exclusão de conta).
+privacidade, termos, rodapé do site. Site institucional (drsig.com.br) é um
+**repositório separado**: github.com/paulovsp/drsig-site — não confundir
+com `meu-app/docs/` (que serve `app.drsig.com.br`, páginas de apoio como
+confirmação de cadastro e exclusão de conta).
 
 ## Pontos em aberto conhecidos
 
-- Editor de texto rico (tentap) sem teste real em aparelho.
-- Integração WhatsApp Business: código pronto e deployado, nunca testada
-  ponta a ponta com uma conta Meta real.
-- Aviso do Play Console sobre tamanho de app crescendo (causa provável:
-  `expo-dev-client` ficou instalado à toa após um teste abortado) e sobre
-  falta de arquivo de desofuscação R8/ProGuard (nunca configurado, não é
-  novo).
-- Vale reauditar migrations/secrets do Supabase periodicamente (ver seção
-  acima) — não é garantido que algo "deveria estar aplicado" de fato esteja.
+- Push no Android (build pendente, acima).
+- Incidentes abertos em `op_incidentes` (ver a ronda mais recente em
+  `operacao/ronda/`): mídia recusada pela Meta no Publicador,
+  `enviar-digest-diario` com 500 aguardando o dono.
+- Integração WhatsApp Business nunca testada ponta a ponta com uma conta
+  Meta real.
+- Arquivo de desofuscação R8/ProGuard nunca configurado (aviso do Play).
 
 ## Sobre memória entre conversas
 

@@ -18,9 +18,11 @@ coluna seria um endpoint aberto, e não existe nenhuma assim.
 
 | função | deploy | como prova quem é |
 |---|---|---|
+| `assinatura-cancelar` | padrão | JWT da usuária, vindo do app |
 | `assinatura-processar-ciclo` | `--no-verify-jwt` | segredo de cron (`x-cron-secret`) |
 | `auth-send-email` | `--no-verify-jwt` | assinatura do hook do Supabase (Standard Webhooks) |
 | `confirmar-autorizacao` | `--no-verify-jwt` | token de uso único na URL — a página do analisante chama sem cabeçalho nenhum |
+| `cotacao-atualizar` | padrão | JWT da usuária, vindo do app — o app só diz a moeda; o valor vem do PTAX/BCB |
 | `curso-transcrever-webhook` | `--no-verify-jwt` | segredo em `x-webhook-secret` (AssemblyAI) |
 | `curso-transcrever` | padrão | JWT da usuária, vindo do app |
 | `enviar-alerta-atraso` | padrão | JWT da usuária, vindo do app |

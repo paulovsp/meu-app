@@ -22,8 +22,6 @@ Só preciso de uma coisa: me manda o e-mail que você vai usar no app. A cortesi
 
 Enquanto isso, dá para conhecer o app sem criar conta: https://play.google.com/store/apps/details?id=br.com.drsig.app (na tela de entrada, "Conhecer o app sem criar conta" abre um consultório fictício, o do Freud).
 
-E se você conhece outras psicoterapeutas que se beneficiariam, me manda nome e e-mail até 30/09 que elas recebem a mesma cortesia, em seu nome.
-
 ## Depois que a pessoa mandar o e-mail
 
 Registrar (comando acima) e responder:

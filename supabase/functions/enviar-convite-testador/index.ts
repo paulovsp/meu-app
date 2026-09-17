@@ -74,9 +74,7 @@ function emailDeConvite(email: string, validoAte: string): string {
       ])
       + h2('O que peço em troca: sua opinião, sempre')
       + p('Este teste não tem questionário nem prazo para responder. O que eu preciso é do que você notar usando: o que ajudou, o que atrapalhou, o que faltou, o que está confuso, o que você faria diferente. Uma frase já basta.')
-      + p(`<strong>É só responder a este e-mail</strong>, quantas vezes quiser, a qualquer hora — a resposta chega direto para mim. Vou devolvendo as novidades por aqui conforme as sugestões entrarem, e cada uma delas fica creditada a quem a fez.`)
-      + p('E se você conhece psicoterapeutas que se beneficiariam do app, me mande os nomes e os e-mails na resposta até <strong>30/09/2026</strong>: cada uma delas recebe a mesma cortesia de teste, em seu nome.')
-      + h2('Duas coisas importantes')
+      + p(`<strong>É só responder a este e-mail</strong>, quantas vezes quiser, a qualquer hora — a resposta chega direto para mim. Vou devolvendo as novidades por aqui conforme as sugestões entrarem, e cada uma delas fica creditada a quem a fez.`)      + h2('Duas coisas importantes')
       + p('<strong>Use com dados reais, se quiser.</strong> O app é para isso, e o sigilo é garantido: cada conta só enxerga os próprios analisantes, e a regra é aplicada pelo banco de dados, não pela tela. Você pode exportar tudo e apagar a conta a qualquer momento, pelo próprio app.')
       + p('<strong>Gravar uma sessão depende da autorização do analisante.</strong> O app pede por e-mail a ele, e sem a confirmação não grava — é assim de propósito.', { pequeno: false }),
     rodape: 'Convite pessoal, enviado por Paulo Pimentel. Se você preferir não participar, é só ignorar este e-mail — nada acontece.',

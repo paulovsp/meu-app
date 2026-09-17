@@ -52,14 +52,14 @@ function emailDeConvite(email: string, validoAte: string): string {
     corpo:
       imagem('https://app.drsig.com.br/img/convite-hero.png', 'Dr.Sig — o seu assistente clínico')
       + p('O Dr.Sig é um aplicativo feito para quem atende em psicoterapia: a agenda, as fichas dos analisantes, o registro das sessões, a cobrança e os recibos ficam num lugar só — no celular, com sigilo garantido pelo próprio banco de dados.')
-      + p('Ele está pronto, e antes de abrir para todo mundo eu queria que um grupo pequeno de colegas usasse de verdade, no dia a dia, e me dissesse o que funciona e o que não funciona. Você é uma dessas pessoas.')
+      + p('Ele acabou de chegar à Play Store, e nesta primeira fase eu queria que um grupo pequeno de colegas usasse de verdade, no dia a dia, e me dissesse o que funciona e o que não funciona. Você é uma dessas pessoas.')
       + destaque(
         `<strong>O seu convite</strong><br/>`
         + `Acesso completo, gratuito, até <strong>${ate}</strong> — com os créditos de IA inclusos (R$ 10 por mês, para transcrição, relatórios e busca). `
         + `Nada é cobrado, não é preciso cadastrar cartão, e nada muda sem você saber. A cortesia está amarrada a este e-mail: <strong>${escaparHtml(email)}</strong>.`,
       )
       + h2('Como começar')
-      + passo(1, 'Instale o app', `Android, pela Play Store: <a href="${LINK_PLAY}" style="color:#497363;">Dr.Sig — o seu assistente clínico</a>. Se ainda não aparecer na loja, é porque o Google está terminando a liberação — tente de novo em algumas horas.`)
+      + passo(1, 'Instale o app', `Android, pela Play Store: <a href="${LINK_PLAY}" style="color:#497363;">Dr.Sig — o seu assistente clínico</a>. A versão para iPhone está a caminho; aviso por aqui quando sair.`)
       + passo(2, 'Crie sua conta com este mesmo e-mail', `Toque em <strong>Criar conta</strong> e use <strong>${escaparHtml(email)}</strong>. A liberação é automática: a conta já nasce com o acesso completo até ${ate}, sem tela de pagamento.`)
       + passo(3, 'Deixe o app te mostrar', 'No primeiro acesso, um roteiro curto mostra o que preencher para o app funcionar inteiro. Se quiser só olhar antes, na tela de entrada há o <strong>Conhecer o app sem criar conta</strong>: um consultório fictício, o do Freud, com fichas, agenda e sessões — somente leitura.')
       + botao('Baixar o Dr.Sig no Google Play', LINK_PLAY)
@@ -75,6 +75,7 @@ function emailDeConvite(email: string, validoAte: string): string {
       + h2('O que peço em troca: sua opinião, sempre')
       + p('Este teste não tem questionário nem prazo para responder. O que eu preciso é do que você notar usando: o que ajudou, o que atrapalhou, o que faltou, o que está confuso, o que você faria diferente. Uma frase já basta.')
       + p(`<strong>É só responder a este e-mail</strong>, quantas vezes quiser, a qualquer hora — a resposta chega direto para mim. Vou devolvendo as novidades por aqui conforme as sugestões entrarem, e cada uma delas fica creditada a quem a fez.`)
+      + p('E se você conhece duas colegas que atendem e se beneficiariam do app, me mande os nomes e os e-mails na resposta: eu convido com a mesma cortesia, em seu nome.')
       + h2('Duas coisas importantes')
       + p('<strong>Use com dados reais, se quiser.</strong> O app é para isso, e o sigilo é garantido: cada conta só enxerga os próprios analisantes, e a regra é aplicada pelo banco de dados, não pela tela. Você pode exportar tudo e apagar a conta a qualquer momento, pelo próprio app.')
       + p('<strong>Gravar uma sessão depende da autorização do analisante.</strong> O app pede por e-mail a ele, e sem a confirmação não grava — é assim de propósito.', { pequeno: false }),

@@ -74,7 +74,14 @@ function emailDeConvite(email: string, validoAte: string): string {
       ])
       + h2('O que peço em troca: sua opinião, sempre')
       + p('Este teste não tem questionário nem prazo para responder. O que eu preciso é do que você notar usando: o que ajudou, o que atrapalhou, o que faltou, o que está confuso, o que você faria diferente. Uma frase já basta.')
-      + p(`<strong>É só responder a este e-mail</strong>, quantas vezes quiser, a qualquer hora — a resposta chega direto para mim. Vou devolvendo as novidades por aqui conforme as sugestões entrarem, e cada uma delas fica creditada a quem a fez.`)      + h2('Duas coisas importantes')
+      + p(`<strong>É só responder a este e-mail</strong>, quantas vezes quiser, a qualquer hora — a resposta chega direto para mim. Vou devolvendo as novidades por aqui conforme as sugestões entrarem, e cada uma delas fica creditada a quem a fez.`)      + h2('Indicações: um desconto para quando você assinar')
+      + p('O Dr.Sig tem um programa de indicações, e ele já vale para quem entra agora. Em <strong>Meu Perfil</strong>, dentro do app, há um <strong>código de indicação</strong> de seis letras e números, só seu, com um botão para compartilhar.')
+      + lista([
+        'Uma colega que criar a conta digitando o seu código no campo <strong>Código de indicação</strong> (o último campo do cadastro, antes da senha) fica vinculada a você.',
+        'Cada indicação ativa dá <strong>10% de desconto</strong> na sua mensalidade. Dez indicações ativas deixam a assinatura <strong>gratuita</strong> enquanto elas continuarem.',
+        `Durante a cortesia, até ${ate}, nada é cobrado, então o desconto ainda não aparece na sua conta. Ele passa a valer <strong>a partir de 2027</strong>, se você decidir assinar: as indicações feitas desde já continuam contando.`,
+      ])
+      + h2('Duas coisas importantes')
       + p('<strong>Use com dados reais, se quiser.</strong> O app é para isso, e o sigilo é garantido: cada conta só enxerga os próprios analisantes, e a regra é aplicada pelo banco de dados, não pela tela. Você pode exportar tudo e apagar a conta a qualquer momento, pelo próprio app.')
       + p('<strong>Gravar uma sessão depende da autorização do analisante.</strong> O app pede por e-mail a ele, e sem a confirmação não grava — é assim de propósito.', { pequeno: false }),
     rodape: 'Convite pessoal, enviado por Paulo Pimentel. Se você preferir não participar, é só ignorar este e-mail — nada acontece.',

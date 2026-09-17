@@ -22,6 +22,8 @@ Só preciso de uma coisa: me manda o e-mail que você vai usar no app. A cortesi
 
 Enquanto isso, dá para conhecer o app sem criar conta: https://play.google.com/store/apps/details?id=br.com.drsig.app (na tela de entrada, "Conhecer o app sem criar conta" abre um consultório fictício, o do Freud).
 
+Uma coisa a mais: o app tem um programa de indicações, e ele já vale para quem entra agora. Em Meu Perfil você encontra o seu código de indicação (seis letras e números) com um botão de compartilhar. Uma colega que criar a conta digitando o seu código no campo "Código de indicação" fica vinculada a você, e cada indicação ativa dá 10% de desconto na sua mensalidade; dez indicações deixam a assinatura gratuita. Durante a cortesia nada é cobrado, então o desconto passa a valer a partir de 2027, se você decidir assinar. As indicações feitas desde já continuam contando.
+
 ## Depois que a pessoa mandar o e-mail
 
 Registrar (comando acima) e responder:

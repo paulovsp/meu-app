@@ -395,7 +395,10 @@ Deno.serve(servir('op-agente', async (req) => {
       } catch (err) {
         const mensagem = String((err as Error).message || err);
         await admin.from('op_eventos').insert({ origem: 'publicador', severidade: 'erro', mensagem: `Falha ao publicar no ${canal}: ${mensagem}`, contexto: { canal, peca } });
-        return json({ error: mensagem }, 502);
+        // A Meta respondeu recusando (mensagem começa com 'Meta ') é 422: a peça foi
+        // rejeitada, o servidor não caiu. 502 só quando a rede falhou de verdade —
+        // senão cada recusa virava incidente da porta (foi o #4).
+        return json({ error: mensagem }, mensagem.startsWith('Meta ') ? 422 : 502);
       }
     }
 
@@ -482,7 +485,9 @@ Deno.serve(servir('op-agente', async (req) => {
         await admin.from('op_eventos').insert({ origem: 'publicador', severidade: 'info', mensagem: `Apagado no facebook: ${peca || postId}`, contexto: { postId, peca } });
         return json({ ok: true });
       } catch (err) {
-        return json({ error: String((err as Error).message || err) }, 502);
+        const mensagem = String((err as Error).message || err);
+        await admin.from('op_eventos').insert({ origem: 'publicador', severidade: 'aviso', mensagem: `Não apagou no facebook: ${peca || postId} — ${mensagem}`, contexto: { postId, peca } });
+        return json({ error: mensagem }, mensagem.startsWith('Meta ') ? 422 : 502);
       }
     }
 

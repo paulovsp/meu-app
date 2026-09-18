@@ -56,7 +56,7 @@ import {
 } from '../_shared/assinaturaMercadoPago.ts';
 import { atualizarQuemIndicou } from '../_shared/indicacoes.ts';
 import { creditarRecarga, userIdDaReferencia } from '../_shared/recargaCreditos.ts';
-import { servir } from '../_shared/registrarEvento.ts';
+import { registrarEvento, servir } from '../_shared/registrarEvento.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -167,6 +167,14 @@ Deno.serve(servir('mercadopago-webhook', async (req) => {
       const resp = await fetch(`${MP_API}/authorized_payments/${recursoId}`, {
         headers: { Authorization: `Bearer ${MP_ACCESS_TOKEN}` },
       });
+      // O Mercado Pago costuma avisar antes de a cobrança estar consultável:
+      // o 404 aqui é "ainda não", não "não existe". Respondemos 409 para ele
+      // tentar de novo (qualquer não-2xx faz isso) e registramos como aviso,
+      // não como erro — foi o que virou o incidente #6 sem ser falha nossa.
+      if (resp.status === 404) {
+        await registrarEvento('mercadopago-webhook', 'aviso', 'Cobrança da assinatura ainda não disponível no Mercado Pago (404); nova tentativa pedida.', { tipo, recursoId });
+        return json({ error: 'Cobrança ainda não disponível; tente de novo.', tentarDeNovo: true }, 409);
+      }
       if (!resp.ok) return json({ error: `Erro ao buscar cobrança da assinatura (${resp.status}).` }, 502);
       const cobranca = await resp.json();
       const preapprovalId = String(cobranca?.preapproval_id || '');
@@ -224,6 +232,10 @@ Deno.serve(servir('mercadopago-webhook', async (req) => {
       const resp = await fetch(`${MP_API}/v1/payments/${recursoId}`, {
         headers: { Authorization: `Bearer ${MP_ACCESS_TOKEN}` },
       });
+      if (resp.status === 404) {
+        await registrarEvento('mercadopago-webhook', 'aviso', 'Pagamento ainda não disponível no Mercado Pago (404); nova tentativa pedida.', { tipo, recursoId });
+        return json({ error: 'Pagamento ainda não disponível; tente de novo.', tentarDeNovo: true }, 409);
+      }
       if (!resp.ok) return json({ error: `Erro ao buscar pagamento (${resp.status}).` }, 502);
       const pagamento = await resp.json();
       const referencia = String(pagamento?.external_reference || '');

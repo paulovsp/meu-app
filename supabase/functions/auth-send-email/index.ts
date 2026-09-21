@@ -18,10 +18,35 @@
 // do app. Aqui só se escreve o conteúdo.
 import { botao, destaque, envelope, enviarEmail, escaparHtml, h2, lista, p, tabela } from '../_shared/emailDrSig.ts';
 import { servir } from '../_shared/registrarEvento.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!;
 const HOOK_SECRET = Deno.env.get('SEND_EMAIL_HOOK_SECRET')!;
+const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+
+/**
+ * Quem tem convite de cortesia (migration 0103) não vai escolher plano:
+ * a conta já nasce liberada. Mandar a essa pessoa o e-mail com a tabela de
+ * preços e "ver os planos" contradiz o convite que ela acabou de receber
+ * ("nada é cobrado"). A consulta é só leitura; sem chave ou sem convite,
+ * cai no e-mail comum.
+ */
+async function cortesiaDe(email: string): Promise<{ validoAte: string } | null> {
+  if (!SERVICE_ROLE_KEY || !email) return null;
+  try {
+    const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+    const { data } = await admin
+      .from('convites_cortesia')
+      .select('valido_ate')
+      .ilike('email', email)
+      .gt('valido_ate', new Date().toISOString())
+      .maybeSingle();
+    return data?.valido_ate ? { validoAte: String(data.valido_ate) } : null;
+  } catch (_) {
+    return null;
+  }
+}
 
 function base64Decode(b64: string): Uint8Array {
   const bin = atob(b64);
@@ -136,6 +161,35 @@ function emailDeBoasVindas(nome: string, linkSignup: string): string {
   });
 }
 
+/** O e-mail de boas-vindas de quem foi convidada: confirmar e entrar, sem planos. */
+function emailDeBoasVindasCortesia(nome: string, linkSignup: string, validoAte: string): string {
+  const saudacao = nome ? `Olá, ${escaparHtml(nome.split(' ')[0])}!` : 'Olá!';
+  const [ano, mes, dia] = validoAte.slice(0, 10).split('-');
+  const ate = `${dia}/${mes}/${ano}`;
+  return envelope({
+    titulo: 'Sua conta de teste está pronta',
+    saudacao,
+    previa: 'Falta um toque: confirme o e-mail e entre no app.',
+    corpo:
+      p('Sua conta no Dr.Sig foi criada com o convite de cortesia: acesso completo, sem cobrança e sem cartão, até <strong>' + ate + '</strong>.')
+      + botao('Confirmar minha conta', linkSignup)
+      + p('Depois de confirmar, volte ao app e entre com o seu e-mail e a senha que você criou. O link vale por algumas horas; se expirar, na tela de entrada do app há o botão "Reenviar e-mail".', { pequeno: true })
+      + h2('Por onde começar')
+      + lista([
+        '<strong>Analisantes</strong> — cadastre uma pessoa (nome basta para começar).',
+        '<strong>Agenda</strong> — marque o horário fixo dela; ele passa a se repetir sozinho.',
+        '<strong>Sessão</strong> — depois de um atendimento, o app pergunta se aconteceu e oferece registrar o relato.',
+        '<strong>Cobrança e recibos</strong> — o que está em aberto, o que entrou, e o recibo em PDF para o analisante e o contador.',
+      ])
+      + destaque(
+        '<strong>Sua opinião é o que eu peço em troca.</strong><br/>'
+        + 'O que ajudou, o que atrapalhou, o que faltou: é só responder a este e-mail, quantas vezes quiser.',
+      )
+      + p(`Dúvidas? Escreva para <a href="mailto:drsig@drsig.com.br" style="color:#497363;">drsig@drsig.com.br</a>. Antes de usar o app, leia os <a href="https://app.drsig.com.br/termos.html" style="color:#497363;">Termos de Uso</a> e a <a href="https://app.drsig.com.br/privacidade.html" style="color:#497363;">Política de Privacidade</a>.`, { pequeno: true }),
+    rodape: 'Se você não criou esta conta, ignore este e-mail: nada acontece sem que o botão seja usado.',
+  });
+}
+
 Deno.serve(servir('auth-send-email', async (req) => {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Método não permitido.' }), { status: 405 });
@@ -160,8 +214,14 @@ Deno.serve(servir('auth-send-email', async (req) => {
     let html: string;
 
     if (tipo === 'signup') {
-      subject = 'Bem-vindo(a) ao Dr.Sig — confirme seu cadastro';
-      html = emailDeBoasVindas(nome, montarLinkConfirmacaoCadastro(emailData?.token_hash));
+      const cortesia = await cortesiaDe(String(email || ''));
+      if (cortesia) {
+        subject = 'Dr.Sig — confirme sua conta de teste (1 toque)';
+        html = emailDeBoasVindasCortesia(nome, montarLinkConfirmacaoCadastro(emailData?.token_hash), cortesia.validoAte);
+      } else {
+        subject = 'Bem-vindo(a) ao Dr.Sig — confirme seu cadastro';
+        html = emailDeBoasVindas(nome, montarLinkConfirmacaoCadastro(emailData?.token_hash));
+      }
     } else if (tipo === 'email_change') {
       subject = 'Confirme seu novo e-mail no Dr.Sig';
       html = envelope({

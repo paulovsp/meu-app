@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../services/supabase';
+import { mensagemDeErro } from '../services/erros';
 import {
   validarCPF, dataBRParaISO, parseTelefone, mascararDataBR, interpretarDataDigitada,
 } from '../services/validacao';
@@ -52,6 +53,23 @@ function HeaderWave() {
       />
     </Svg>
   );
+}
+
+// Manda de novo o e-mail de boas-vindas com o botão de confirmar. Passa
+// pelo mesmo gancho de e-mail do cadastro (auth-send-email), então chega
+// igual ao primeiro. Existe porque "não chegou" é a dúvida mais comum, e a
+// resposta certa é um botão, não "veja o spam".
+async function reenviarConfirmacao(emailConta) {
+  try {
+    const { error } = await supabase.auth.resend({ type: 'signup', email: emailConta });
+    if (error) throw error;
+    Alert.alert(
+      'E-mail reenviado',
+      `Mandamos de novo o e-mail de confirmação para ${emailConta}. Toque em Confirmar minha conta e volte para entrar.`,
+    );
+  } catch (e) {
+    Alert.alert('Não foi possível reenviar', mensagemDeErro(e));
+  }
 }
 
 export default function CadastroScreen({ navigation }) {
@@ -182,15 +200,9 @@ export default function CadastroScreen({ navigation }) {
         // que falha dentro da criação da conta. O Supabase esconde o
         // motivo ("Database error saving new user"), e é assim que tem que
         // ser: a mensagem abaixo não confirma nem nega nada sobre o CPF.
-        if (/database error/i.test(error.message)) {
-          Alert.alert(
-            'Não foi possível criar a conta',
-            'Confira os dados e tente de novo. Se você já tem uma conta com este CPF, '
-            + 'entre com ela — ou use "Esqueci minha senha" na tela de entrada.',
-          );
-        } else {
-          Alert.alert('Não foi possível criar a conta', error.message);
-        }
+        // Em português, com o que fazer (ver AUTH em services/erros.js); o
+        // "Database error" continua sem confirmar nem negar nada sobre o CPF.
+        Alert.alert('Não foi possível criar a conta', mensagemDeErro(error));
         return;
       }
       // Sem sessão de volta = confirmação de e-mail está ativa no projeto;
@@ -198,11 +210,23 @@ export default function CadastroScreen({ navigation }) {
       // Texto sem link/preço/instrução de pagamento (política do Google
       // Play) — o e-mail de confirmação (auth-send-email) já leva o link
       // pra escolher o plano, e o e-mail está fora do alcance dessa regra.
+      //
+      // "Enviamos um e-mail com os próximos passos" não dizia qual e-mail,
+      // nem que sem ele a entrada é recusada: a primeira testadora criou a
+      // conta, não abriu o e-mail e leu o erro de entrada como "não
+      // reconhece meu e-mail". Agora a tela diz o assunto, o botão, e
+      // oferece reenviar.
       if (!data.session) {
         Alert.alert(
-          'Conta criada',
-          'Enviamos um e-mail com os próximos passos.',
-          [{ text: 'OK', onPress: () => navigation.goBack() }]
+          'Falta um passo: confirme seu e-mail',
+          `Mandamos um e-mail para ${emailTrim} com o assunto "Bem-vindo(a) ao Dr.Sig — confirme seu cadastro". `
+            + 'Abra e toque em Confirmar minha conta; depois volte aqui e entre com seu e-mail e senha. '
+            + 'Não chegou? Veja a caixa de spam ou peça um novo.',
+          [
+            { text: 'Reenviar e-mail', onPress: () => reenviarConfirmacao(emailTrim) },
+            { text: 'Entendi', onPress: () => navigation.goBack() },
+          ],
+          { cancelable: false },
         );
       }
     } catch (err) {

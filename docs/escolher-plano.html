@@ -130,7 +130,13 @@
       const r = await chamarFuncao({ acao: 'chave' });
       chavePublica = r.publicKey || '';
       const s = r.situacao || {};
-      if (s.renovaSozinha || s.gratuitaPorIndicacoes) {
+      // Cortesia (convite de testadora) e período pago ainda válido também
+      // não têm o que assinar: quem chega aqui vindo do e-mail de
+      // confirmação precisa ouvir "está liberada, abra o app", não ver a
+      // tabela de preços que o convite prometeu que não existiria.
+      const liberadaSemRecorrencia = (s.status === 'cortesia' || s.status === 'ativa')
+        && s.expiraEm && new Date(s.expiraEm).getTime() > Date.now();
+      if (s.renovaSozinha || s.gratuitaPorIndicacoes || liberadaSemRecorrencia) {
         renderJaAssina(s);
         return;
       }
@@ -141,21 +147,43 @@
     renderPlanos();
   }
 
+  // No Android, este link abre o app se ele estiver instalado (o Chrome
+  // entende "intent:" com o nome do pacote); se não estiver, cai na loja.
+  const ABRIR_APP = 'intent://abrir/#Intent;package=br.com.drsig.app;S.browser_fallback_url=' +
+    encodeURIComponent('https://play.google.com/store/apps/details?id=br.com.drsig.app') + ';end';
+
   function renderJaAssina(s) {
     const gratuita = !!s.gratuitaPorIndicacoes;
+    const cortesia = s.status === 'cortesia';
+    const pagoSemRecorrencia = s.status === 'ativa' && !s.renovaSozinha;
     const nome = NOME_DO_PLANO[s.plano] || s.plano || '';
     const ate = s.expiraEm ? dataBR(s.expiraEm) : '';
+    let titulo, texto;
+    if (gratuita) {
+      titulo = 'Seu acesso é gratuito';
+      texto = 'Suas indicações cobrem o Dr.Sig inteiro — não há o que assinar. Se o número de ' +
+        'indicações ativas cair, o app avisa com antecedência.';
+    } else if (cortesia) {
+      titulo = 'Sua conta está confirmada e liberada';
+      texto = 'Acesso completo por cortesia' + (ate ? ' até <strong>' + ate + '</strong>' : '') +
+        ', sem cobrança e sem cartão. Não há o que escolher aqui: abra o app e entre com o seu e-mail e a senha que você criou.';
+    } else if (pagoSemRecorrencia) {
+      titulo = 'Seu acesso está liberado';
+      texto = 'O plano ' + nome + ' está valendo' + (ate ? ' até <strong>' + ate + '</strong>' : '') +
+        '. Abra o app e entre com o seu e-mail e senha. Perto do fim, o app avisa como continuar.';
+    } else {
+      titulo = 'Você já tem um plano ativo';
+      texto = 'O plano ' + nome + ' está valendo e renova sozinho' + (ate ? ' — a próxima cobrança é em ' + ate : '') +
+        '. Para trocar de plano, cancele o atual no app, em <strong>Meu Perfil &rsaquo; Seu plano</strong>, ' +
+        'e volte aqui: o acesso continua até o fim do período já pago, e nada é apagado.';
+    }
     render(
       '<div class="sucesso"><div class="marca-ok">✅</div>' +
-      '<h1>' + (gratuita ? 'Seu acesso é gratuito' : 'Você já tem um plano ativo') + '</h1>' +
-      '<p class="lede">' +
-      (gratuita
-        ? 'Suas indicações cobrem o Dr.Sig inteiro — não há o que assinar. Se o número de ' +
-          'indicações ativas cair, o app avisa com antecedência.'
-        : 'O plano ' + nome + ' está valendo e renova sozinho' + (ate ? ' — a próxima cobrança é em ' + ate : '') +
-          '. Para trocar de plano, cancele o atual no app, em <strong>Meu Perfil &rsaquo; Seu plano</strong>, ' +
-          'e volte aqui: o acesso continua até o fim do período já pago, e nada é apagado.') +
-      '</p></div>' +
+      '<h1>' + titulo + '</h1>' +
+      '<p class="lede">' + texto + '</p></div>' +
+      ((cortesia || pagoSemRecorrencia)
+        ? '<a class="btn-grande" href="' + ABRIR_APP + '" style="display:block;text-align:center;text-decoration:none;">Abrir o Dr.Sig</a>'
+        : '') +
       '<p class="nota">Qualquer dúvida, <a href="mailto:drsig@drsig.com.br">drsig@drsig.com.br</a>.</p>'
     );
   }

@@ -13,6 +13,14 @@ provisória fica documentada no código, com o motivo.
 
 ## Pendente
 
+- **Endereço próprio do app (`scheme` em `app.json`, ex.: `drsig://`).**
+  Sem ele, a página de confirmação de e-mail e a de planos não conseguem
+  abrir o app com um toque em qualquer sistema; hoje usam o atalho do
+  Chrome no Android (`intent:` com o nome do pacote), que não existe no
+  iPhone. Com o scheme, "Abrir o Dr.Sig" vira um link universal, e o
+  e-mail de confirmação pode voltar direto para o app. Anotado em
+  21/09/2026, ao redesenhar a chegada de quem cria conta.
+
 - **Notificações push no Android.** O app não tem `google-services.json`
   (credencial do Firebase Cloud Messaging) nem `googleServicesFile` no
   `app.json`; sem isso o Android não emite token de push e nenhuma conta

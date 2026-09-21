@@ -122,12 +122,53 @@ export default function LoginScreen({ navigation }) {
         password: senha,
       });
       if (error) {
-        Alert.alert('Não foi possível entrar', error.message);
+        // O Supabase responde em inglês, e a tela repassava. "Email not
+        // confirmed" foi lido por uma testadora como "não reconhece meu
+        // e-mail" (21/09/2026): a conta existia, faltava o clique no
+        // e-mail de boas-vindas. Cada caso ganha a frase certa e, quando
+        // falta confirmar, o botão que resolve.
+        const bruta = String(error.message || '');
+        if (/not confirmed/i.test(bruta)) {
+          Alert.alert(
+            'Falta confirmar o e-mail',
+            `Sua conta existe, mas o e-mail ${emailTrim} ainda não foi confirmado. `
+              + 'Abra o e-mail "Bem-vindo(a) ao Dr.Sig — confirme seu cadastro" e toque em '
+              + 'Confirmar minha conta. Não achou? Veja a caixa de spam, ou peça um novo.',
+            [
+              { text: 'Fechar', style: 'cancel' },
+              { text: 'Reenviar e-mail', onPress: () => reenviarConfirmacao(emailTrim) },
+            ],
+          );
+        } else if (/invalid login credentials/i.test(bruta)) {
+          Alert.alert(
+            'Não foi possível entrar',
+            'E-mail ou senha não conferem. Se você ainda não criou a conta, toque em '
+              + 'Criar conta; se esqueceu a senha, use "Esqueceu a senha?".',
+          );
+        } else {
+          Alert.alert('Não foi possível entrar', mensagemDeErro(error, bruta));
+        }
       }
     } catch (err) {
       Alert.alert('Erro', 'Não foi possível conectar. Tente novamente.');
     } finally {
       setEntrando(false);
+    }
+  }
+
+  // Manda de novo o e-mail de boas-vindas com o botão de confirmar. Passa
+  // pelo mesmo gancho de e-mail do cadastro (auth-send-email), então chega
+  // igual ao primeiro.
+  async function reenviarConfirmacao(emailConta) {
+    try {
+      const { error } = await supabase.auth.resend({ type: 'signup', email: emailConta });
+      if (error) throw error;
+      Alert.alert(
+        'E-mail reenviado',
+        `Mandamos de novo o e-mail de confirmação para ${emailConta}. Toque em Confirmar minha conta e volte aqui para entrar.`,
+      );
+    } catch (e) {
+      Alert.alert('Não foi possível reenviar', mensagemDeErro(e));
     }
   }
 

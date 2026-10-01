@@ -4,18 +4,21 @@
 // ANTES de chamar a IA (mesma lógica de pico/fora de pico, já que o app
 // não pode importar um módulo Deno).
 //
-// Preços verificados em api-docs.deepseek.com/quick_start/pricing em
-// 23/08/2026 — a DeepSeek trocou o modelo de preço em 16/08/2026: hoje
-// existe pico (mais caro) e fora de pico, e os valores hardcoded antigos
-// ($0.14 / $0.0028 / $0.28) ficaram desatualizados desde então. Reconferir
-// esta página se a DeepSeek anunciar nova mudança.
-export const PRECO_INPUT_MISS_OFFPEAK_POR_1M = 0.22;
-export const PRECO_INPUT_HIT_OFFPEAK_POR_1M = 0.007;
-export const PRECO_OUTPUT_OFFPEAK_POR_1M = 0.66;
+// Preços reconferidos em api-docs.deepseek.com/quick_start/pricing em
+// 01/10/2026 — os nomes antigos `deepseek-v4-flash` e
+// `deepseek-v4-flash-vision-exp` (ainda aceitos pela API, é o que
+// `ia-busca/index.ts` chama) foram aposentados e passaram a ser servidos
+// pelo modelo DeepSeek-V4.1-Flash, faturado na tabela "Flash" atual — mais
+// barata do que os valores anteriores ($0.22 / $0.007 / $0.66), vigentes
+// desde a checagem de 23/08/2026. Reconferir esta página se a DeepSeek
+// anunciar nova mudança.
+export const PRECO_INPUT_MISS_OFFPEAK_POR_1M = 0.15;
+export const PRECO_INPUT_HIT_OFFPEAK_POR_1M = 0.003;
+export const PRECO_OUTPUT_OFFPEAK_POR_1M = 0.6;
 
-export const PRECO_INPUT_MISS_PEAK_POR_1M = 0.44;
-export const PRECO_INPUT_HIT_PEAK_POR_1M = 0.014;
-export const PRECO_OUTPUT_PEAK_POR_1M = 1.32;
+export const PRECO_INPUT_MISS_PEAK_POR_1M = 0.3;
+export const PRECO_INPUT_HIT_PEAK_POR_1M = 0.006;
+export const PRECO_OUTPUT_PEAK_POR_1M = 1.2;
 
 // Pico: 01:00-04:00 e 06:00-10:00 UTC, segunda a sexta (preço 2x).
 export function ehHorarioDePico(data: Date = new Date()): boolean {

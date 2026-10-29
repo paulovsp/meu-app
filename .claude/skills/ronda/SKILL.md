@@ -17,7 +17,11 @@ Delegue ao agente **vigia** (`.claude/agents/vigia.md`) com estas instruções, 
      -d '{"acao":"rodada","agente":"vigia"}'
    ```
    Guarde o `id` da rodada.
-3. `{"acao":"resumo","horas":24}` → o estado. Se `incidentesAbertos` tiver algo com mais de 7 dias, isso conta para a régua.
+3. `{"acao":"resumo","horas":24}` → o estado. Se `incidentesAbertos` tiver algo com mais de 7 dias, isso conta para a régua. Três leituras que são **vermelho na hora**, com incidente e aviso ao dono:
+   - `contaDoDono.ativa === false`: a conta do próprio dono não pode criar nem editar nada (foi o que aconteceu de 08 a 29/10/2026 sem ninguém ver). O incidente diz a data em `contaDoDono.expiraEm`.
+   - `usuarias.errosApp` com qualquer item: uma tela quebrou no celular de alguém (mensagem e tela no item). Incidente `erro`, origem `app`, um por mensagem distinta.
+   - `usuarias.acessos.vencidosUltimos30Dias > 0`: alguém com cortesia ou período pago perdeu o acesso e não renovou. Amarelo se for só isso; o aviso ao dono diz quantas e que vale um contato.
+   `usuarias.acessos.vencemEm7Dias > 0` entra no relatório como aviso.
 4. Aplique a régua do perfil do vigia. Para cada grupo `erro`/`critico` sem incidente aberto da mesma `origem`: `{"acao":"abrir_incidente","titulo":"<origem>: <mensagem curta>","severidade":"erro|critico","origem":"<origem>","resumo":"<vezes> ocorrências desde <primeira>; último em <ultimo>","evento_ids":[...],"aberto_por":"vigia"}`. Para grupos `aviso`/`info`: `{"acao":"marcar_eventos","ids":[...]}`.
 5. `{"acao":"funil_hoje"}` — grava o funil do dia (é barato e mantém a série completa).
 6. Escreva `operacao/ronda/AAAA-MM-DD.md` no formato do perfil (data de hoje em Brasília). Faça commit: `git add operacao && git commit -m "ronda: AAAA-MM-DD · VERDE|AMARELO|VERMELHO"`. Não faça push se o ambiente não tiver permissão; diga isso no fim.

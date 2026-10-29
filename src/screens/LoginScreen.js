@@ -99,7 +99,7 @@ export default function LoginScreen({ navigation }) {
           ]
         );
       } else if (error) {
-        Alert.alert('Não foi possível entrar', error.message);
+        Alert.alert('Não foi possível entrar', mensagemDeErro(error));
       }
     } finally {
       setEntrandoComDigital(false);

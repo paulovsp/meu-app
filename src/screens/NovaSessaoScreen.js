@@ -707,7 +707,7 @@ Dá pra resolver agora, em poucos toques.`,
       await enviarTudo(sid);
     } catch (err) {
       setPodeReenviar(blocosRef.current.length > 0);
-      Alert.alert('Erro ao enviar para transcrição', err.message);
+      Alert.alert('Erro ao enviar para transcrição', mensagemDeErro(err));
       setTranscricaoAssincrona(false);
     } finally {
       setTranscrevendo(false);

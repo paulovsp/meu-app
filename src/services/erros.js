@@ -38,6 +38,14 @@ const AUTH = [
     'Muitas tentativas em pouco tempo. Espere um minuto e tente de novo.'],
   [/link is invalid or has expired|otp_expired|token has expired/i,
     'Este link já foi usado ou expirou. Peça um novo.'],
+  // A regra do banco que barra escrita sem assinatura ativa (RLS) chegava
+  // crua: "new row violates row-level security policy for table
+  // appointments". Foi o que o dono viu na agenda em 29/10/2026, com a
+  // própria assinatura vencida. Quase sempre é isso; a frase diz o caminho.
+  [/row-level security|violates row level security|42501|permission denied for table/i,
+    'Esta conta não pode criar nem alterar dados agora, normalmente porque a assinatura '
+    + 'venceu. Tudo o que você já registrou continua aqui e pode ser exportado. Para voltar '
+    + 'a usar por completo, abra Meu Perfil › Seu plano.'],
   [/database error saving new user/i,
     'Não foi possível criar a conta. Confira os dados e tente de novo. Se você já tem uma '
     + 'conta com este CPF, entre com ela, ou use "Esqueceu a senha?" na tela de entrada.'],

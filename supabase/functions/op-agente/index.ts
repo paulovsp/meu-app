@@ -76,6 +76,9 @@ async function resumo(admin: Admin, horas: number) {
     { count: inadimplentes },
     { count: cadastros },
     { count: assinaturasNovas },
+    { data: errosApp },
+    { data: acessosVencendo },
+    { data: contaDono },
   ] = await Promise.all([
     admin.from('pagamentos_nao_identificados').select('*', { count: 'exact', head: true }).gte('criado_em', desde),
     admin.from('op_incidentes').select('id, titulo, severidade, status, origem, criado_em, atualizado_em').neq('status', 'fechado').order('criado_em', { ascending: false }),
@@ -85,7 +88,39 @@ async function resumo(admin: Admin, horas: number) {
     admin.from('profiles').select('*', { count: 'exact', head: true }).eq('assinatura_status', 'inadimplente'),
     admin.from('profiles').select('*', { count: 'exact', head: true }).gte('created_at', desde),
     admin.from('profiles').select('*', { count: 'exact', head: true }).eq('assinatura_status', 'ativa').gte('assinatura_ciclo_inicio', desde),
+    // Erros que o próprio app grava (LimiteDeErro, migration 0081). Nenhum
+    // agente lia esta tabela: uma tela quebrando no celular não aparecia
+    // na ronda. Só mensagem e tela — nada de usuária.
+    admin.from('erros_app').select('mensagem, tela, versao, criado_em').gte('criado_em', desde).order('criado_em', { ascending: false }).limit(50),
+    // Acesso que termina em 7 dias ou terminou nos últimos 30, sem
+    // recorrência para renovar sozinho. Foi assim que a conta do dono
+    // venceu em 08/10/2026 e ninguém viu até ele não conseguir abrir a
+    // agenda (29/10). Só contagem por situação e dias; o e-mail, nunca.
+    admin.from('profiles').select('assinatura_status, assinatura_expira_em, mp_preapproval_id, email')
+      .in('assinatura_status', ['ativa', 'cortesia', 'cancelada'])
+      .is('mp_preapproval_id', null)
+      .gte('assinatura_expira_em', new Date(Date.now() - 30 * 86400_000).toISOString())
+      .lte('assinatura_expira_em', new Date(Date.now() + 7 * 86400_000).toISOString())
+      .limit(100),
+    // A conta do próprio dono: se ela não pode escrever, o app "trava" para
+    // quem mais usa, e isso é vermelho na hora.
+    (async () => {
+      try {
+        const { data: p } = await admin.from('profiles').select('id, assinatura_status, assinatura_expira_em').eq('email', EMAIL_DO_DONO).maybeSingle();
+        if (!p) return { data: null };
+        const { data: ativa } = await admin.rpc('assinatura_ativa', { uid: p.id });
+        return { data: { ativa: ativa === true, status: p.assinatura_status, expiraEm: p.assinatura_expira_em } };
+      } catch (_) {
+        return { data: null };
+      }
+    })(),
   ]);
+  const agoraMs = Date.now();
+  const vencendo = (acessosVencendo || []).filter((p) => p.email !== EMAIL_DO_DONO);
+  const acessos = {
+    vencidosUltimos30Dias: vencendo.filter((p) => new Date(p.assinatura_expira_em).getTime() < agoraMs).length,
+    vencemEm7Dias: vencendo.filter((p) => new Date(p.assinatura_expira_em).getTime() >= agoraMs).length,
+  };
 
   return {
     janela: { horas, desde, ate: new Date().toISOString() },
@@ -96,7 +131,8 @@ async function resumo(admin: Admin, horas: number) {
     cron: cron || [],
     dinheiro: { pagamentosNaoIdentificados: naoIdentificados || 0, inadimplentes: inadimplentes || 0 },
     ia: { saldosNegativos: saldosNegativos || [], transcricoesTravadas: transcricoesTravadas || [] },
-    usuarias: { feedbacksPendentes: feedbacksPendentes || 0 },
+    usuarias: { feedbacksPendentes: feedbacksPendentes || 0, errosApp: errosApp || [], acessos },
+    contaDoDono: contaDono || null,
     funil: { cadastros: cadastros || 0, assinaturasNovas: assinaturasNovas || 0 },
     incidentesAbertos: incidentes || [],
   };

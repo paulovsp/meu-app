@@ -615,7 +615,7 @@ export default function FormularioCursoScreen() {
       Alert.alert('Enviado', 'A aula está sendo transcrita. Você recebe um aviso quando terminar.');
     } catch (err) {
       setPodeReenviar(blocosRef.current.length > 0);
-      Alert.alert('Erro ao enviar para transcrição', err.message);
+      Alert.alert('Erro ao enviar para transcrição', mensagemDeErro(err));
     } finally {
       setEnviandoTranscricao(false);
       setProgressoEnvio('');

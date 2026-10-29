@@ -140,7 +140,7 @@ export default function RelatoriosScreen() {
       navigation.navigate('DetalheRelatorio', { relatorio });
     } catch (err) {
       if (err.assinaturaInativa || err.creditosInsuficientes) {
-        Alert.alert('Não foi possível gerar', err.message);
+        Alert.alert('Não foi possível gerar', mensagemDeErro(err));
       } else {
         Alert.alert('Erro ao gerar relatório', mensagemDeErro(err));
       }

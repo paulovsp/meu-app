@@ -14,6 +14,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { envelope, enviarEmail, escaparHtml, h2, p } from '../_shared/emailDrSig.ts';
 import { servir } from '../_shared/registrarEvento.ts';
+import { tentarDeNovo } from '../_shared/tentarDeNovo.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -179,11 +180,23 @@ Deno.serve(servir('enviar-digest-diario', async (req) => {
     // Antes o e-mail inteiro dependia só de `notif_atraso_email`, então
     // quem desligava aviso de atraso perdia junto o de sessões sem relato,
     // que é outro assunto.
-    const { data: perfis, error } = await supabaseAdmin
+    //
+    // Esta é a consulta que decide para quem o resumo vai: se ela falha,
+    // ninguém recebe nada e o dia está perdido — o cron só volta amanhã.
+    // Foi o que aconteceu em 12 e 13/09/2026, com 504 do gateway depois de
+    // 6 s. Por isso ela, e só ela, tem teto de tempo e tentativa nova
+    // (ver _shared/tentarDeNovo.ts): as consultas de dentro do laço já
+    // falham uma profissional por vez, e essa perda o corpo da resposta
+    // mostra em `erros`.
+    const { data: perfis, error } = await tentarDeNovo(() => supabaseAdmin
       .from('profiles')
       .select('id, email, nome, expo_push_token, notif_atraso_email, '
         + 'notif_registro_email, notif_sessao_email, notif_sessao_push')
-      .in('assinatura_status', ['ativa', 'cortesia']);
+      .in('assinatura_status', ['ativa', 'cortesia'])
+      // Sem teto, uma resposta que nunca chega consome a janela inteira e
+      // a segunda tentativa não caberia. 8 s é folgado para esta consulta
+      // (cabem três tentativas e as esperas em ~26 s, no pior caso).
+      .abortSignal(AbortSignal.timeout(8000)));
     if (error) throw error;
 
     for (const perfil of perfis || []) {

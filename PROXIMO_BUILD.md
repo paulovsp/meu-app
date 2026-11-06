@@ -11,9 +11,16 @@ provisória fica documentada no código, com o motivo.
 
 ---
 
+## O que entra na v25 (versionCode 25)
+
+- **Botão voltar do Android.** `android.predictiveBackGestureEnabled` estava
+  `true` desde a v23; com ele, o voltar da barra do sistema fechava o app em
+  vez de voltar de tela. Desligado.
+- **Endereço próprio do app: `scheme: "drsig"`.**
+
 ## Pendente
 
-- **Endereço próprio do app (`scheme` em `app.json`, ex.: `drsig://`).**
+- **(entrou na v25) Endereço próprio do app (`scheme` em `app.json`, ex.: `drsig://`).**
   Sem ele, a página de confirmação de e-mail e a de planos não conseguem
   abrir o app com um toque em qualquer sistema; hoje usam o atalho do
   Chrome no Android (`intent:` com o nome do pacote), que não existe no

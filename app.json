@@ -30,8 +30,8 @@
         "android.permission.POST_NOTIFICATIONS"
       ],
       "package": "br.com.drsig.app",
-      "versionCode": 24,
-      "predictiveBackGestureEnabled": true
+      "versionCode": 25,
+      "predictiveBackGestureEnabled": false
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -80,6 +80,7 @@
     "runtimeVersion": {
       "policy": "fingerprint"
     },
-    "backgroundColor": "#F7F5F0"
+    "backgroundColor": "#F7F5F0",
+    "scheme": "drsig"
   }
 }

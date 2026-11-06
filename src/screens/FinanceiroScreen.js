@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import {
   getPlanoFinanceiro, getRecebimentosDoMes, calcularStatusGeralRecebimentos,
   calcularStatusItemRecebimento, filtrarRecebimentosMensais, getSessoesPagasNoIntervalo,
-  formatarMoeda,
+  formatarMoeda, valorEntradaDoMes, sessoesEntradaDoMes, totalEntradasDoMes,
 } from '../services/database';
 import { mensagemDeErro } from '../services/erros';
 import { useSwipeHorizontal } from '../hooks/useSwipeHorizontal';
@@ -115,6 +115,18 @@ function LinhaItem({ icon, titulo, subtitulo, valor, cor }) {
   );
 }
 
+function subtituloEntrada(item) {
+  const n = sessoesEntradaDoMes(item);
+  const palavra = n === 1 ? 'sessão' : 'sessões';
+  if (item.tipo_cobranca === 'por_sessao') {
+    const aFazer = item.sessoesFuturas ? ' (' + item.sessoesFuturas + ' a fazer)' : '';
+    return n + ' ' + palavra + ' · por sessão' + aFazer;
+  }
+  const competencia = item.competenciaMes != null ? ' de ' + MESES_CURTO[item.competenciaMes] : '';
+  const dia = item.dia_pagamento ? ' · recebe dia ' + item.dia_pagamento : '';
+  return n + ' ' + palavra + competencia + dia;
+}
+
 function Vazio({ texto }) {
   return (
     <View style={s.vazio}>
@@ -125,6 +137,18 @@ function Vazio({ texto }) {
 }
 
 const MESES_CURTO = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+const MESES_LABEL = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+];
+
+// Cor de um analisante num mês que não é o atual. As regras de
+// calcularStatusItemRecebimento pressupõem "hoje"; para um mês navegado,
+// passado é verde (pago) ou vermelho (não pago), futuro é amarelo.
+function statusForaDoMesAtual(r, relacao) {
+  if (r.recebido) return 'verde';
+  return relacao === 'passado' ? 'vermelho' : 'amarelo';
+}
 
 export default function FinanceiroScreen() {
   const navigation = useNavigation();
@@ -147,6 +171,20 @@ export default function FinanceiroScreen() {
   // pagas nesta semana — cobre tanto a visão diária quanto a semanal.
   const [sessoesPagas, setSessoesPagas] = useState(new Set());
   const [menuAberto, setMenuAberto] = useState(false);
+  // Mês exibido na visão mensal (0-11). Diário e semanal são sempre "hoje".
+  const hojeInicial = new Date();
+  const [anoSel, setAnoSel] = useState(hojeInicial.getFullYear());
+  const [mesSel, setMesSel] = useState(hojeInicial.getMonth());
+  const [carregandoMes, setCarregandoMes] = useState(false);
+
+  function mudarMes(delta) {
+    let novoMes = mesSel + delta;
+    let novoAno = anoSel;
+    if (novoMes > 11) { novoMes = 0; novoAno += 1; }
+    if (novoMes < 0) { novoMes = 11; novoAno -= 1; }
+    setMesSel(novoMes);
+    setAnoSel(novoAno);
+  }
 
   useFocusEffect(
     useCallback(() => {
@@ -155,18 +193,25 @@ export default function FinanceiroScreen() {
           const hoje = new Date();
           const inicioSemana = getInicioSemana(hoje);
           const fimSemana = getFimSemana(inicioSemana);
+          setCarregandoMes(true);
           const [planoResultado, recebimentos, pagas] = await Promise.all([
             getPlanoFinanceiro(hoje),
-            getRecebimentosDoMes(hoje.getFullYear(), hoje.getMonth()),
+            getRecebimentosDoMes(anoSel, mesSel),
             getSessoesPagasNoIntervalo(toISO(inicioSemana), toISO(fimSemana)),
           ]);
+          const ehMesAtual = anoSel === hoje.getFullYear() && mesSel === hoje.getMonth();
+          const ehPassado = anoSel < hoje.getFullYear() || (anoSel === hoje.getFullYear() && mesSel < hoje.getMonth());
+          const relacao = ehMesAtual ? 'atual' : (ehPassado ? 'passado' : 'futuro');
           setPlano(planoResultado);
           setSessoesPagas(pagas);
 
           // "Recebido" mensal só considera cobrança mensal/mensal-fixo — por
           // sessão tem sua própria dinâmica (diário/semanal), separada aqui.
           const recebimentosMensais = filtrarRecebimentosMensais(recebimentos);
-          setRecebimentosMes(recebimentosMensais.filter((r) => r.tipo_cobranca !== 'por_sessao'));
+          // Entradas do mês: TODOS os analisantes, inclusive quem paga por
+          // sessão (antes ficavam de fora do total). Por sessão entra quem
+          // tem sessão feita OU por fazer no mês.
+          setRecebimentosMes(recebimentos.filter((r) => valorEntradaDoMes(r) > 0));
           // "Recebido" soma o que de fato entrou. Na cobrança por sessão isso
           // é o valor das sessões já pagas — contar só quem está 100% quitado
           // (r.recebido) escondia todo pagamento parcial, que é o caso comum
@@ -175,15 +220,22 @@ export default function FinanceiroScreen() {
             if (r.tipo_cobranca === 'por_sessao') return acc + (r.valorRecebido || 0);
             return r.recebido ? acc + (r.valorPrevisto || 0) : acc;
           }, 0));
-          setCorRecebimento(calcularStatusGeralRecebimentos(recebimentosMensais));
           const mapa = {};
-          recebimentosMensais.forEach((r) => { mapa[r.patient_id] = calcularStatusItemRecebimento(r); });
+          if (relacao === 'atual') {
+            setCorRecebimento(calcularStatusGeralRecebimentos(recebimentosMensais));
+            recebimentosMensais.forEach((r) => { mapa[r.patient_id] = calcularStatusItemRecebimento(r); });
+          } else {
+            setCorRecebimento(piorStatus(recebimentos.map((r) => statusForaDoMesAtual(r, relacao))));
+            recebimentos.forEach((r) => { mapa[r.patient_id] = statusForaDoMesAtual(r, relacao); });
+          }
           setStatusPorPaciente(mapa);
         } catch (e) {
           Alert.alert('Erro ao carregar', mensagemDeErro(e));
+        } finally {
+          setCarregandoMes(false);
         }
       })();
-    }, [])
+    }, [anoSel, mesSel])
   );
 
   // Deslize horizontal troca de período (diário ⇄ semanal ⇄ mensal),
@@ -234,6 +286,19 @@ export default function FinanceiroScreen() {
           </TouchableOpacity>
         ))}
       </View>
+
+      {periodo === 'mensal' && (
+        <View style={s.mesRow}>
+          <TouchableOpacity onPress={() => mudarMes(-1)} style={s.mesBtn} accessibilityLabel="Mês anterior">
+            <Ionicons name="chevron-back" size={20} color="#497363" />
+          </TouchableOpacity>
+          <Text style={s.mesLabel}>{MESES_LABEL[mesSel]} {anoSel}</Text>
+          <TouchableOpacity onPress={() => mudarMes(1)} style={s.mesBtn} accessibilityLabel="Próximo mês">
+            <Ionicons name="chevron-forward" size={20} color="#497363" />
+          </TouchableOpacity>
+          {carregandoMes ? <ActivityIndicator size="small" color="#497363" style={{ marginLeft: 6 }} /> : null}
+        </View>
+      )}
 
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} {...panHandlers}>
         <Animated.View style={animatedStyle}>
@@ -326,28 +391,26 @@ export default function FinanceiroScreen() {
               // nele. Para quem paga no começo do mês, são as sessões do mês
               // anterior — por isso a fonte é a mesma da Cobrança, e não a
               // grade do mês exibido.
-              const totalMensalFiltrado = recebimentosMes.reduce((acc, item) => acc + (item.valorPrevisto || 0), 0);
+              const totalMensalFiltrado = totalEntradasDoMes(recebimentosMes);
 
               return (
                 <>
                   <View style={s.cardTotalRow}>
-                    <CardTotal label="Previsto neste mês" valor={totalMensalFiltrado} flex />
+                    <CardTotal label={'Previsto em ' + MESES_LABEL[mesSel].toLowerCase()} valor={totalMensalFiltrado} flex />
                     <CardTotal label="Recebido" valor={totalRecebido} cor={corRecebimento} flex />
                   </View>
                   <View style={s.secao}>
                     <Text style={s.secaoTitulo}>Por analisante</Text>
                     {recebimentosMes.length === 0 ? (
-                      <Vazio texto="Nenhum analisante com cobrança mensal cadastrado ainda." />
+                      <Vazio texto="Nenhuma entrada prevista para este mês." />
                     ) : (
                       recebimentosMes.map((item) => (
                         <LinhaItem
                           key={item.patient_id}
                           icon="person-outline"
                           titulo={item.nome}
-                          subtitulo={`${item.sessoesMes} ${item.sessoesMes === 1 ? 'sessão' : 'sessões'}${
-                            item.competenciaMes != null ? ` de ${MESES_CURTO[item.competenciaMes]}` : ''
-                          }${item.dia_pagamento ? ` · recebe dia ${item.dia_pagamento}` : ''}`}
-                          valor={item.valorPrevisto}
+                          subtitulo={subtituloEntrada(item)}
+                          valor={valorEntradaDoMes(item)}
                           cor={statusPorPaciente[item.patient_id]}
                         />
                       ))
@@ -401,6 +464,9 @@ const s = StyleSheet.create({
   toggleTxtAtivo: { color: '#fff' },
 
   scroll: { paddingHorizontal: 16, paddingBottom: 32, gap: 16 },
+  mesRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingBottom: 8 },
+  mesBtn: { padding: 6 },
+  mesLabel: { fontSize: 16, fontWeight: '500', color: '#302C28', minWidth: 140, textAlign: 'center', lineHeight: 23 },
 
   cardTotalRow: { flexDirection: 'column', gap: 12 },
   cardTotal: {

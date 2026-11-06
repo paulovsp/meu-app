@@ -39,7 +39,6 @@ import { diaSemanaDeISO } from '../services/validacao';
 
 const DIAS_LABEL = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const SCREEN_WIDTH = Dimensions.get('window').width;
-const COL_WIDTH_BASE = (SCREEN_WIDTH - 16) / 7;
 const SLOT_HEIGHT_BASE = 34;
 
 const COR_PRESENCIAL = '#C3DFCF'; // verde claro
@@ -90,11 +89,11 @@ function labelModalidadeTexto(modality) {
 /**
  * Renderiza a barra inferior do slot (usado na visão semanal, compacta).
  */
-function BarraModalidade({ modality }) {
+function BarraModalidade({ modality, fonte = 7 }) {
   if (modality === 'online') {
     return (
       <View style={[styles.badge, { backgroundColor: COR_ONLINE }]}>
-        <Text style={styles.badgeTxt}>ON</Text>
+        <Text style={[styles.badgeTxt, { fontSize: fonte }]}>ON</Text>
       </View>
     );
   }
@@ -102,14 +101,14 @@ function BarraModalidade({ modality }) {
   if (modality === 'presencial') {
     return (
       <View style={[styles.badge, { backgroundColor: COR_PRESENCIAL }]}>
-        <Text style={styles.badgeTxt}>OFF</Text>
+        <Text style={[styles.badgeTxt, { fontSize: fonte }]}>OFF</Text>
       </View>
     );
   }
 
   if (modality === 'ambos' || modality === 'hibrido') {
     return (
-      <View style={styles.badgeSplitContainer}>
+      <View style={[styles.badgeSplitContainer, { height: Math.max(6, Math.round(fonte * 0.7)) }]}>
         <View style={[styles.badgeSplitMeio, { backgroundColor: COR_PRESENCIAL }]} />
         <View style={[styles.badgeSplitMeio, { backgroundColor: COR_ONLINE }]} />
       </View>
@@ -136,7 +135,13 @@ export default function AgendaScreen({ navigation }) {
   // Esconde da visão semanal os dias sem nenhum horário configurado nem
   // compromisso avulso — pensado pra quem não atende todo dia (ex: sem
   // sábado/domingo) e não quer ver colunas vazias ocupando espaço.
-  const [ocultarDiasVazios, setOcultarDiasVazios] = useState(false);
+  // Dias sem nenhum horário (livre ou ocupado) saem da semana por padrão:
+  // cada dia a menos é uma coluna mais larga e letras maiores. O olho no
+  // topo mostra a semana inteira de volta.
+  const [ocultarDiasVazios, setOcultarDiasVazios] = useState(true);
+  // Área real da grade semanal (onLayout) — é dela que saem a largura das
+  // colunas, a altura dos horários e o tamanho das letras.
+  const [areaSemana, setAreaSemana] = useState(null);
 
   const inicioSemana = useMemo(() => getInicioSemana(dataRef), [dataRef]);
 
@@ -217,17 +222,36 @@ export default function AgendaScreen({ navigation }) {
     min: 0.6,
     max: 2.2,
   });
-  const alturaSlotAtual = Math.round(SLOT_HEIGHT_BASE * escalaSemanal);
-  // ⚠️ O teto da fonte da hora (11, não 13 como antes) é o valor máximo que
-  // ainda cabe inteiro dentro da largura fixa da coluna (COL_WIDTH_BASE,
-  // ~53px numa tela de 390px) sem cortar dígito — no zoom médio/alto a
-  // fonte batia nesse teto de 13 mas a coluna não crescia junto, cortando a
-  // hora no meio ("09:0" em vez de "09:00"). A altura do slot continua
-  // crescendo bastante com o zoom (SLOT_HEIGHT_BASE * escala), então o
-  // efeito de "mais espaço" continua nítido mesmo com a fonte um pouco
-  // mais contida.
-  const fontHorarioAtual = Math.max(7, Math.min(11, Math.round(8.5 * escalaSemanal)));
-  const fontPacienteAtual = Math.max(6, Math.min(9.5, Math.round(7.5 * escalaSemanal)));
+  // ─── Medidas da semana: o maior tamanho que cabe ─────────────────────
+  //
+  // Antes, coluna (1/7 da tela) e altura do horário (34) eram fixas, e a
+  // fonte da hora tinha teto de 11 para caber nessa coluna estreita: com
+  // três dias na semana sobrava espaço vazio e a letra continuava miúda.
+  // Agora a largura é dividida só entre os dias mostrados, a altura entre
+  // os horários do dia mais cheio, e as letras crescem até o limite do
+  // que cabe (a hora "18:30" mede ~3 vezes a fonte em largura). O zoom de
+  // pinça continua valendo por cima: multiplica a altura, e a coluna rola.
+  function medirSemana(dias) {
+    const largura = areaSemana?.width || SCREEN_WIDTH;
+    const altura = areaSemana?.height || 0;
+    const n = Math.max(1, dias.length);
+    const colW = (largura - 16) / n - 2;
+    const maxItens = Math.max(1, ...dias.map((d) => {
+      const iso = toISO(d);
+      return itensDoDia(iso, slotsDoDiaDaSemana(d.getDay(), iso)).length;
+    }));
+    const fCab = Math.max(10, Math.min(18, colW * 0.2));
+    const cabH = 12 + fCab * 1.3 + (fCab - 1) * 1.3 + 1;
+    const util = altura - 8 - 2 - cabH - 6;
+    const porItem = altura > 0 ? util / maxItens - 3 : SLOT_HEIGHT_BASE;
+    const slotH = Math.round(Math.min(170, Math.max(SLOT_HEIGHT_BASE, porItem)) * escalaSemanal);
+    const fBadge = Math.max(7, Math.min(12, slotH * 0.11));
+    const corpo = slotH - (fBadge + 4);
+    const fH = Math.max(8, Math.min(28, (colW - 6) / 3.1, corpo * 0.42));
+    const fN = Math.max(7, Math.min(fH * 0.8, corpo * 0.3));
+    const linhasNome = corpo - fH * 1.25 >= fN * 1.25 * 2 ? 2 : 1;
+    return { colW, slotH, fH, fN, fBadge, fCab, linhasNome };
+  }
 
   // `dataISO` é obrigatório pra decidir corretamente horários avulsos
   // (só valem na própria data) e quinzenais/personalizados (só valem nas
@@ -340,7 +364,7 @@ export default function AgendaScreen({ navigation }) {
    * A barra inferior indica a modalidade (presencial/online/ambos).
    * Usado na visão SEMANAL (compacta).
    */
-  function renderSlotBotao({ slot, dataISO, key }) {
+  function renderSlotBotao({ slot, dataISO, key, m }) {
     const compromisso = buscarCompromissoDoSlot(dataISO, slot);
     const tipo = compromisso?.tipo || slot.tipo || 'sessao_individual';
     // Liberado (apagado pontualmente) e sem compromisso novo ainda criado
@@ -362,7 +386,7 @@ export default function AgendaScreen({ navigation }) {
         key={key}
         style={[
           styles.slotBtn,
-          { height: alturaSlotAtual, backgroundColor: ocupado ? corTipoEvento(tipo) : '#43A047' },
+          { height: m.slotH, backgroundColor: ocupado ? corTipoEvento(tipo) : '#43A047' },
         ]}
         onPress={() => abrirCompromissoOuEdicao({ slot, dataISO })}
         onLongPress={() => {
@@ -370,17 +394,20 @@ export default function AgendaScreen({ navigation }) {
         }}
         activeOpacity={0.75}
       >
-        <Text style={[styles.slotHorarioTxt, { fontSize: fontHorarioAtual }]} numberOfLines={1}>
+        <Text style={[styles.slotHorarioTxt, { fontSize: m.fH, lineHeight: Math.round(m.fH * 1.2) }]} numberOfLines={1}>
           {horario}
         </Text>
 
         {ocupado && (
-          <Text style={[styles.slotPacienteTxt, { fontSize: fontPacienteAtual }]} numberOfLines={1}>
+          <Text
+            style={[styles.slotPacienteTxt, { fontSize: m.fN, lineHeight: Math.round(m.fN * 1.2), marginBottom: m.fBadge + 2 }]}
+            numberOfLines={m.linhasNome}
+          >
             {nomePaciente}
           </Text>
         )}
 
-        <BarraModalidade modality={modality} />
+        <BarraModalidade modality={modality} fonte={m.fBadge} />
       </TouchableOpacity>
     );
   }
@@ -533,21 +560,21 @@ export default function AgendaScreen({ navigation }) {
     return [...recorrentes, ...semSlot].sort((a, b) => compararHorarios(a.slot, b.slot));
   }
 
-  function renderColunaDia(data) {
+  function renderColunaDia(data, m) {
     const dataISO = toISO(data);
     const diaSemana = data.getDay();
     const slots = slotsDoDiaDaSemana(diaSemana, dataISO);
 
     return (
-      <View key={`day-${dataISO}`} style={[styles.colunaDia, { width: COL_WIDTH_BASE }]}>
+      <View key={`day-${dataISO}`} style={[styles.colunaDia, { width: m.colW }]}>
         {/* ⚠️ NOVO (item 7): tocar no cabeçalho do dia abre a agenda diária */}
         <TouchableOpacity
           style={styles.diaHeader}
           onPress={() => abrirDiaEspecifico(data)}
           activeOpacity={0.6}
         >
-          <Text style={styles.diaHeaderSemana}>{DIAS_LABEL[diaSemana]}</Text>
-          <Text style={styles.diaHeaderData}>
+          <Text style={[styles.diaHeaderSemana, { fontSize: m.fCab }]}>{DIAS_LABEL[diaSemana]}</Text>
+          <Text style={[styles.diaHeaderData, { fontSize: m.fCab - 1 }]}>
             {String(data.getDate()).padStart(2, '0')}/
             {String(data.getMonth() + 1).padStart(2, '0')}
           </Text>
@@ -560,7 +587,7 @@ export default function AgendaScreen({ navigation }) {
         >
           {slots.length === 0 && <Text style={styles.semHorarios}>—</Text>}
 
-          {itensDoDia(dataISO, slots).map(({ slot, key }) => renderSlotBotao({ slot, dataISO, key }))}
+          {itensDoDia(dataISO, slots).map(({ slot, key }) => renderSlotBotao({ slot, dataISO, key, m }))}
         </ScrollView>
       </View>
     );
@@ -591,7 +618,8 @@ export default function AgendaScreen({ navigation }) {
       );
     }
 
-    return <View style={styles.semanaContainer}>{dias.map(renderColunaDia)}</View>;
+    const m = medirSemana(dias);
+    return <View style={styles.semanaContainer}>{dias.map((d) => renderColunaDia(d, m))}</View>;
   }
 
   function renderDiario() {
@@ -722,7 +750,16 @@ export default function AgendaScreen({ navigation }) {
         ) : (
           <>
             {modoView === 'semanal' && (
-              <View style={{ flex: 1 }} {...pinchPanHandlers}>
+              <View
+                style={{ flex: 1 }}
+                {...pinchPanHandlers}
+                onLayout={(e) => {
+                  const { width, height } = e.nativeEvent.layout;
+                  if (!areaSemana || Math.abs(areaSemana.width - width) > 1 || Math.abs(areaSemana.height - height) > 1) {
+                    setAreaSemana({ width, height });
+                  }
+                }}
+              >
                 <Animated.View style={{ flex: 1, transform: [{ scaleY: pinchScaleAnim }] }}>
                   {renderSemanal()}
                 </Animated.View>
@@ -826,7 +863,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   slotHorarioTxt: { fontSize: 9, fontWeight: '500', color: '#FFFFFF' },
-  slotPacienteTxt: { fontSize: 8, color: '#FFFFFF', maxWidth: '95%' },
+  slotPacienteTxt: { fontSize: 8, color: '#FFFFFF', maxWidth: '95%', textAlign: 'center' },
   badge: {
     position: 'absolute',
     bottom: 0,

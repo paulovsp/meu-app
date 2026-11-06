@@ -82,6 +82,23 @@ export async function removerDespesa(id) {
  * avulsa (`tipo` 'recarga_avulsa') é dinheiro novo saindo do bolso naquele
  * mês especificamente.
  */
+/** Total de Saídas de um mês (1-12): despesas lançadas mais assinatura e
+ *  créditos comprados. A mesma conta da tela de Saídas e do botão da aba
+ *  Financeiro — num lugar só, para os dois nunca divergirem. */
+export function somarSaidas(despesas, resumoSistema) {
+  const manual = (despesas || []).reduce((soma, d) => soma + Number(d.valor || 0), 0);
+  const sistema = (resumoSistema?.assinaturaValorBRL || 0) + (resumoSistema?.creditosCompradosBRL || 0);
+  return manual + sistema;
+}
+
+export async function getTotalSaidasDoMes(ano, mes) {
+  const [lista, resumo] = await Promise.all([
+    listarDespesas(ano, mes),
+    getResumoAssinaturaECreditosDoMes(ano, mes),
+  ]);
+  return somarSaidas(lista, resumo);
+}
+
 export async function getResumoAssinaturaECreditosDoMes(ano, mes) {
   const { data: { session } } = await supabase.auth.getSession();
   const userId = session.user.id;

@@ -12,7 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import {
   getPlanoFinanceiro, getRecebimentosDoMes, getPrecoMedioSessao,
   getContagemAnalisantesESupervisionandos, getContagemSessoesSemRelato, getResumoHorariosSemanais,
-  filtrarRecebimentosMensais, calcularStatusGeralRecebimentos,
+  filtrarRecebimentosMensais, calcularStatusGeralRecebimentos, getGanhosMensaisEstimados,
 } from '../services/database';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -229,6 +229,7 @@ export default function PerfilScreen({ navigation }) {
   const [notifSistema, setNotifSistema] = useState(null);
   const [estatisticas, setEstatisticas] = useState({
     precoMedio: 0, totalAnalisantes: 0, totalSupervisionandos: 0, sessoesSemRelato: 0,
+    analisantesAtivos: 0, supervisionandosAtivos: 0, ganhosMes: 0,
     pagamentosRecebidos: 0, pagamentosTotal: 0, pagamentosStatusCor: 'verde',
     horariosOcupados: 0, horariosTotal: 0,
   });
@@ -299,6 +300,7 @@ export default function PerfilScreen({ navigation }) {
         getContagemSessoesSemRelato(),
         getResumoHorariosSemanais(),
         getRecebimentosDoMes(hoje.getFullYear(), hoje.getMonth()),
+        getGanhosMensaisEstimados(),
       ]),
     ]);
 
@@ -354,13 +356,14 @@ export default function PerfilScreen({ navigation }) {
       setPlano(planoResultado);
     }
 
-    const [precoMedio, contagemAnalisantes, sessoesSemRelato, horarios, recebimentos] = statsResultado;
+    const [precoMedio, contagemAnalisantes, sessoesSemRelato, horarios, recebimentos, ganhos] = statsResultado;
     [
       ['getPrecoMedioSessao', precoMedio],
       ['getContagemAnalisantesESupervisionandos', contagemAnalisantes],
       ['getContagemSessoesSemRelato', sessoesSemRelato],
       ['getResumoHorariosSemanais', horarios],
       ['getRecebimentosDoMes', recebimentos],
+      ['getGanhosMensaisEstimados', ganhos],
     ].forEach(([nome, resultado]) => {
       if (resultado.status === 'rejected') {
         console.error(`Erro ao carregar estatística (${nome}):`, resultado.reason?.message || resultado.reason);
@@ -370,6 +373,9 @@ export default function PerfilScreen({ navigation }) {
       precoMedio: precoMedio.status === 'fulfilled' ? precoMedio.value : atual.precoMedio,
       totalAnalisantes: contagemAnalisantes.status === 'fulfilled' ? contagemAnalisantes.value.analisantes : atual.totalAnalisantes,
       totalSupervisionandos: contagemAnalisantes.status === 'fulfilled' ? contagemAnalisantes.value.supervisionandos : atual.totalSupervisionandos,
+      analisantesAtivos: contagemAnalisantes.status === 'fulfilled' ? contagemAnalisantes.value.analisantesAtivos : atual.analisantesAtivos,
+      supervisionandosAtivos: contagemAnalisantes.status === 'fulfilled' ? contagemAnalisantes.value.supervisionandosAtivos : atual.supervisionandosAtivos,
+      ganhosMes: ganhos.status === 'fulfilled' ? ganhos.value : atual.ganhosMes,
       sessoesSemRelato: sessoesSemRelato.status === 'fulfilled' ? sessoesSemRelato.value : atual.sessoesSemRelato,
       // Cobrança "por sessão" não entra nessa contagem (item 9) — não tem
       // dia de vencimento fixo pra comparar com "em aberto"/"em atraso".
@@ -900,7 +906,7 @@ export default function PerfilScreen({ navigation }) {
         <View style={st.statsRow}>
           <View style={st.statCard}>
             <Text style={st.statNumber} numberOfLines={1} adjustsFontSizeToFit>
-              {formatarMoedaInteira(plano?.totalMensal ?? 0)}
+              {formatarMoedaInteira(estatisticas.ganhosMes)}
             </Text>
             <Text style={st.statLabel}>Ganhos do mês</Text>
           </View>
@@ -926,8 +932,10 @@ export default function PerfilScreen({ navigation }) {
             style={st.statCard}
             onPress={() => navigation.navigate('Patients', { aba: 'analisantes' })}
           >
-            <Text style={st.statNumber}>{estatisticas.totalAnalisantes}</Text>
-            <Text style={st.statLabel}>Analisante{estatisticas.totalAnalisantes === 1 ? '' : 's'}</Text>
+            <Text style={st.statNumber} numberOfLines={1} adjustsFontSizeToFit>
+              {estatisticas.analisantesAtivos}/{estatisticas.totalAnalisantes}
+            </Text>
+            <Text style={st.statLabel}>Analisantes ativos</Text>
           </TouchableOpacity>
         </View>
         <View style={st.statsRow}>
@@ -935,8 +943,10 @@ export default function PerfilScreen({ navigation }) {
             style={st.statCard}
             onPress={() => navigation.navigate('Patients', { aba: 'supervisionandos' })}
           >
-            <Text style={st.statNumber}>{estatisticas.totalSupervisionandos}</Text>
-            <Text style={st.statLabel}>Supervisionando{estatisticas.totalSupervisionandos === 1 ? '' : 's'}</Text>
+            <Text style={st.statNumber} numberOfLines={1} adjustsFontSizeToFit>
+              {estatisticas.supervisionandosAtivos}/{estatisticas.totalSupervisionandos}
+            </Text>
+            <Text style={st.statLabel}>Supervisionandos ativos</Text>
           </TouchableOpacity>
           <TouchableOpacity style={st.statCard} onPress={() => navigation.navigate('SessoesStatus')}>
             <Text style={st.statNumber}>{estatisticas.sessoesSemRelato}</Text>

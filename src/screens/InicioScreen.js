@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Image,
-  StatusBar, Dimensions, ScrollView, Animated, Alert, AppState,
+  StatusBar, Dimensions, ScrollView, Animated, Alert, AppState, BackHandler,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -13,7 +13,11 @@ import {
 import { ehSessaoDeDemonstracao } from '../services/demonstracao';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
-import { getResumoAgendaHoje, listarCompromissosAguardandoCheckin } from '../services/database';
+import {
+  getResumoAgendaHoje, listarCompromissosAguardandoCheckin, getRecebimentosDoMes, totalEntradasDoMes,
+} from '../services/database';
+import { getTotalSaidasDoMes } from '../services/despesas';
+import ResumoFinanceiroBanner, { RESUMO_FINANCEIRO_H } from '../components/ResumoFinanceiroBanner';
 import { processarEnviosFiscaisAutomaticos } from '../services/fiscalAutomatico';
 import { obterRecebimentosAtrasados, verificarEEnviarAlertaAtraso } from '../services/alertaAtraso';
 import { horarioJaPassou } from '../services/compromissoStatus';
@@ -123,6 +127,16 @@ function calcularAlturasDaGrade(alturaUtil) {
       (alturaUtil - ESPACO_ACIMA_DA_GRADE - ESPACO_ABAIXO_DA_GRADE - GRID_ROW_GAP * (GRID_ROWS - 1)) / GRID_ROWS
     )
   );
+  // Aba Financeiro: o botão Entradas − Saídas ocupa o lugar do banner de
+  // usuário, e as células encolhem para tudo continuar cabendo sem rolar.
+  const cellHFinanceiro = Math.min(
+    190,
+    Math.max(
+      110,
+      (alturaUtil - ESPACO_ACIMA_DA_GRADE - ESPACO_ABAIXO_DA_GRADE - RESUMO_FINANCEIRO_H
+        - GRID_ROW_GAP * (GRID_ROWS - 1)) / GRID_ROWS
+    )
+  );
   // Mesma lógica pra aba Início: Afazeres/Agenda de hoje crescem pra ocupar
   // o espaço vertical que sobrava, com o botão Busca Dr.Sig fixo na
   // parte mais baixa da tela.
@@ -130,7 +144,7 @@ function calcularAlturasDaGrade(alturaUtil) {
     150,
     alturaUtil - ESPACO_ACIMA_DA_GRADE - ESPACO_ABAIXO_DA_GRADE - USER_BANNER_H - WIDGETS_ROW_MARGIN_BOTTOM - BUSCA_BTN_H
   );
-  return { cellH, widgetH };
+  return { cellH, cellHFinanceiro, widgetH };
 }
 
 // Distância mínima de arraste horizontal para trocar de modo
@@ -209,7 +223,7 @@ export default function InicioScreen({ navigation }) {
   // — SH sozinho (Dimensions) inclui notch/barra de gestos, que a
   // SafeAreaView já desconta visualmente mas a conta de layout ignorava.
   const insets = useSafeAreaInsets();
-  const { cellH, widgetH } = useMemo(
+  const { cellH, cellHFinanceiro, widgetH } = useMemo(
     () => calcularAlturasDaGrade(SH - insets.top - insets.bottom),
     [insets.top, insets.bottom]
   );
@@ -265,6 +279,44 @@ export default function InicioScreen({ navigation }) {
     setModo(novoModo);
     entrarDe(indoParaFrente ? 46 : -46);
   }
+
+  // O voltar do Android, nas abas Clínica e Financeiro, volta para a aba
+  // Início em vez de fechar o app. Na própria Início, sai como sempre.
+  const trocarModoRef = useRef(trocarModo);
+  trocarModoRef.current = trocarModo;
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        if (menuAberto) { setMenuAberto(false); return true; }
+        if (modo !== 'inicio') { trocarModoRef.current('inicio'); return true; }
+        return false;
+      });
+      return () => sub.remove();
+    }, [modo, menuAberto])
+  );
+
+  // Resumo do mês da aba Financeiro: as mesmas contas das telas de
+  // Entradas e Saídas, buscadas quando a aba aparece.
+  const [resumoFin, setResumoFin] = useState({ entradas: 0, saidas: 0, carregando: true });
+  const carregarResumoFinanceiro = useCallback(async () => {
+    const hoje = new Date();
+    setResumoFin((r) => ({ ...r, carregando: true }));
+    try {
+      const [recebimentos, saidas] = await Promise.all([
+        getRecebimentosDoMes(hoje.getFullYear(), hoje.getMonth()),
+        getTotalSaidasDoMes(hoje.getFullYear(), hoje.getMonth() + 1),
+      ]);
+      setResumoFin({ entradas: totalEntradasDoMes(recebimentos), saidas, carregando: false });
+    } catch (e) {
+      console.error('Falha ao carregar o resumo financeiro:', e?.message || e);
+      setResumoFin((r) => ({ ...r, carregando: false }));
+    }
+  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      if (modo === 'administrativa') carregarResumoFinanceiro();
+    }, [modo, carregarResumoFinanceiro])
+  );
 
   // Botões que levam pra uma tela de criação (bloqueiaSemAssinatura) checam
   // a assinatura ANTES de navegar — sem isso, a tela abriria e fecharia
@@ -725,14 +777,24 @@ export default function InicioScreen({ navigation }) {
             </TouchableOpacity>
           </Animated.View>
         ) : (
-          <Animated.View style={[s.grid, gridAnimatedStyle]}>
+          <Animated.View style={gridAnimatedStyle}>
+          {modo === 'administrativa' ? (
+            <ResumoFinanceiroBanner
+              entradas={resumoFin.entradas}
+              saidas={resumoFin.saidas}
+              carregando={resumoFin.carregando}
+              mesLabel={`Resultado de ${new Date().toLocaleDateString('pt-BR', { month: 'long' })}`}
+              onPress={() => navigation.navigate('Financeiro')}
+            />
+          ) : null}
+          <View style={s.grid}>
             {botoesAtivos.map((btn) => (
               // Moldura tripla: fina · grossa (3 dp ≈ 0,5 mm) · fina.
               // O fundo é o mesmo verde em todas as células; a cor da seção
               // vive só no medalhão.
               <TouchableOpacity
                 key={btn.id}
-                style={[s.cellExterna, { width: CELL_W, height: cellH }]}
+                style={[s.cellExterna, { width: CELL_W, height: modo === 'administrativa' ? cellHFinanceiro : cellH }]}
                 activeOpacity={0.8}
                 onPress={() => abrirBotaoGrid(btn)}
               >
@@ -748,6 +810,7 @@ export default function InicioScreen({ navigation }) {
                 </View>
               </TouchableOpacity>
             ))}
+          </View>
           </Animated.View>
         )}
       </ScrollView>

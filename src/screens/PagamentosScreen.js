@@ -8,7 +8,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import {
   listarDespesas, adicionarDespesa, removerDespesa,
-  getResumoAssinaturaECreditosDoMes, CATEGORIAS_DESPESA, labelCategoria,
+  getResumoAssinaturaECreditosDoMes, CATEGORIAS_DESPESA, labelCategoria, somarSaidas,
 } from '../services/despesas';
 import { mensagemDeErro } from '../services/erros';
 import MenuLateral from '../components/MenuLateral';
@@ -138,9 +138,7 @@ export default function PagamentosScreen() {
     ]);
   }
 
-  const totalManual = despesas.reduce((soma, d) => soma + Number(d.valor || 0), 0);
-  const totalSistema = (resumoSistema?.assinaturaValorBRL || 0) + (resumoSistema?.creditosCompradosBRL || 0);
-  const totalGeral = totalManual + totalSistema;
+  const totalGeral = somarSaidas(despesas, resumoSistema);
 
   return (
     <SafeAreaView style={s.safe} edges={['bottom']}>

@@ -1775,13 +1775,25 @@ export async function getPrecoMedioSessao() {
  * (ver migration 0041, `eh_analisante`/`eh_supervisionando` não são exclusivos). */
 export async function getContagemAnalisantesESupervisionandos() {
   const { supabase } = require('./supabase');
-  const [analisantes, supervisionandos] = await Promise.all([
-    supabase.from('patients').select('*', { count: 'exact', head: true }).eq('eh_analisante', true),
-    supabase.from('patients').select('*', { count: 'exact', head: true }).eq('eh_supervisionando', true),
-  ]);
-  if (analisantes.error) throw analisantes.error;
-  if (supervisionandos.error) throw supervisionandos.error;
-  return { analisantes: analisantes.count || 0, supervisionandos: supervisionandos.count || 0 };
+  const { data, error } = await supabase
+    .from('patients')
+    .select('eh_analisante, eh_supervisionando, data_paralizacao');
+  if (error) throw error;
+  const linhas = data || [];
+  const conta = (campo) => {
+    const todos = linhas.filter((p) => p[campo]);
+    // Ativo = sem paralisação registrada, a mesma régua da ficha
+    // (DetalheAnalisante) e do que conta como ganho previsto.
+    return { total: todos.length, ativos: todos.filter((p) => !p.data_paralizacao).length };
+  };
+  const a = conta('eh_analisante');
+  const sv = conta('eh_supervisionando');
+  return {
+    analisantes: a.total,
+    analisantesAtivos: a.ativos,
+    supervisionandos: sv.total,
+    supervisionandosAtivos: sv.ativos,
+  };
 }
 
 /** Contador do card "Sessões sem relato" (Perfil). ⚠️ CORRIGIDO: antes
@@ -2272,6 +2284,90 @@ export async function contarSessoesDoMesPorPaciente(patientIds, ano, mesIndex) {
   return contagem;
 }
 
+/**
+ * Sessões que AINDA VÃO acontecer no mês e que ainda não existem como
+ * compromisso — pura, para ser testável.
+ *
+ * Um horário fixo só vira linha em `appointments` quando alguém abre aquele
+ * dia na agenda (ou quando o check-in pergunta por ele). Até lá, as sessões
+ * futuras do mês não existiam para o Financeiro: quem paga por sessão, ou
+ * no último dia do mês, aparecia com só o que já tinha acontecido.
+ *
+ * Conta cada ocorrência ativa do horário com data a partir de hoje que não
+ * tenha compromisso na mesma data e hora (`ocupadas`, chave
+ * "AAAA-MM-DD|HH:MM") nem tenha sido liberada pontualmente (`liberadas`).
+ * Datas passadas nunca entram: o que já passou e não virou compromisso não
+ * é sessão para cobrar. Devolve { [patient_id]: quantidade }.
+ */
+export function projetarOcorrenciasFuturas({ slots, ocupadas, liberadas, ano, mesIndex, hoje }) {
+  const contagem = {};
+  const diasNoMes = new Date(ano, mesIndex + 1, 0).getDate();
+  for (const slot of slots || []) {
+    if (!slot.patient_id) continue;
+    for (let d = 1; d <= diasNoMes; d += 1) {
+      const data = new Date(ano, mesIndex, d);
+      if (data.getDay() !== slot.day_of_week) continue;
+      const iso = dataParaISO(data);
+      if (iso < hoje) continue;
+      if (!slotAtivoNaData(slot, iso)) continue;
+      const chave = `${iso}|${slot.start_time}`;
+      if (ocupadas.has(chave) || liberadas.has(chave)) continue;
+      contagem[slot.patient_id] = (contagem[slot.patient_id] || 0) + 1;
+    }
+  }
+  return contagem;
+}
+
+/** Sessões futuras do mês por analisante (ver projetarOcorrenciasFuturas),
+ *  lendo os horários fixos, os compromissos e as liberações do mês. Não
+ *  conta analisante com a análise paralisada (getSlotsOcupados já tira). */
+export async function contarSessoesFuturasDoMes(ano, mesIndex) {
+  const { supabase } = require('./supabase');
+  const hoje = hojeISO();
+  const ultimoDia = new Date(ano, mesIndex + 1, 0).getDate();
+  const fim = `${ano}-${String(mesIndex + 1).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
+  if (fim < hoje) return {};
+  const inicio = `${ano}-${String(mesIndex + 1).padStart(2, '0')}-01`;
+  const desde = inicio > hoje ? inicio : hoje;
+
+  const userId = await getUserId();
+  const [slots, { data: compromissos, error: errA }, { data: livres, error: errL }] = await Promise.all([
+    getSlotsOcupados(),
+    supabase.from('appointments').select('date, start_time').eq('user_id', userId).gte('date', desde).lte('date', fim),
+    supabase.from('horarios_liberados').select('date, start_time').eq('user_id', userId).gte('date', desde).lte('date', fim),
+  ]);
+  if (errA) throw errA;
+  if (errL) throw errL;
+  const ocupadas = new Set((compromissos || []).map((a) => `${a.date}|${a.start_time}`));
+  const liberadas = new Set((livres || []).map((l) => `${l.date}|${l.start_time}`));
+  return projetarOcorrenciasFuturas({ slots, ocupadas, liberadas, ano, mesIndex, hoje });
+}
+
+/** Compromissos ainda 'agendado' no mês, por analisante (individual e em
+ *  grupo). Para quem paga por sessão, são sessões previstas que já existem
+ *  como compromisso mas ainda não foram confirmadas. */
+async function contarAgendadosDoMesPorPaciente(patientIds, ano, mesIndex) {
+  const { supabase } = require('./supabase');
+  const contagem = {};
+  if (!patientIds || patientIds.length === 0) return contagem;
+  const inicio = `${ano}-${String(mesIndex + 1).padStart(2, '0')}-01`;
+  const ultimoDia = new Date(ano, mesIndex + 1, 0).getDate();
+  const fim = `${ano}-${String(mesIndex + 1).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
+  const [{ data: individuais, error: errI }, { data: grupos, error: errG }] = await Promise.all([
+    supabase.from('appointments').select('patient_id').in('patient_id', patientIds)
+      .eq('status', 'agendado').gte('date', inicio).lte('date', fim),
+    supabase.from('appointment_participantes').select('patient_id, appointments!inner(date, status)')
+      .in('patient_id', patientIds).eq('appointments.status', 'agendado')
+      .gte('appointments.date', inicio).lte('appointments.date', fim),
+  ]);
+  if (errI) throw errI;
+  if (errG) throw errG;
+  [...(individuais || []), ...(grupos || [])].forEach((a) => {
+    contagem[a.patient_id] = (contagem[a.patient_id] || 0) + 1;
+  });
+  return contagem;
+}
+
 export async function getRecebimentosDoMes(ano, mesIndex) {
   const { supabase } = require('./supabase');
   // Independentes entre si — rodar em sequência somava o tempo das duas.
@@ -2313,8 +2409,17 @@ export async function getRecebimentosDoMes(ano, mesIndex) {
   ));
 
   const contagensPorMes = {};
+  // Sessões futuras de horário fixo que ainda não viraram compromisso, por
+  // mês de competência — só existem quando o mês cobrado ainda não acabou
+  // (quem recebe no último dia ou na última sessão cobra o mês corrente).
+  const futurasPorMes = {};
   await Promise.all([...mesesNecessarios.values()].map(async ({ ano: a, mes: m, ids }) => {
-    contagensPorMes[`${a}-${m}`] = await contarSessoesDoMesPorPaciente(ids, a, m);
+    const [contagem, futuras] = await Promise.all([
+      contarSessoesDoMesPorPaciente(ids, a, m),
+      contarSessoesFuturasDoMes(a, m),
+    ]);
+    contagensPorMes[`${a}-${m}`] = contagem;
+    futurasPorMes[`${a}-${m}`] = futuras;
   }));
 
   const recebimentosMensal = mensais.map((item) => {
@@ -2325,6 +2430,7 @@ export async function getRecebimentosDoMes(ano, mesIndex) {
     const competencia = mesDeCompetencia(ano, mesIndex, modo);
     const contagem = contagensPorMes[`${competencia.ano}-${competencia.mes}`]?.[item.patient_id]
       || { cobraveis: 0, previstas: 0, ultimaSessao: null };
+    const futuras = futurasPorMes[`${competencia.ano}-${competencia.mes}`]?.[item.patient_id] || 0;
 
     // Preço unitário sai da FICHA, não do cronograma do mês exibido.
     // Derivar de `subtotal / sessoesMes` parecia equivalente, mas zerava a
@@ -2348,10 +2454,12 @@ export async function getRecebimentosDoMes(ano, mesIndex) {
       // ninguém precisar deduzir de cabeça.
       competenciaAno: competencia.ano,
       competenciaMes: competencia.mes,
-      sessoesMes: ehMensalFixo ? contagem.cobraveis : contagem.previstas,
+      // Variável: o que já aconteceu ou está marcado (`previstas`) mais as
+      // sessões futuras do horário fixo que ainda não viraram compromisso.
+      sessoesMes: ehMensalFixo ? contagem.cobraveis : contagem.previstas + futuras,
       valorPrevisto: ehMensalFixo
         ? Number(contato.valor_mensal_fixo) || 0
-        : precoUnitario * contagem.previstas,
+        : precoUnitario * (contagem.previstas + futuras),
       telefone: contato.telefone || null,
       email: contato.email || null,
       cpf: contato.cpf || null,
@@ -2365,6 +2473,17 @@ export async function getRecebimentosDoMes(ano, mesIndex) {
     .select('id, nome, telefone, email, cpf, tipo_emissao_fiscal, fiscal_frequencia_automatica, preco_sessao, preco_moeda')
     .eq('tipo_cobranca', 'por_sessao');
   if (errPS) throw errPS;
+
+  // Previsão de quem paga por sessão: o que já é cobrável (abaixo) mais o
+  // que está marcado e ainda não aconteceu ou não foi confirmado, mais as
+  // sessões futuras do horário fixo. Entra em campos próprios
+  // (`sessoesFuturas`, `valorFuturo`) para não virar "em aberto" na
+  // Cobrança: sessão que ainda vai acontecer não é dívida.
+  const idsPorSessao = (porSessaoPacientes || []).map((p) => p.id);
+  const [futurasPorSessao, agendadasPorSessao] = await Promise.all([
+    idsPorSessao.length ? contarSessoesFuturasDoMes(ano, mesIndex) : {},
+    contarAgendadosDoMesPorPaciente(idsPorSessao, ano, mesIndex),
+  ]);
 
   // Uma consulta por analisante de cobrança "por sessão" — antes rodava em
   // sequência (um await por vez dentro de um for), somando o tempo de
@@ -2407,6 +2526,8 @@ export async function getRecebimentosDoMes(ano, mesIndex) {
         valorPrevisto: valorRecebido + valorEmAberto,
         valorRecebido,
         valorEmAberto,
+        sessoesFuturas: (futurasPorSessao[p.id] || 0) + (agendadasPorSessao[p.id] || 0),
+        valorFuturo: (precoFicha || 0) * ((futurasPorSessao[p.id] || 0) + (agendadasPorSessao[p.id] || 0)),
         sessoesCobraveis: sessoes.length,
         sessoesPagas: pagas.length,
         sessoesEmAberto: emAberto.length,
@@ -2424,6 +2545,53 @@ export async function getRecebimentosDoMes(ano, mesIndex) {
   );
 
   return [...recebimentosMensal, ...recebimentosSessao].sort((a, b) => a.nome.localeCompare(b.nome));
+}
+
+/** Quanto aquele analisante deve entrar no mês, contando o que ainda vai
+ *  acontecer. Mensal: o previsto da cobrança (já inclui as sessões futuras
+ *  da competência). Por sessão: o cobrável mais o marcado/futuro. */
+export function valorEntradaDoMes(r) {
+  if (!r) return 0;
+  if (r.tipo_cobranca === 'por_sessao') return (r.valorPrevisto || 0) + (r.valorFuturo || 0);
+  return r.valorPrevisto || 0;
+}
+
+/** Sessões do mês daquele analisante, já feitas e por fazer. */
+export function sessoesEntradaDoMes(r) {
+  if (!r) return 0;
+  if (r.tipo_cobranca === 'por_sessao') return (r.sessoesCobraveis || 0) + (r.sessoesFuturas || 0);
+  return r.sessoesMes || 0;
+}
+
+/** Total que entra no mês: todos os analisantes, todas as modalidades. É o
+ *  número de "Entradas" — na tela de Entradas e no botão da aba Financeiro. */
+export function totalEntradasDoMes(recebimentos) {
+  return (recebimentos || []).reduce((soma, r) => soma + valorEntradaDoMes(r), 0);
+}
+
+/**
+ * "Ganhos do mês" do Perfil: um mês cheio de quem está em atividade.
+ *
+ * Quatro sessões de cada analisante e supervisionando sem paralisação, ao
+ * preço da ficha (ou o valor fixo, para quem paga mensal fixo). É uma
+ * régua do potencial do consultório, não a previsão de caixa do mês — essa
+ * fica em Entradas, que respeita competência, faltas e cancelamentos.
+ */
+export async function getGanhosMensaisEstimados() {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase
+    .from('patients')
+    .select('preco_sessao, preco_moeda, tipo_cobranca, valor_mensal_fixo, eh_analisante, eh_supervisionando, data_paralizacao');
+  if (error) throw error;
+  const ativos = (data || []).filter((p) => !p.data_paralizacao && (p.eh_analisante || p.eh_supervisionando));
+  const moedas = [...new Set(ativos.map((p) => p.preco_moeda).filter((m) => m && m !== 'BRL'))];
+  const taxas = Object.fromEntries(await Promise.all(moedas.map(async (m) => [m, await converterParaBRL(1, m)])));
+  return ativos.reduce((soma, p) => {
+    if (p.tipo_cobranca === 'mensal_fixo') return soma + (Number(p.valor_mensal_fixo) || 0);
+    const preco = parsePreco(p.preco_sessao);
+    const emBRL = p.preco_moeda && p.preco_moeda !== 'BRL' ? preco * (taxas[p.preco_moeda] ?? 1) : preco;
+    return soma + emBRL * 4;
+  }, 0);
 }
 
 /** Recebimentos que contam como pendência em aberto.

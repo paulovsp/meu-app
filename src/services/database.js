@@ -2,6 +2,7 @@ import {
   mesDeCompetencia, diaDeVencimento, sessaoEhCobravel, STATUS_PREVISTOS,
 } from './competencia';
 import { dataParaISO, hojeISO } from './validacao';
+import { ehTipoGrupo } from './tiposEvento';
 
 // ── PACIENTES (Supabase — tabela `patients`) ───────────
 
@@ -699,6 +700,82 @@ export async function deleteAvailabilitySlot(id) {
   if (error) throw error;
 }
 
+// ─── A grade é da profissional ──────────────────────────────────────
+//
+// Um horário só sai da grade quando ela exclui, de propósito, um horário
+// LIVRE. Tudo o que mexe numa sessão — cancelar, apagar, remarcar, tirar
+// o horário da ficha do analisante — deixa no lugar um horário livre
+// (verde), com a mesma duração, modalidade e recorrência. Antes, cancelar
+// "este e todos os futuros" ou mudar a hora de um analisante apagava o
+// horário, e o buraco na grade não tinha marca nenhuma.
+
+export function slotEstaOcupado(slot) {
+  return !!slot?.patient_id || slot?.tipo === 'outros' || ehTipoGrupo(slot?.tipo);
+}
+
+function recorrenciaDoSlot(slot) {
+  return {
+    tipo: slot.recorrencia_tipo || 'semanal',
+    data_referencia: slot.recorrencia_data_referencia || null,
+    semanas_ativas: slot.recorrencia_semanas_ativas || null,
+    data_avulsa: slot.data_avulsa || null,
+  };
+}
+
+/** Desocupa um horário sem tirá-lo da grade: sai o analisante (ou o
+ * grupo, ou o título de "outros"), ficam dia, hora, modalidade e
+ * recorrência. */
+export async function liberarHorario(slotId) {
+  const { supabase } = require('./supabase');
+  const { error } = await supabase
+    .from('availability_slots')
+    .update({ patient_id: null, reservado_ate: null, tipo: 'sessao_individual', titulo: null })
+    .eq('id', slotId);
+  if (error) throw error;
+  await salvarParticipantesSlot(slotId, []);
+}
+
+/** Põe de volta, como livre, um horário ocupado que saiu do lugar — a não
+ * ser que já haja outro horário cobrindo aquele intervalo no mesmo dia
+ * (o próprio horário remarcado meia hora depois, por exemplo). */
+async function deixarLivreNoLugar(anterior) {
+  const { supabase } = require('./supabase');
+  const { data: doDia, error } = await supabase
+    .from('availability_slots')
+    .select('start_time, end_time')
+    .eq('day_of_week', anterior.day_of_week);
+  if (error) throw error;
+  const fimAnterior = anterior.end_time || anterior.start_time;
+  const coberto = (doDia || []).some((s) => (
+    s.start_time === anterior.start_time
+    || (s.start_time < fimAnterior && anterior.start_time < (s.end_time || s.start_time))
+  ));
+  if (coberto) return;
+  await addAvailabilitySlot(
+    anterior.day_of_week, anterior.start_time, anterior.end_time, anterior.modality,
+    null, 'sessao_individual', null, [], recorrenciaDoSlot(anterior),
+  );
+}
+
+/** Depois de regravar os horários de um analisante pela ficha: o que ele
+ * tinha e deixou de ter volta para a grade como livre, e as sessões já
+ * abertas naquele horário antigo saem (senão a Agenda seguia mostrando o
+ * analisante no lugar velho, ao lado do novo). */
+export async function manterNaGradeHorariosRemovidos(patientId, anteriores) {
+  const atuais = await getAvailabilitySlotsByPatient(patientId);
+  for (const anterior of anteriores || []) {
+    const continua = atuais.some((s) => (
+      s.day_of_week === anterior.day_of_week && s.start_time === anterior.start_time
+    ));
+    if (continua) continue;
+    const futuros = await listarCompromissosFuturosDoHorario({
+      patientId, dayOfWeek: anterior.day_of_week, startTime: anterior.start_time,
+    });
+    if (futuros.length > 0) await deleteAppointments(futuros.map((a) => a.id));
+    await deixarLivreNoLugar(anterior);
+  }
+}
+
 export async function getAvailabilitySlotsByPatient(patientId) {
   const { supabase } = require('./supabase');
   const { data, error } = await supabase
@@ -939,15 +1016,17 @@ export async function aplicarSlot({
   // mostrando o horário velho como ocupado, ao lado do novo. Um horário
   // virava dois. A liberação por paralisação já fazia essa limpeza; a
   // edição não fazia.
+  let anterior = null;
+  let mudouDeLugar = false;
   if (id) {
     const { supabase } = require('./supabase');
-    const { data: anterior } = await supabase
+    ({ data: anterior } = await supabase
       .from('availability_slots')
-      .select('day_of_week, start_time, patient_id')
+      .select('*')
       .eq('id', id)
-      .maybeSingle();
+      .maybeSingle());
 
-    const mudouDeLugar = !!anterior
+    mudouDeLugar = !!anterior
       && (anterior.day_of_week !== day_of_week || anterior.start_time !== start_time);
 
     if (mudouDeLugar && anterior.patient_id) {
@@ -963,6 +1042,10 @@ export async function aplicarSlot({
   let novoId = id;
   if (id) {
     await updateAvailabilitySlot(id, day_of_week, start_time, end_time, modality, patient_id, tipo, titulo, participantes, recorrencia);
+    // A sessão foi para outro lugar; o horário de onde ela saiu continua
+    // na grade, livre. Mover um horário que já era livre é mexer na
+    // própria grade — esse não deixa nada para trás.
+    if (mudouDeLugar && slotEstaOcupado(anterior)) await deixarLivreNoLugar(anterior);
   } else {
     novoId = await addAvailabilitySlot(day_of_week, start_time, end_time, modality, patient_id, tipo, titulo, participantes, recorrencia);
   }

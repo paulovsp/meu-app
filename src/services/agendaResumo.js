@@ -54,9 +54,11 @@ function minutos(hhmm) {
  * compromissos avulsos que não têm horário por trás.
  *
  * `liberados` é o que faltava no widget e existia na Agenda: um horário
- * apagado só naquela data, ou esvaziado por uma remarcação, sai da grade
- * daquele dia. Sem isso, a prévia mostrava como ocupado um horário que a
- * Agenda já mostrava livre — era o "não reconhece as mudanças".
+ * apagado só naquela data, ou esvaziado por uma remarcação, fica livre
+ * naquele dia. Sem isso, a prévia mostrava como ocupado um horário que a
+ * Agenda já mostrava livre — era o "não reconhece as mudanças". O mesmo
+ * vale para a sessão cancelada. O horário nunca some: a grade é da
+ * profissional (ver liberarHorario em database.js).
  *
  * Função pura: recebe os dados, devolve a lista. É o que torna a regra
  * testável sem banco.
@@ -76,19 +78,23 @@ export function montarBlocosDoDia({ slots, compromissos, liberados, dataISO }) {
     if (!slotAtivoNaData(slot, dataISO)) continue;
 
     const compromisso = ativos.find((c) => c.start_time === slot.start_time);
-    // Liberado e sem compromisso novo no lugar: o horário não existe nesse
-    // dia. Mesmo critério da Agenda.
-    if (!compromisso && liberadosNoDia.has(slot.start_time)) continue;
+    // Liberado, ou com a sessão cancelada, e sem compromisso novo no lugar:
+    // o horário fica livre nesse dia. Mesmo critério da Agenda.
+    const cancelado = (compromissos || []).some((c) => (
+      c.status === 'cancelado' && c.start_time === slot.start_time
+    ));
+    const livreNoDia = !compromisso && (cancelado || liberadosNoDia.has(slot.start_time));
 
     horariosComSlot.add(slot.start_time);
-    const tipo = compromisso?.tipo || slot.tipo || 'sessao_individual';
-    const ocupado = !!compromisso || !!slot.patient_id || tipo === 'outros' || ehTipoGrupo(tipo);
+    const tipo = livreNoDia ? 'sessao_individual' : (compromisso?.tipo || slot.tipo || 'sessao_individual');
+    const ocupado = !livreNoDia
+      && (!!compromisso || !!slot.patient_id || tipo === 'outros' || ehTipoGrupo(tipo));
     lista.push({
       key: `slot-${slot.id}-${dataISO}`,
       startTime: slot.start_time,
       endTime: compromisso?.end_time || slot.end_time,
       cor: ocupado ? corTipoEvento(tipo) : COR_LIVRE,
-      nome: nomeCurto({
+      nome: livreNoDia ? nomeCurto({ tipo }) : nomeCurto({
         tipo,
         patientNome: compromisso?.patient_nome || slot.patient_name,
         titulo: compromisso?.titulo || slot.titulo,

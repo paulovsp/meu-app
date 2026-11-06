@@ -11,6 +11,7 @@ import {
   inserirPaciente, editarPaciente, parsePreco, registrarParalizacaoInicial,
   getAvailabilitySlotsByPatient, deleteAvailabilitySlotsByPatient,
   resolverConflitoEAdicionarSlot, sincronizarModalidadeCompromissosAgendados,
+  manterNaGradeHorariosRemovidos,
 } from '../services/database';
 import {
   MOEDAS, formatarValorMoeda, atualizarCotacao, getCotacaoCacheada, formatarDataCotacao,
@@ -362,7 +363,9 @@ export default function FormularioAnalisanteScreen() {
   }
 
   async function sincronizarAgenda(patientId, listaNormalizada) {
-    // Remove todos os slots antigos deste paciente e recria com os atuais
+    // Remove todos os slots antigos deste paciente e recria com os atuais;
+    // no fim, o que ele deixou de ter volta para a grade como livre.
+    const anteriores = await getAvailabilitySlotsByPatient(patientId);
     await deleteAvailabilitySlotsByPatient(patientId);
     const validos = listaNormalizada.filter(h => h.start_time && h.start_time.length === 5);
     const conflitos = [];
@@ -414,6 +417,7 @@ export default function FormularioAnalisanteScreen() {
       modality: h.modality === 'online' ? 'online' : 'presencial',
     }));
     await sincronizarModalidadeCompromissosAgendados(patientId, horariosNormalizados);
+    await manterNaGradeHorariosRemovidos(patientId, anteriores);
 
     if (conflitos.length > 0) {
       Alert.alert(

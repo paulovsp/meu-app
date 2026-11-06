@@ -45,15 +45,32 @@ describe('montarBlocosDoDia', () => {
 
   // Era o defeito: a Agenda respeitava `horarios_liberados` e a prévia da
   // tela inicial não. Um horário apagado só naquela data — ou esvaziado por
-  // uma remarcação — seguia aparecendo como ocupado no widget.
-  it('some com o horário liberado naquela data', () => {
+  // uma remarcação — seguia aparecendo como ocupado no widget. E não pode
+  // sumir: fica na grade, livre.
+  it('horário liberado naquela data fica, livre', () => {
     const blocos = montarBlocosDoDia({
       slots: [slot()],
       compromissos: [],
       liberados: [{ date: SEXTA, start_time: '14:00' }],
       dataISO: SEXTA,
     });
-    expect(blocos).toHaveLength(0);
+    expect(blocos).toHaveLength(1);
+    expect(blocos[0].nome).toBe('Livre');
+    expect(blocos[0].cor).toBe('#43A047');
+  });
+
+  it('sessão cancelada deixa o horário livre naquela data', () => {
+    const blocos = montarBlocosDoDia({
+      slots: [slot()],
+      compromissos: [{
+        id: 'a3', date: SEXTA, start_time: '14:00', end_time: '14:50',
+        status: 'cancelado', tipo: 'sessao_individual', patient_nome: 'Clarice',
+      }],
+      liberados: [], dataISO: SEXTA,
+    });
+    expect(blocos).toHaveLength(1);
+    expect(blocos[0].nome).toBe('Livre');
+    expect(blocos[0].cor).toBe('#43A047');
   });
 
   it('a liberação vale só para a data dela, não para as outras semanas', () => {

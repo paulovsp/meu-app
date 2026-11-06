@@ -10,7 +10,7 @@ import {
   updateAppointmentStatus,
   temTranscricaoParaData,
   getAvailabilitySlotByDayAndTime,
-  deleteAvailabilitySlot,
+  liberarHorario,
   listarCompromissosFuturosDoHorario,
   cancelarCompromissosFuturosDoHorario,
   deleteAppointment,
@@ -308,9 +308,9 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
     );
   }
 
-  // "Todos os futuros" remove o horário recorrente (availability_slots) e
-  // cancela em cascata os compromissos futuros ainda não realizados desse
-  // mesmo horário — avisa quantos antes de confirmar, pra não surpreender.
+  // "Todos os futuros" desocupa o horário recorrente — ele fica na grade,
+  // livre — e cancela em cascata os compromissos futuros ainda não
+  // realizados desse mesmo horário. Avisa quantos antes de confirmar.
   async function cancelarRecorrenteComCascata() {
     const [ano, mes, dia] = compromisso.date.split('-').map(Number);
     const dayOfWeek = new Date(ano, mes - 1, dia).getDay();
@@ -335,8 +335,8 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
     Alert.alert(
       'Confirmar cancelamento',
       futuros.length > 0
-        ? `Isso remove o horário recorrente da agenda e cancela mais ${futuros.length} compromisso${futuros.length === 1 ? '' : 's'} futuro${futuros.length === 1 ? '' : 's'} desse horário, além deste. Confirma?`
-        : 'Isso remove o horário recorrente da agenda. Não há outros compromissos futuros desse horário. Confirma?',
+        ? `O horário fica livre na agenda (verde) e mais ${futuros.length} compromisso${futuros.length === 1 ? '' : 's'} futuro${futuros.length === 1 ? '' : 's'} desse horário ${futuros.length === 1 ? 'é cancelado' : 'são cancelados'}, além deste. Confirma?`
+        : 'O horário fica livre na agenda (verde). Não há outros compromissos futuros desse horário. Confirma?',
       [
         { text: 'Voltar', style: 'cancel' },
         {
@@ -353,7 +353,7 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
                   startTime: compromisso.start_time,
                 });
               }
-              if (slot?.id) await deleteAvailabilitySlot(slot.id);
+              if (slot?.id) await liberarHorario(slot.id);
               await carregar();
             } catch (e) {
               Alert.alert('Erro ao cancelar', mensagemDeErro(e));
@@ -463,8 +463,8 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
       Alert.alert(
         'Confirmar exclusão',
         futuros.length > 0
-          ? `Isso remove o horário recorrente da agenda e apaga mais ${futuros.length} compromisso${futuros.length === 1 ? '' : 's'} futuro${futuros.length === 1 ? '' : 's'} desse horário, além deste. Confirma?`
-          : 'Isso remove o horário recorrente da agenda. Não há outros compromissos futuros desse horário. Confirma?',
+          ? `O horário fica livre na agenda (verde) e mais ${futuros.length} compromisso${futuros.length === 1 ? '' : 's'} futuro${futuros.length === 1 ? '' : 's'} desse horário ${futuros.length === 1 ? 'é apagado' : 'são apagados'}, além deste. Confirma?`
+          : 'O horário fica livre na agenda (verde). Não há outros compromissos futuros desse horário. Confirma?',
         [
           { text: 'Voltar', style: 'cancel' },
           {
@@ -479,7 +479,7 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
                 }
                 if (futuros.length > 0) await deleteAppointments(futuros.map((a) => a.id));
                 await deleteAppointment(compromisso.id);
-                if (slot?.id) await deleteAvailabilitySlot(slot.id);
+                if (slot?.id) await liberarHorario(slot.id);
                 navigation.goBack();
               } catch (e) {
                 setAgindo(false);

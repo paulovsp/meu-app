@@ -21,6 +21,8 @@ import {
   verificarConflitoSlot,
   aplicarSlot,
   deleteAvailabilitySlot,
+  liberarHorario,
+  slotEstaOcupado,
   getPatients,
   addPatient,
   cancelarCompromissosFuturosDoHorario,
@@ -740,17 +742,21 @@ export default function DisponibilidadeScreen() {
         }
       }
 
-      // Sem sessões marcadas à frente não há escolha a fazer: some o molde
-      // e pronto.
+      // Sem sessões marcadas à frente não há escolha a fazer. Horário livre
+      // sai da grade; ocupado só se desocupa e continua nela, verde (ver
+      // liberarHorario).
+      const ocupado = slotEstaOcupado(slot);
       if (futuros.length === 0) {
         const ok = await new Promise((resolve) => {
           Alert.alert(
-            'Excluir este horário?',
-            `O horário de ${onde} deixa de existir na sua grade.`
+            ocupado ? 'Liberar este horário?' : 'Excluir este horário?',
+            (ocupado
+              ? `O horário de ${onde} continua na sua grade, livre (verde). Para tirá-lo da grade, exclua depois o horário livre.`
+              : `O horário de ${onde} deixa de existir na sua grade.`)
             + '\n\nNão há nenhuma sessão marcada nele daqui pra frente.',
             [
               { text: 'Cancelar', style: 'cancel', onPress: () => resolve(false) },
-              { text: 'Excluir', style: 'destructive', onPress: () => resolve(true) },
+              { text: ocupado ? 'Liberar' : 'Excluir', style: 'destructive', onPress: () => resolve(true) },
             ],
             { cancelable: false },
           );
@@ -771,10 +777,10 @@ export default function DisponibilidadeScreen() {
 
       const escolha = await new Promise((resolve) => {
         Alert.alert(
-          'Excluir o horário e as sessões?',
+          'Liberar o horário?',
           `O horário de ${onde} tem ${quantas} de ${nome}: ${datas}${eMais}.`
-          + '\n\nO horário sai da grade nos dois casos. A diferença é o que'
-          + ' acontece com essas sessões.',
+          + '\n\nO horário fica na grade, livre (verde), nos dois casos. A'
+          + ' diferença é o que acontece com essas sessões.',
           [
             { text: 'Cancelar', style: 'cancel', onPress: () => resolve('cancelar') },
             { text: 'Manter as sessões', onPress: () => resolve('manter') },
@@ -794,7 +800,8 @@ export default function DisponibilidadeScreen() {
   async function executarExclusao(slot, cancelarFuturos) {
     setExcluindoId(slot.id);
     try {
-      await deleteAvailabilitySlot(slot.id);
+      if (slotEstaOcupado(slot)) await liberarHorario(slot.id);
+      else await deleteAvailabilitySlot(slot.id);
       if (cancelarFuturos && slot.patient_id) {
         await cancelarCompromissosFuturosDoHorario({
           patientId: slot.patient_id,

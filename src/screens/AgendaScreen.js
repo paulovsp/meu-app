@@ -298,6 +298,27 @@ export default function AgendaScreen({ navigation }) {
   // (só a diária pré-cria todos ao carregar) — nesse caso é criado na hora.
   async function abrirCompromissoOuEdicao({ slot, dataISO }) {
     const compromisso = buscarCompromissoDoSlot(dataISO, slot);
+    if (compromisso?.status === 'cancelado') {
+      const nome = compromisso.patient_nome || compromisso.titulo;
+      Alert.alert(
+        'Horário livre',
+        nome ? `A sessão de ${nome} neste horário foi cancelada.` : 'O compromisso deste horário foi cancelado.',
+        [
+          { text: 'Voltar', style: 'cancel' },
+          { text: 'Ver a cancelada', onPress: () => navigation.navigate('DetalheCompromisso', { appointmentId: compromisso.id }) },
+          {
+            text: 'Marcar outro',
+            onPress: () => navigation.navigate('MarcarHorarioAvulso', {
+              dataISO,
+              startTime: slot.start_time,
+              endTime: slot.end_time,
+              modality: slot.modality,
+            }),
+          },
+        ]
+      );
+      return;
+    }
     if (compromisso) {
       navigation.navigate('DetalheCompromisso', { appointmentId: compromisso.id });
       return;
@@ -369,7 +390,11 @@ export default function AgendaScreen({ navigation }) {
     const tipo = compromisso?.tipo || slot.tipo || 'sessao_individual';
     // Liberado (apagado pontualmente) e sem compromisso novo ainda criado
     // nessa data: mostra livre mesmo com o horário recorrente ocupado.
-    const liberado = !compromisso && estaLiberado(dataISO, slot.start_time);
+    // Sessão cancelada também libera o horário naquela data: aparece verde,
+    // como quando é apagada — o lugar continua na grade, pronto pra outro
+    // compromisso (ver abrirCompromissoOuEdicao).
+    const cancelado = compromisso?.status === 'cancelado';
+    const liberado = cancelado || (!compromisso && estaLiberado(dataISO, slot.start_time));
     const ocupado = !liberado && (!!compromisso || !!slot.patient_id || tipo === 'outros' || ehTipoGrupo(tipo));
     const modality = compromisso?.modality || slot.modality;
     const horario = slot.start_time;
@@ -420,7 +445,11 @@ export default function AgendaScreen({ navigation }) {
   function renderSlotDiarioCard({ slot, dataISO, key }) {
     const compromisso = buscarCompromissoDoSlot(dataISO, slot);
     const tipo = compromisso?.tipo || slot.tipo || 'sessao_individual';
-    const liberado = !compromisso && estaLiberado(dataISO, slot.start_time);
+    // Sessão cancelada também libera o horário naquela data: aparece verde,
+    // como quando é apagada — o lugar continua na grade, pronto pra outro
+    // compromisso (ver abrirCompromissoOuEdicao).
+    const cancelado = compromisso?.status === 'cancelado';
+    const liberado = cancelado || (!compromisso && estaLiberado(dataISO, slot.start_time));
     const ocupado = !liberado && (!!compromisso || !!slot.patient_id || tipo === 'outros' || ehTipoGrupo(tipo));
     const modality = compromisso?.modality || slot.modality;
     const eventoIndividual = tipo === 'sessao_individual' || tipo === 'supervisao_individual';
@@ -524,10 +553,17 @@ export default function AgendaScreen({ navigation }) {
             )}
           </View>
         ) : (
-          <Text style={styles.diaCardLivreTxt}>
-            Horário disponível
-            {modality ? ` · ${labelModalidadeTexto(modality)}` : ''}
-          </Text>
+          <View>
+            <Text style={styles.diaCardLivreTxt}>
+              Horário disponível
+              {modality ? ` · ${labelModalidadeTexto(modality)}` : ''}
+            </Text>
+            {cancelado && (
+              <Text style={styles.diaCardReservado}>
+                {nomePaciente ? `${nomePaciente}: sessão cancelada` : 'Sessão cancelada'}
+              </Text>
+            )}
+          </View>
         )}
       </TouchableOpacity>
     );
@@ -563,7 +599,7 @@ export default function AgendaScreen({ navigation }) {
   function renderColunaDia(data, m) {
     const dataISO = toISO(data);
     const diaSemana = data.getDay();
-    const slots = slotsDoDiaDaSemana(diaSemana, dataISO);
+    const itens = itensDoDia(dataISO, slotsDoDiaDaSemana(diaSemana, dataISO));
 
     return (
       <View key={`day-${dataISO}`} style={[styles.colunaDia, { width: m.colW }]}>
@@ -585,9 +621,9 @@ export default function AgendaScreen({ navigation }) {
           nestedScrollEnabled
           showsVerticalScrollIndicator={false}
         >
-          {slots.length === 0 && <Text style={styles.semHorarios}>—</Text>}
+          {itens.length === 0 && <Text style={styles.semHorarios}>—</Text>}
 
-          {itensDoDia(dataISO, slots).map(({ slot, key }) => renderSlotBotao({ slot, dataISO, key, m }))}
+          {itens.map(({ slot, key }) => renderSlotBotao({ slot, dataISO, key, m }))}
         </ScrollView>
       </View>
     );

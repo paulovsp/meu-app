@@ -7,7 +7,7 @@ description: A lista de pré-voo de uma versão do Dr.Sig — fingerprint contra
 
 Roda **nesta máquina** (precisa do CLI do Supabase linkado e do EAS logado). A lista em si não publica nada. Se o veredito for "voa" em modo `ota`, **rode o `eas update` em seguida, na mesma conversa** — o "permitir?" que aparece para o dono é a confirmação dele (regra de `.claude/settings.local.json`). `eas build` é diferente: custa dinheiro e sobe versão nova na loja; só com um "sim" explícito do dono para aquela build.
 
-O que vale hoje na loja: **produção = build 24 (1.0.0), runtime `d80c4d17344acc54822cf2e1d1e9fcb355556ce9`**, publicada em 17/09/2026. Faixas de teste vazias; testes de versão futura vão por compartilhamento interno (link), não por faixa.
+O que vale hoje na loja: **produção = build 25 (1.0.0), runtime `048f9bb20eea528acbe3ec996bc42a1b400d2281`**, enviada em 05/11/2026 (substitui a 24, runtime `d80c4d17344acc54822cf2e1d1e9fcb355556ce9`). Enquanto houver aparelho na 24, todo OTA sai para os **dois** runtimes: o normal com o `app.json` atual, e o da 24 com o `app.json` de antes da v25 (`git show 9c0ce81^:app.json`), conferindo o fingerprint antes e voltando o arquivo depois. Faixas de teste vazias; testes de versão futura vão por compartilhamento interno (link), não por faixa.
 
 Modo em `$ARGUMENTS`: `ota` (só JavaScript) ou `build` (mudou algo nativo). Sem argumento, descubra pelo fingerprint.
 

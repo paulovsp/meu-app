@@ -11,7 +11,7 @@ provisória fica documentada no código, com o motivo.
 
 ---
 
-## O que entra na v25 (versionCode 25)
+## O que entrou na v25 (versionCode 25 — enviada à produção em 05/11/2026)
 
 - **Botão voltar do Android.** `android.predictiveBackGestureEnabled` estava
   `true` desde a v23; com ele, o voltar da barra do sistema fechava o app em
@@ -19,14 +19,6 @@ provisória fica documentada no código, com o motivo.
 - **Endereço próprio do app: `scheme: "drsig"`.**
 
 ## Pendente
-
-- **(entrou na v25) Endereço próprio do app (`scheme` em `app.json`, ex.: `drsig://`).**
-  Sem ele, a página de confirmação de e-mail e a de planos não conseguem
-  abrir o app com um toque em qualquer sistema; hoje usam o atalho do
-  Chrome no Android (`intent:` com o nome do pacote), que não existe no
-  iPhone. Com o scheme, "Abrir o Dr.Sig" vira um link universal, e o
-  e-mail de confirmação pode voltar direto para o app. Anotado em
-  21/09/2026, ao redesenhar a chegada de quem cria conta.
 
 - **Notificações push no Android.** O app não tem `google-services.json`
   (credencial do Firebase Cloud Messaging) nem `googleServicesFile` no
@@ -65,5 +57,6 @@ npx expo-updates fingerprint:generate --platform android
 ```
 
 O valor tem que bater com o runtime da versão que está na Play Console.
-Runtimes conhecidos: **v24 = `d80c4d17…` (produção desde 17/09/2026)**,
+Runtimes conhecidos: **v25 = `048f9bb2…` (enviada à produção em 05/11/2026)**,
+v24 = `d80c4d17…` (produção desde 17/09/2026),
 v23 = `c01a7a5f…`, v22 = `3be34136…`, v21 = `283bd312…`.

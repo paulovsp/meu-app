@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView,
-  Modal, Alert, ActivityIndicator, Switch, KeyboardAvoidingView, Platform,
+  Modal, Alert, ActivityIndicator, Switch, KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -214,7 +214,7 @@ export default function PagamentosScreen() {
       </TouchableOpacity>
 
       <Modal visible={modalVisivel} transparent animationType="fade" onRequestClose={() => setModalVisivel(false)}>
-        <KeyboardAvoidingView style={s.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <KeyboardAvoidingView style={s.modalOverlay} behavior="padding">
           <ScrollView contentContainerStyle={s.modalScrollWrap} keyboardShouldPersistTaps="handled">
             <View style={s.modalCard}>
               <Text style={s.modalTitulo}>Nova despesa</Text>

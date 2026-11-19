@@ -1350,7 +1350,7 @@ Você pode bloquear a tela ou usar outros apps — a gravação continua.
     return (
       <SafeAreaView style={s.safeArea} edges={['bottom']}>
         <CabecalhoTela titulo="Revisar Transcrição" onVoltar={() => setStep(STEPS.RECORDING)} />
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         <ScrollView style={s.container} contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
           <Text style={s.sub}>
             Analisante: <Text style={s.bold}>{paciente?.nome}</Text>

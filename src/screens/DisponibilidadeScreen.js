@@ -4,7 +4,6 @@ import {
   Alert,
   ActivityIndicator,
   KeyboardAvoidingView,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -840,7 +839,7 @@ export default function DisponibilidadeScreen() {
       <CabecalhoTela titulo="Editar Horário" onVoltar={() => navigation.goBack()} />
       <KeyboardAvoidingView
         style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
       >
       <ScrollView
         contentContainerStyle={styles.scrollContent}

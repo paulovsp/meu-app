@@ -155,7 +155,7 @@ export default function BuscaScreen() {
       />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         <TouchableOpacity style={s.seletorHeader} onPress={() => setSeletorAberto((v) => !v)}>

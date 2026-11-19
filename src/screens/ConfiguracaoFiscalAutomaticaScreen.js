@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator,
-  KeyboardAvoidingView, Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import CabecalhoTela from '../components/CabecalhoTela';
@@ -116,7 +116,7 @@ export default function ConfiguracaoFiscalAutomaticaScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <CabecalhoTela titulo="Envio automático" onVoltar={() => navigation.goBack()} />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <Text style={styles.titulo}>Envio automático — {patientNome || config.nome}</Text>
         <Text style={styles.hint}>

@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView,
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Animated, PanResponder,
+  ActivityIndicator, Alert, KeyboardAvoidingView, Animated, PanResponder,
   Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -326,7 +326,7 @@ export default function AfazeresScreen() {
           (softwareKeyboardLayoutMode "resize", padrão do Expo) — usar
           behavior "height" aqui em cima disso comprimia a tela duas vezes.
           Só o iOS precisa de ajuste manual (não redimensiona sozinho). */}
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         {carregando ? (
           <View style={s.loadingWrap}>
             <ActivityIndicator size="large" color={COLORS.btnBlue} />
@@ -364,7 +364,7 @@ export default function AfazeresScreen() {
         >
           <KeyboardAvoidingView
             style={s.modalFundo}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            behavior="padding"
           >
             <View style={s.modalCaixa}>
               <Text style={s.modalTitulo}>Editar afazer</Text>

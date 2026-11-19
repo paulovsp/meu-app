@@ -665,7 +665,7 @@ export default function FormularioCursoScreen() {
   return (
     <SafeAreaView style={s.safe} edges={['bottom']}>
       <CabecalhoTela titulo="Curso" onVoltar={() => navigation.goBack()} />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
       <ScrollView contentContainerStyle={s.scrollInner} keyboardShouldPersistTaps="handled">
         <Text style={s.label}>Título *</Text>
         <TextInput style={s.input} value={titulo} onChangeText={setTitulo} placeholder="Ex: Formação em Terapia Familiar" placeholderTextColor="#756E66" />

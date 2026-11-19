@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
   TextInput, Alert, ActivityIndicator, Image, Switch, Modal,
-  KeyboardAvoidingView, Platform, Share,
+  KeyboardAvoidingView, Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -823,7 +823,7 @@ export default function PerfilScreen({ navigation }) {
   return (
     <SafeAreaView style={st.safe} edges={['bottom']}>
       <CabecalhoTela titulo="Meu Perfil" onVoltar={() => navigation.goBack()} />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
       <ScrollView contentContainerStyle={st.scrollInner} keyboardShouldPersistTaps="handled">
         {/* ── Cabeçalho ── */}
         <View style={st.headerMolduraExterna}>
@@ -1540,7 +1540,7 @@ export default function PerfilScreen({ navigation }) {
       <Modal visible={modalSenhaVisivel} transparent animationType="fade" onRequestClose={fecharModalSenha}>
         <KeyboardAvoidingView
           style={st.modalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior="padding"
         >
           <View style={st.modalCard}>
             <Text style={st.modalTitulo}>Alterar senha</Text>

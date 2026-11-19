@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator,
-  Modal, TextInput, KeyboardAvoidingView, Platform,
+  Modal, TextInput, KeyboardAvoidingView,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import CabecalhoTela from '../components/CabecalhoTela';
@@ -623,7 +623,7 @@ Nenhum relato ou transcrição foi adicionado para esta sessão ainda.
             há como confirmar sem fechar o teclado primeiro. */}
         <KeyboardAvoidingView
           style={styles.modalFundo}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior="padding"
         >
           <View style={styles.modalCaixa}>
             <Text style={styles.modalTitulo}>Remarcar só esta sessão</Text>

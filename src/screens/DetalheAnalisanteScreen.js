@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  SectionList, Alert, ActivityIndicator, Modal, TextInput
+  SectionList, Alert, ActivityIndicator, Modal, TextInput, KeyboardAvoidingView
 } from 'react-native';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -786,7 +786,7 @@ export default function DetalheAnalisanteScreen() {
         animationType="fade"
         onRequestClose={fecharEdicaoPeriodo}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior="padding">
           <View style={styles.modalCard}>
             <Text style={styles.modalTitulo}>Editar período de paralisação</Text>
 
@@ -836,7 +836,7 @@ export default function DetalheAnalisanteScreen() {
               <Text style={styles.modalBtnCancelarTexto}>Cancelar</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );

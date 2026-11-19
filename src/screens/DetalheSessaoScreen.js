@@ -3,7 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import {
   View, Text, TouchableOpacity, StyleSheet,
   SafeAreaView, ScrollView, Alert, ActivityIndicator,
-  Switch, TextInput, KeyboardAvoidingView, Platform,
+  Switch, TextInput, KeyboardAvoidingView,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useAudioPlayer, AudioModule } from 'expo-audio';
@@ -402,7 +402,7 @@ export default function DetalheSessaoScreen() {
         <View style={{ width: 70 }} />
       </View>
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
       <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
         {/* Info card */}
         <View style={styles.infoCard}>

@@ -6,14 +6,13 @@
 // na sessão de redação da janela, e que o histórico de mensagens da
 // conversa é de fato reenviado a cada chamada (memória dentro da janela).
 jest.mock('../database', () => ({
-  getSessions: jest.fn(),
   getRecords: jest.fn(),
 }));
 jest.mock('../supabase', () => ({
   supabase: { functions: { invoke: jest.fn() } },
 }));
 
-const { getSessions, getRecords } = require('../database');
+const { getRecords } = require('../database');
 const { supabase } = require('../supabase');
 const {
   montarContextoSelecionados, chamarBuscaChat, estimarCustoResposta, criarSessaoRedacao,
@@ -39,10 +38,8 @@ beforeEach(() => {
 
 describe('montarContextoSelecionados — uma pessoa', () => {
   it('nunca inclui o nome real nem a data de nascimento — só [PESSOA 1] e idade', async () => {
-    getSessions.mockResolvedValue([
-      { date: '2026-07-20', type: 'presencial', transcript: 'A: Como você está, Maria?\nP: Estou ansiosa, doutor.' },
-    ]);
     getRecords.mockResolvedValue([
+      { date: '2026-07-20', type: 'transcricao', content: 'A: Como você está, Maria?\nP: Estou ansiosa, doutor.' },
       { date: '2026-07-15', type: 'estudo', title: 'Anotação', content: '<p>Maria mencionou episódios de insônia.</p>' },
     ]);
 
@@ -58,14 +55,13 @@ describe('montarContextoSelecionados — uma pessoa', () => {
   it('inclui uma sessão bem antiga mesmo com dezenas de sessões recentes na frente — sem corte de quantidade', async () => {
     const sessoesRecentes = Array.from({ length: 40 }, (_, i) => ({
       date: `2026-0${(i % 9) + 1}-01`,
-      type: 'presencial',
-      transcript: `A: Sessão número ${i}.\nP: Ok.`,
+      type: 'transcricao',
+      content: `A: Sessão número ${i}.\nP: Ok.`,
     }));
-    getSessions.mockResolvedValue([
+    getRecords.mockResolvedValue([
       ...sessoesRecentes,
-      { date: '2018-03-10', type: 'presencial', transcript: 'A: Sessão antiquíssima.\nP: Sim.' },
+      { date: '2018-03-10', type: 'transcricao', content: 'A: Sessão antiquíssima.\nP: Sim.' },
     ]);
-    getRecords.mockResolvedValue([]);
 
     const { contexto } = await montarContextoSelecionados([maria], criarSessaoRedacao());
 
@@ -75,12 +71,11 @@ describe('montarContextoSelecionados — uma pessoa', () => {
 
 describe('montarContextoSelecionados — múltiplas pessoas', () => {
   it('usa marcador indexado por pessoa e restaura cada nome no lugar certo', async () => {
-    getSessions.mockImplementation(async (id) => (
+    getRecords.mockImplementation(async (id) => (
       id === 'p1'
-        ? [{ date: '2026-07-20', type: 'presencial', transcript: 'Maria falou sobre o trabalho.' }]
-        : [{ date: '2026-07-18', type: 'online', transcript: 'João comentou sobre um caso supervisionado.' }]
+        ? [{ date: '2026-07-20', type: 'transcricao', content: 'Maria falou sobre o trabalho.' }]
+        : [{ date: '2026-07-18', type: 'transcricao', content: 'João comentou sobre um caso supervisionado.' }]
     ));
-    getRecords.mockResolvedValue([]);
 
     const sessaoRedacao = criarSessaoRedacao();
     const { contexto } = await montarContextoSelecionados([maria, joao], sessaoRedacao);
@@ -99,7 +94,6 @@ describe('montarContextoSelecionados — múltiplas pessoas', () => {
 
 describe('criarSessaoRedacao — memória entre perguntas da mesma janela', () => {
   it('continua protegendo o nome de uma pessoa já mencionada mesmo se ela for desmarcada depois', async () => {
-    getSessions.mockResolvedValue([]);
     getRecords.mockResolvedValue([]);
 
     const sessaoRedacao = criarSessaoRedacao();
@@ -114,7 +108,6 @@ describe('criarSessaoRedacao — memória entre perguntas da mesma janela', () =
 
 describe('chamarBuscaChat', () => {
   it('reenvia o histórico inteiro da conversa (memória dentro da janela) e restaura o nome na resposta', async () => {
-    getSessions.mockResolvedValue([]);
     getRecords.mockResolvedValue([]);
     supabase.functions.invoke.mockResolvedValue({
       data: { resposta: '[PESSOA 1] relatou melhora na última sessão, mas ainda apresenta ansiedade.', custo: 0.00021 },

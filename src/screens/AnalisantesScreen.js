@@ -60,7 +60,6 @@ export default function AnalisantesScreen() {
   function descreverPerda(c) {
     const partes = [];
     const plural = (n, um, muitos) => `${n} ${n === 1 ? um : muitos}`;
-    if (c.sessoes) partes.push(plural(c.sessoes, 'sessão gravada', 'sessões gravadas'));
     if (c.registros) partes.push(plural(c.registros, 'registro escrito', 'registros escritos'));
     if (c.compromissos) partes.push(plural(c.compromissos, 'compromisso', 'compromissos'));
     if (c.relatorios) partes.push(plural(c.relatorios, 'relatório', 'relatórios'));
@@ -70,7 +69,7 @@ export default function AnalisantesScreen() {
 
   /**
    * Apagar um analisante derruba, em cascata, tudo que existe sobre ele:
-   * sessões, transcrições, registros, compromissos, relatórios,
+   * registros, compromissos, relatórios,
    * pagamentos e a elaboração dos núcleos. Até aqui a tela perguntava
    * apenas `Deseja remover "Fulana"?` — a frase de tirar uma linha de uma
    * lista, para a ação mais destrutiva do app inteiro.
@@ -94,8 +93,8 @@ export default function AnalisantesScreen() {
 
       const perdas = contagem ? descreverPerda(contagem) : [];
       const detalhe = perdas.length > 0
-        ? `Isto apaga em definitivo:\n\n${perdas.map((t) => `• ${t}`).join('\n')}\n\nMais as transcrições e a elaboração clínica ligadas a esses itens.`
-        : 'Isto apaga em definitivo tudo que existe sobre esta pessoa: sessões, transcrições, registros, compromissos, relatórios e histórico financeiro.';
+        ? `Isto apaga em definitivo:\n\n${perdas.map((t) => `• ${t}`).join('\n')}\n\nMais a elaboração clínica ligada a esses itens.`
+        : 'Isto apaga em definitivo tudo que existe sobre esta pessoa: registros, compromissos, relatórios e histórico financeiro.';
 
       const seguir = await new Promise((resolve) => {
         Alert.alert(
@@ -206,7 +205,7 @@ export default function AnalisantesScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <CabecalhoTela
-        titulo={aba === 'analisantes' ? 'Analisantes' : 'Supervisionandos'}
+        titulo="Arquivo"
         onVoltar={() => navigation.goBack()}
         acoes={(
           <>

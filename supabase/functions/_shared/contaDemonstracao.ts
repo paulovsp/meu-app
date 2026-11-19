@@ -2,9 +2,8 @@
 //
 // O login dela é público: a senha está na tela de entrada. O banco já
 // recusa toda escrita dessa conta (migration 0097), mas as funções de IA
-// não escrevem nada em nome dela — elas gastam. Busca, relatório e
-// transcrição saem do crédito da conta, que é dinheiro do dono, pago à
-// DeepSeek e à AssemblyAI. Sem esta checagem, qualquer visitante rodava
+// não escrevem nada em nome dela — elas gastam. Busca e relatório saem
+// do crédito da conta, que é dinheiro do dono, pago à DeepSeek. Sem esta checagem, qualquer visitante rodava
 // tudo até zerar.
 //
 // A checagem fica ANTES do gasto, em cada função que gasta, e devolve o

@@ -2,10 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import { papel, salvia } from '../theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Notifications from 'expo-notifications';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useAuth } from '../contexts/AuthContext';
-import { navigationRef } from './navigationRef';
 
 // Autenticação
 import LoginScreen from '../screens/LoginScreen';
@@ -22,10 +20,6 @@ import AnalisantesScreen from '../screens/AnalisantesScreen';
 import BuscaScreen from '../screens/BuscaScreen';
 import FormularioAnalisanteScreen from '../screens/FormularioAnalisanteScreen';
 import DetalheAnalisanteScreen from '../screens/DetalheAnalisanteScreen';
-
-// Sessões
-import DetalheSessaoScreen from '../screens/DetalheSessaoScreen';
-import NovaSessaoScreen from '../screens/NovaSessaoScreen';
 
 // Registros
 import NovoRegistroScreen from '../screens/NovoRegistroScreen';
@@ -56,10 +50,8 @@ import DetalheCompromissoScreen from '../screens/DetalheCompromissoScreen';
 import AfazeresScreen from '../screens/AfazeresScreen';
 import RelatoriosScreen from '../screens/RelatoriosScreen';
 import DetalheRelatorioScreen from '../screens/DetalheRelatorioScreen';
-import IntegracaoVideochamadaScreen from '../screens/IntegracaoVideochamadaScreen';
 import IntegracaoWhatsappScreen from '../screens/IntegracaoWhatsappScreen';
 import AppsConectadosScreen from '../screens/AppsConectadosScreen';
-import ProtecaoGravacaoScreen from '../screens/ProtecaoGravacaoScreen';
 import SessoesStatusScreen from '../screens/SessoesStatusScreen';
 
 const Stack = createNativeStackNavigator();
@@ -87,22 +79,6 @@ function AuthStackNavigator() {
 }
 
 function AppStackNavigator() {
-  // Toque numa notificação push de transcrição pronta abre a sessão certa —
-  // navigationRef (não useNavigation) porque este componente é o próprio
-  // navegador raiz, não uma tela dentro dele.
-  useEffect(() => {
-    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
-      const dados = response.notification.request.content.data || {};
-      if (!navigationRef.isReady()) return;
-      if (dados.sessionId) {
-        navigationRef.navigate('SessionDetail', { sessionId: dados.sessionId });
-      } else if (dados.cursoId) {
-        navigationRef.navigate('FormularioCurso', { cursoId: dados.cursoId });
-      }
-    });
-    return () => subscription.remove();
-  }, []);
-
   return (
     <Stack.Navigator initialRouteName="Home" screenOptions={screenOptions}>
       {/* Home */}
@@ -112,7 +88,7 @@ function AppStackNavigator() {
       <Stack.Screen
         name="Patients"
         component={AnalisantesScreen}
-        options={{ title: 'Analisantes' }}
+        options={{ title: 'Arquivo' }}
       />
 
       <Stack.Screen
@@ -124,15 +100,6 @@ function AppStackNavigator() {
       <Stack.Screen name="PatientForm" component={FormularioAnalisanteScreen} />
 
       <Stack.Screen name="PatientDetail" component={DetalheAnalisanteScreen} />
-
-      {/* Sessões */}
-      <Stack.Screen
-        name="NewSession"
-        component={NovaSessaoScreen}
-        options={{ title: 'Nova Sessão' }}
-      />
-
-      <Stack.Screen name="SessionDetail" component={DetalheSessaoScreen} />
 
       {/* Registros */}
       <Stack.Screen
@@ -260,8 +227,6 @@ function AppStackNavigator() {
 
       <Stack.Screen name="SessoesStatus" component={SessoesStatusScreen} />
       <Stack.Screen name="AppsConectados" component={AppsConectadosScreen} />
-      <Stack.Screen name="ProtecaoGravacao" component={ProtecaoGravacaoScreen} />
-      <Stack.Screen name="IntegracaoVideochamada" component={IntegracaoVideochamadaScreen} />
       <Stack.Screen name="IntegracaoWhatsapp" component={IntegracaoWhatsappScreen} />
     </Stack.Navigator>
   );

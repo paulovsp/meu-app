@@ -3,6 +3,7 @@
 // replica a regra (ativa/cortesia + ainda dentro da validade) em JS: se a
 // regra mudar no banco, este arquivo não precisa mudar.
 import { supabase } from './supabase';
+import { VERSAO_LABEL, normalizarVersao } from './versao';
 
 // Texto único, usado em todo canto que precisa avisar a psicanalista sobre
 // assinatura inativa (banner, telas de criação bloqueadas, erro do
@@ -59,7 +60,7 @@ export async function getStatusAssinatura() {
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('assinatura_status, assinatura_plano, assinatura_expira_em, email, mp_preapproval_id')
+    .select('assinatura_status, assinatura_plano, assinatura_versao, assinatura_expira_em, email, mp_preapproval_id')
     .eq('id', session.user.id)
     .maybeSingle();
   if (error || !data) return { situacao: 'indefinida' };
@@ -68,6 +69,8 @@ export async function getStatusAssinatura() {
   const base = {
     plano: data.assinatura_plano || null,
     planoLabel: PLANO_LABEL_ASSINATURA[data.assinatura_plano] || null,
+    versao: normalizarVersao(data.assinatura_versao),
+    versaoLabel: VERSAO_LABEL[normalizarVersao(data.assinatura_versao)],
     expiraEm: data.assinatura_expira_em || null,
     diasRestantes: dias,
     email: data.email || session.user.email || null,

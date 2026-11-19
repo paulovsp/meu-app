@@ -10,9 +10,6 @@
       "supportsTablet": true,
       "bundleIdentifier": "br.com.drsig.app",
       "infoPlist": {
-        "UIBackgroundModes": [
-          "audio"
-        ],
         "NSFaceIDUsageDescription": "Usado pra entrar no Dr.Sig com Face ID, sem precisar digitar e-mail e senha."
       }
     },
@@ -23,21 +20,21 @@
         "monochromeImage": "./assets/adaptive-icon-mono.png"
       },
       "permissions": [
-        "android.permission.RECORD_AUDIO",
-        "android.permission.MODIFY_AUDIO_SETTINGS",
-        "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_MICROPHONE",
         "android.permission.POST_NOTIFICATIONS"
       ],
       "package": "br.com.drsig.app",
-      "versionCode": 25,
-      "predictiveBackGestureEnabled": false
+      "versionCode": 26,
+      "predictiveBackGestureEnabled": false,
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.FOREGROUND_SERVICE_MICROPHONE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-audio",
       [
         "expo-splash-screen",
         {
@@ -61,11 +58,10 @@
         "expo-image-picker",
         {
           "photosPermission": "Usado pra selecionar uma foto da galeria e ler o texto dela.",
-          "cameraPermission": "Usado pra fotografar um documento e ler o texto dele."
+          "cameraPermission": "Usado pra fotografar um documento e ler o texto dele.",
+          "microphonePermission": false
         }
-      ],
-      "./plugins/withForegroundServiceMicrophone",
-      "./plugins/withoutForegroundServiceMediaPlayback"
+      ]
     ],
     "extra": {
       "eas": {

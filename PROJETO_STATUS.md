@@ -14,6 +14,18 @@ Quem cadastra é a psicanalista; quem ela cadastra é o analisante
 (paciente). O projeto nasceu como uma ferramenta pessoal do Paulo (o dono,
 ele mesmo psicanalista, que não programa) pra uso próprio, e virou produto.
 
+## Remodelagem Agenda/Arquivo (19/11/2026, aguardando "aprovo" para publicar)
+
+- Gravação e transcrição de sessões e aulas saíram do app e do servidor
+  (Meet/Zoom juntos, porque só existiam para transcrever). Código guardado
+  no ramo `arquivo/gravacao-transcricao-2026-11-19`.
+- Duas versões: **Agenda inteligente** (sem registros clínicos, sem IA;
+  relatórios de frequência e pagamento) e **Agenda + Arquivo inteligente**
+  (tudo). Quem já assinava fica na completa. Trava no app
+  (`src/services/versao.js`) e no banco (migration 0112).
+- Transcrições antigas viram registros `type = 'transcricao'`
+  (migration 0111).
+
 ## Estado atual (17/09/2026)
 
 - **Lançado oficialmente na Play Store.** Produção = build 24 (1.0.0),
@@ -45,14 +57,17 @@ ele mesmo psicanalista, que não programa) pra uso próprio, e virou produto.
   `supabase db push` (CLI linkado; 0001–0110 aplicadas). `verify_jwt` de
   cada função declarado em `supabase/config.toml` e explicado em
   `supabase/functions/DEPLOY.md`.
-- **IA**: DeepSeek (chat/relatórios/análises), AssemblyAI (transcrição de
-  áudio), OCR.space (leitura de documento/comprovante), tudo via Edge
-  Functions — o app nunca tem as chaves de API direto.
-- **Pagamentos**: Mercado Pago (assinatura mensal = cartão recorrente;
-  semestral/anual = Pix, pagamento único). Recarga de créditos de IA só
-  em cartão.
-- **E-mail**: Resend. **Videochamada**: Google Meet e Zoom (OAuth por
-  usuária). **WhatsApp** (opcional): cada profissional cola a própria
+- **IA**: DeepSeek (Busca Dr.Sig e relatórios de resumo), OCR.space
+  (leitura de comprovante), tudo via Edge Functions — o app nunca tem as
+  chaves de API direto. A transcrição (AssemblyAI) saiu na remodelagem de
+  19/11/2026.
+- **Pagamentos**: Mercado Pago. Os três ciclos (mensal, semestral, anual)
+  são assinatura recorrente em cartão, nas duas versões: Agenda inteligente
+  (R$ 49 / 234 / 348) e Agenda + Arquivo inteligente (R$ 89 / 414 / 588).
+  A versão vai no `external_reference` e fica em
+  `profiles.assinatura_versao` (migration 0112). Recarga de créditos de IA
+  só em cartão.
+- **E-mail**: Resend. **WhatsApp** (opcional): cada profissional cola a própria
   credencial da Meta; o Dr.Sig só hospeda o webhook.
 - **Build/publicação**: `eas build` (só com "sim" explícito do Paulo —
   custa dinheiro) e `eas update` (OTA, depois do `/pre-voo ota`). Tudo sai
@@ -74,9 +89,8 @@ Nenhum agente faz deploy, migration, OTA ou build.
 ## Funcionalidades principais
 
 Agenda (horários fixos, faltas, cancelamentos, remarcações) ·
-Analisantes/Supervisionandos (ficha, histórico, autorização de gravação
-com verificação de documento) · Sessões (gravação, transcrição
-assíncrona, turnos por falante) · Registros/Estudos (editor rico) ·
+Clínica: Novo registro, Arquivo (analisantes/supervisionandos), Relatórios,
+Busca Dr.Sig · Registros/Estudos (editor rico) ·
 Financeiro/Pagamentos/Recebíveis · Fiscal (recibo/nota) · Cursos · Busca
 Dr.Sig (chat com IA sobre o histórico de um analisante) · Relatórios (2
 via IA, 2 determinísticos) · Assinatura (3 planos, Mercado Pago) ·

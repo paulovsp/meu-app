@@ -65,7 +65,7 @@ async function enviarPush(token: string, titulo: string, corpo: string): Promise
         to: token,
         title: titulo,
         body: corpo,
-        // Canal 'default': os canais nomeados do app (transcricao, atraso,
+        // Canal 'default': os canais nomeados do app (atraso,
         // sessao) sao criados no aparelho quando o app roda, e um canal que
         // nao existe faz o Android engolir a notificacao em silencio. Aviso
         // de fim de acesso nao pode depender disso.

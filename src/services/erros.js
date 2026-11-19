@@ -6,9 +6,7 @@ const MSG_SEM_CONEXAO = 'Sem conexão. Tente novamente.';
 // `error.hint`; sem esta tradução, a pessoa veria "AUTOCADASTRO" na tela.
 const REGRAS_DO_BANCO = {
   AUTOCADASTRO:
-    'Você não pode se cadastrar como analisante de si mesma. A autorização '
-    + 'de gravação existe para que outra pessoa confirme — cadastrar-se aqui '
-    + 'fecharia esse circuito sozinha.',
+    'Você não pode se cadastrar como analisante de si mesma.',
   NOME_IMUTAVEL:
     'O nome do titular da conta não pode ser alterado depois do cadastro.',
   CPF_IMUTAVEL:

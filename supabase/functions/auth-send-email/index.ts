@@ -139,13 +139,20 @@ function emailDeBoasVindas(nome: string, linkSignup: string): string {
       + h2('O que você pode fazer no app')
       + lista([
         '<strong>Agenda</strong> — horários fixos que se repetem sozinhos, com faltas e cancelamentos registrados.',
-        '<strong>Sessões e prontuário</strong> — registre atendimentos, grave e transcreva sessões (com autorização do analisante) e edite anotações com formatação.',
+        '<strong>Arquivo e registros</strong> — escreva os registros das sessões e estudos de caso, com formatação, organizados por analisante.',
         '<strong>Busca Dr.Sig e relatórios</strong> — pergunte em português sobre o histórico de um analisante; relatórios de evolução, frequência e pagamento saem prontos.',
         '<strong>Analisantes e supervisionandos</strong> — cadastro completo, com os dois vínculos podendo coexistir na mesma pessoa.',
         '<strong>Cobrança e financeiro</strong> — o que está em aberto, o que entrou, o que saiu; recibos em PDF direto para o analisante e para o seu contador.',
-        '<strong>Cursos</strong> — o histórico da sua formação continuada, com gravação e transcrição de aulas.',
+        '<strong>Cursos</strong> — o histórico da sua formação continuada, com as anotações das aulas.',
       ])
-      + h2('Planos, sem fidelidade')
+      + h2('Duas versões, sem fidelidade')
+      + p('<strong>Agenda inteligente</strong> — agenda, fichas com os dados administrativos, financeiro e relatórios de frequência e pagamento.')
+      + tabela([
+        ['Mensal', 'R$ 49 por mês'],
+        ['Semestral', 'R$ 234 a cada 6 meses (R$ 39/mês)'],
+        ['Anual', 'R$ 348 por ano (R$ 29/mês)'],
+      ])
+      + p('<strong>Agenda + Arquivo inteligente</strong> — tudo da Agenda, mais os registros clínicos, a Busca Dr.Sig e os relatórios de evolução com IA.')
       + tabela([
         ['Mensal', 'R$ 89 por mês'],
         ['Semestral', 'R$ 414 a cada 6 meses (R$ 69/mês)'],
@@ -154,7 +161,7 @@ function emailDeBoasVindas(nome: string, linkSignup: string): string {
       + p('Os três são assinatura e renovam sozinhos até você cancelar — muda só de quanto em quanto tempo a cobrança acontece. Pagamento em cartão de crédito, pelo Mercado Pago, sem precisar de conta lá. Cancele quando quiser, pelo app, sem multa; o acesso vale até o fim do período pago.', { pequeno: true })
       + destaque(
         '<strong>Quer conhecer o app antes de decidir?</strong><br/>'
-        + 'Na tela de entrada, toque em <strong>Conhecer o app sem criar conta</strong>: é o consultório do Sigmund Freud, com 15 fichas, agenda, registros e sessões transcritas. Somente leitura — dá para ver tudo, sem mexer em nada.',
+        + 'Na tela de entrada, toque em <strong>Conhecer o app sem criar conta</strong>: é o consultório do Sigmund Freud, com 15 fichas, agenda e registros. Somente leitura — dá para ver tudo, sem mexer em nada.',
       )
       + p(`Dúvidas? Escreva para <a href="mailto:drsig@drsig.com.br" style="color:#497363;">drsig@drsig.com.br</a>. Antes de usar o app, leia os <a href="https://app.drsig.com.br/termos.html" style="color:#497363;">Termos de Uso</a> e a <a href="https://app.drsig.com.br/privacidade.html" style="color:#497363;">Política de Privacidade</a>.`, { pequeno: true }),
     rodape: 'Se você não criou esta conta, ignore este e-mail: nada acontece sem que o botão seja usado.',

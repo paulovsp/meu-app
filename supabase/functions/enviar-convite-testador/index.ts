@@ -55,7 +55,7 @@ function emailDeConvite(email: string, validoAte: string): string {
       + p('Ele acabou de chegar à Play Store, e nesta primeira fase eu queria que um grupo pequeno de colegas usasse de verdade, no dia a dia, e me dissesse o que funciona e o que não funciona. Você é uma dessas pessoas.')
       + destaque(
         `<strong>O seu convite</strong><br/>`
-        + `Acesso completo, gratuito, até <strong>${ate}</strong> — com os créditos de IA inclusos (R$ 10 por mês, para transcrição, relatórios e busca). `
+        + `Acesso completo, gratuito, até <strong>${ate}</strong> — com os créditos de IA inclusos (R$ 10 por mês, para relatórios e busca). `
         + `Nada é cobrado, não é preciso cadastrar cartão, e nada muda sem você saber. A cortesia está amarrada a este e-mail: <strong>${escaparHtml(email)}</strong>.`,
       )
       + h2('Como começar')
@@ -67,10 +67,10 @@ function emailDeConvite(email: string, validoAte: string): string {
       + lista([
         '<strong>Agenda</strong> com horários fixos que se repetem sozinhos, faltas e cancelamentos registrados.',
         '<strong>Fichas</strong> de analisantes e supervisionandos, com todo o histórico de cada pessoa.',
-        '<strong>Sessões</strong> escritas, ou gravadas e transcritas — só com autorização do analisante, pedida por e-mail pelo próprio app.',
+        '<strong>Registros</strong> das sessões e estudos de caso, escritos com formatação e organizados no Arquivo de cada pessoa.',
         '<strong>Busca e relatórios</strong>: pergunte em português sobre o histórico de alguém; relatórios de evolução, frequência e pagamento saem prontos.',
         '<strong>Cobrança, financeiro e recibos</strong>: o que está em aberto, o que entrou, e o recibo em PDF direto para o analisante e para o seu contador.',
-        '<strong>Cursos</strong>: o histórico da sua formação, com aulas gravadas e transcritas.',
+        '<strong>Cursos</strong>: o histórico da sua formação, com as anotações das aulas.',
       ])
       + h2('O que peço em troca: sua opinião, sempre')
       + p('Este teste não tem questionário nem prazo para responder. O que eu preciso é do que você notar usando: o que ajudou, o que atrapalhou, o que faltou, o que está confuso, o que você faria diferente. Uma frase já basta.')
@@ -83,7 +83,7 @@ function emailDeConvite(email: string, validoAte: string): string {
       ])
       + h2('Duas coisas importantes')
       + p('<strong>Use com dados reais, se quiser.</strong> O app é para isso, e o sigilo é garantido: cada conta só enxerga os próprios analisantes, e a regra é aplicada pelo banco de dados, não pela tela. Você pode exportar tudo e apagar a conta a qualquer momento, pelo próprio app.')
-      + p('<strong>Gravar uma sessão depende da autorização do analisante.</strong> O app pede por e-mail a ele, e sem a confirmação não grava — é assim de propósito.', { pequeno: false }),
+      + p('<strong>O Dr.Sig não grava sessões.</strong> O que fica no app é só o que você escreve.', { pequeno: false }),
     rodape: 'Convite pessoal, enviado por Paulo Pimentel. Se você preferir não participar, é só ignorar este e-mail — nada acontece.',
   });
 }

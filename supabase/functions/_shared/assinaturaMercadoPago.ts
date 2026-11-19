@@ -8,8 +8,10 @@
 // virou quatro números diferentes. Aqui é um só.
 //
 // Regra que atravessa o arquivo inteiro: quem manda é o `external_reference`
-// (`assinatura:<plano>:<userId>`), gravado por nós na criação do checkout.
-// Nunca o e-mail do pagador.
+// (`assinatura:<plano>:<userId>` ou, desde as duas versões,
+// `assinatura:<plano>:<versao>:<userId>`), gravado por nós na criação do
+// checkout. Nunca o e-mail do pagador. Referência sem versão é de antes da
+// remodelagem, e quem assinou antes fica na versão completa.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { creditoMensalUsd } from './creditoDoPlano.ts';
 
@@ -18,12 +20,16 @@ export const MP_API = 'https://api.mercadopago.com';
 export type Plano = 'mensal' | 'semestral' | 'anual';
 export const PLANOS_VALIDOS: Plano[] = ['mensal', 'semestral', 'anual'];
 
+/** 'agenda' = Agenda inteligente (sem registros clínicos nem IA);
+ *  'completa' = Agenda + Arquivo inteligente. Ver migration 0112. */
+export type Versao = 'agenda' | 'completa';
+export const VERSOES_VALIDAS: Versao[] = ['agenda', 'completa'];
+
 /** Quanto o plano custa por mês — só pra exibir em Pagamentos. O valor
- *  cobrado de fato é 89 / 414 / 588, em mercadopago-criar-checkout-assinatura. */
-export const VALOR_MENSAL_EQUIVALENTE: Record<Plano, number> = {
-  mensal: 89,
-  semestral: 69,
-  anual: 49,
+ *  cobrado de fato está em PRECO_BASE (_shared/indicacoes.ts). */
+export const VALOR_MENSAL_EQUIVALENTE: Record<Versao, Record<Plano, number>> = {
+  agenda: { mensal: 49, semestral: 39, anual: 29 },
+  completa: { mensal: 89, semestral: 69, anual: 49 },
 };
 
 export const MESES_DO_CICLO: Record<Plano, number> = { mensal: 1, semestral: 6, anual: 12 };
@@ -36,13 +42,24 @@ export function calcularCicloFim(plano: Plano, inicio: Date): Date {
 
 export function parseReferenciaAssinatura(
   externalReference: string,
-): { plano: Plano; userId: string } | null {
+): { plano: Plano; versao: Versao; userId: string } | null {
   if (!externalReference.startsWith('assinatura:')) return null;
   const partes = externalReference.split(':');
   const plano = partes[1] as Plano;
-  const userId = partes[2];
-  if (!PLANOS_VALIDOS.includes(plano) || !userId) return null;
-  return { plano, userId };
+  let versao: Versao = 'completa';
+  let userId: string | undefined;
+  if (partes.length >= 4) {
+    versao = partes[2] as Versao;
+    userId = partes[3];
+  } else {
+    userId = partes[2];
+  }
+  if (!PLANOS_VALIDOS.includes(plano) || !VERSOES_VALIDAS.includes(versao) || !userId) return null;
+  return { plano, versao, userId };
+}
+
+export function referenciaAssinatura(plano: Plano, versao: Versao, userId: string): string {
+  return `assinatura:${plano}:${versao}:${userId}`;
 }
 
 export type Cliente = ReturnType<typeof createClient>;
@@ -52,6 +69,7 @@ export type EstadoAssinatura = {
   assinatura_expira_em: string | null;
   mp_preapproval_id: string | null;
   assinatura_plano?: Plano;
+  assinatura_versao?: Versao;
   assinatura_ciclo_inicio?: string;
   assinatura_valor_mensal_equivalente?: number;
 };
@@ -76,6 +94,7 @@ export async function aplicarAssinaturaPorId(
   if (estado.assinatura_expira_em) patch.assinatura_expira_em = estado.assinatura_expira_em;
   if (estado.mp_preapproval_id) patch.mp_preapproval_id = estado.mp_preapproval_id;
   if (estado.assinatura_plano) patch.assinatura_plano = estado.assinatura_plano;
+  if (estado.assinatura_versao) patch.assinatura_versao = estado.assinatura_versao;
   if (estado.assinatura_ciclo_inicio) patch.assinatura_ciclo_inicio = estado.assinatura_ciclo_inicio;
   if (estado.assinatura_valor_mensal_equivalente != null) {
     patch.assinatura_valor_mensal_equivalente = estado.assinatura_valor_mensal_equivalente;
@@ -115,6 +134,9 @@ export async function aplicarAssinaturaPorId(
   }
 
   if (estado.assinatura_status !== 'ativa' || !estado.assinatura_plano) return;
+  // A Agenda inteligente não usa IA (sem Busca, sem relatórios com IA):
+  // não há crédito a entregar.
+  if (estado.assinatura_versao === 'agenda') return;
   const creditoUsd = creditoMensalUsd(estado.assinatura_plano);
   if (creditoUsd == null) return;
 
@@ -234,12 +256,12 @@ export async function sincronizarPreapproval(
       valor: Number(preapproval?.auto_recurring?.transaction_amount) || null,
       status: preapproval?.status ?? null,
       email_pagador: preapproval?.payer_email ?? null,
-      motivo: 'preapproval sem external_reference no formato assinatura:<plano>:<userId>',
+      motivo: 'preapproval sem external_reference no formato assinatura:<plano>[:<versao>]:<userId>',
     });
     return { ok: true, situacao: 'nao_identificado' };
   }
 
-  const { plano, userId } = referencia;
+  const { plano, versao, userId } = referencia;
 
   if (preapproval.status === 'authorized') {
     const cicloInicio = preapproval.date_created ? new Date(preapproval.date_created) : new Date();
@@ -254,8 +276,9 @@ export async function sincronizarPreapproval(
       assinatura_expira_em: expiraEm.toISOString(),
       mp_preapproval_id: preapprovalId,
       assinatura_plano: plano,
+      assinatura_versao: versao,
       assinatura_ciclo_inicio: cicloInicio.toISOString(),
-      assinatura_valor_mensal_equivalente: VALOR_MENSAL_EQUIVALENTE[plano],
+      assinatura_valor_mensal_equivalente: VALOR_MENSAL_EQUIVALENTE[versao][plano],
     }, mpAccessToken);
     return { ok: true, situacao: 'ativa', plano, userId };
   }

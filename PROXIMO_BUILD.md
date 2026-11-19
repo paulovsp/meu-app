@@ -11,6 +11,23 @@ provisória fica documentada no código, com o motivo.
 
 ---
 
+## O que entra na v26 (versionCode 26 — remodelagem Agenda/Arquivo, 19/11/2026)
+
+Ainda não buildada: depende do "aprovo" do Paulo.
+
+- **Gravação e transcrição saíram do app.** Sai o `expo-audio`, o
+  `react-native-notify-kit` (era só pelo serviço em primeiro plano da
+  gravação) e o `expo-document-picker` (importar áudio). Saem as permissões
+  `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`, `FOREGROUND_SERVICE` e
+  `FOREGROUND_SERVICE_MICROPHONE`, e os dois plugins locais de serviço em
+  primeiro plano. `android.blockedPermissions` garante que nenhuma
+  biblioteca traga o microfone de volta, e o plugin do `expo-image-picker`
+  ganhou `microphonePermission: false`.
+- **Na Play Console, depois do build:** atualizar "Segurança dos dados"
+  (sem áudio, sem gravação) e a declaração de serviço em primeiro plano
+  (não há mais). O código antigo está no ramo
+  `arquivo/gravacao-transcricao-2026-11-19`.
+
 ## O que entrou na v25 (versionCode 25 — enviada à produção em 05/11/2026)
 
 - **Botão voltar do Android.** `android.predictiveBackGestureEnabled` estava
@@ -23,7 +40,7 @@ provisória fica documentada no código, com o motivo.
 - **Notificações push no Android.** O app não tem `google-services.json`
   (credencial do Firebase Cloud Messaging) nem `googleServicesFile` no
   `app.json`; sem isso o Android não emite token de push e nenhuma conta
-  tem `expo_push_token` — os avisos de check-in, atraso e transcrição só
+  tem `expo_push_token` — os avisos de check-in e atraso só
   chegam por e-mail (incidente #3, aberto em 16/09/2026). Resolver exige:
   criar o projeto no Firebase com a conta da Dr.Sig, baixar o
   `google-services.json`, apontar em `app.json`, subir a chave do FCM no

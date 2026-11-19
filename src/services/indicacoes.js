@@ -53,8 +53,8 @@ export async function getResumoIndicacoes() {
 /** O texto que a pessoa manda para quem quer indicar. */
 export function convite(codigo) {
   return (
-    'Uso o Dr.Sig para organizar meu consultório — agenda, registros de sessão, ' +
-    'transcrição e cobrança no mesmo lugar.\n\n' +
+    'Uso o Dr.Sig para organizar meu consultório — agenda, registros de sessão ' +
+    'e cobrança no mesmo lugar.\n\n' +
     `Se quiser experimentar, use meu código de indicação no cadastro: ${codigo}\n\n` +
     'https://drsig.com.br'
   );

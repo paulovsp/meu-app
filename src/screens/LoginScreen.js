@@ -281,8 +281,8 @@ export default function LoginScreen({ navigation }) {
 
               Quem avalia um app de prontuario nao quer ler sobre ele, quer
               ver. Este botao entra no consultorio ficticio do Freud —
-              analisantes, supervisionandos, agenda cheia, sessoes
-              transcritas — sem pedir nada em troca.
+              analisantes, supervisionandos, agenda cheia, registros de
+              sessao — sem pedir nada em troca.
 
               A conta e somente leitura no banco (migration 0097), entao
               nao ha o que uma visita possa estragar. */}
@@ -290,7 +290,7 @@ export default function LoginScreen({ navigation }) {
             <Text style={s.demoTitulo}>Quer ver o app funcionando primeiro?</Text>
             <Text style={s.demoTexto}>
               Entre no consultório de demonstração: um consultório fictício completo, com
-              analisantes, supervisionandos, agenda, registros de sessão e transcrições.
+              analisantes, supervisionandos, agenda e registros de sessão.
               Sem cadastro, sem cartão.
             </Text>
             <TouchableOpacity

@@ -22,9 +22,6 @@ import { processarEnviosFiscaisAutomaticos } from '../services/fiscalAutomatico'
 import { obterRecebimentosAtrasados, verificarEEnviarAlertaAtraso } from '../services/alertaAtraso';
 import { horarioJaPassou } from '../services/compromissoStatus';
 import { perguntarCheckin } from '../services/checkinCompromisso';
-import {
-  obterTranscricoesConcluidas, marcarTranscricoesAvisadas, resumirTranscricoes,
-} from '../services/avisoTranscricao';
 import { useSwipeHorizontal } from '../hooks/useSwipeHorizontal';
 import { registrarPushToken } from '../services/pushToken';
 import { supabase } from '../services/supabase';
@@ -36,6 +33,7 @@ import MiniAgendaBox from '../components/MiniAgendaBox';
 import Lavado from '../components/Lavado';
 import { papel, tinta, salvia } from '../theme';
 import { CLINICA_BUTTONS, ADMIN_BUTTONS } from '../constants/menuBotoes';
+import { temArquivo, VERSAO_COMPLETA, MENSAGEM_SO_NA_VERSAO_COMPLETA } from '../services/versao';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 
@@ -113,15 +111,14 @@ const ESPACO_ABAIXO_DA_GRADE = 20; // scrollContent.paddingBottom
 // mais uma constante de módulo.
 const USER_BANNER_H = 66; // aproximado: avatar 32 + paddingVertical 8*2 + marginBottom 16
 const WIDGETS_ROW_MARGIN_BOTTOM = 16;
-const BUSCA_BTN_H = 64;
 
 function calcularAlturasDaGrade(alturaUtil) {
   // Teto de altura — sem isso, em telas bem altas a conta acima dava
   // células enormes e quase vazias (só um ícone pequeno "flutuando" no
-  // meio de um botão gigante). 190 dá espaço confortável pro ícone +
-  // rótulo em até 2 linhas sem esticar além disso.
+  // meio de um botão gigante). 220 dá espaço confortável pro ícone
+  // (maior desde a remodelagem da Clínica) + rótulo em até 2 linhas.
   const cellH = Math.min(
-    190,
+    220,
     Math.max(
       140,
       (alturaUtil - ESPACO_ACIMA_DA_GRADE - ESPACO_ABAIXO_DA_GRADE - GRID_ROW_GAP * (GRID_ROWS - 1)) / GRID_ROWS
@@ -138,11 +135,11 @@ function calcularAlturasDaGrade(alturaUtil) {
     )
   );
   // Mesma lógica pra aba Início: Afazeres/Agenda de hoje crescem pra ocupar
-  // o espaço vertical que sobrava, com o botão Busca Dr.Sig fixo na
-  // parte mais baixa da tela.
+  // todo o espaço vertical. A Busca Dr.Sig, que ficava fixa embaixo,
+  // passou para a aba Clínica na remodelagem Agenda/Arquivo.
   const widgetH = Math.max(
     150,
-    alturaUtil - ESPACO_ACIMA_DA_GRADE - ESPACO_ABAIXO_DA_GRADE - USER_BANNER_H - WIDGETS_ROW_MARGIN_BOTTOM - BUSCA_BTN_H
+    alturaUtil - ESPACO_ACIMA_DA_GRADE - ESPACO_ABAIXO_DA_GRADE - USER_BANNER_H - WIDGETS_ROW_MARGIN_BOTTOM
   );
   return { cellH, cellHFinanceiro, widgetH };
 }
@@ -210,6 +207,11 @@ export default function InicioScreen({ navigation }) {
   const [user, setUser] = useState(null);
   const [modo, setModo] = useState('inicio'); // 'inicio' | 'clinica' | 'administrativa'
   const [menuAberto, setMenuAberto] = useState(false);
+  // Versão da conta (src/services/versao.js). Começa na completa: a tela
+  // não esconde nada de quem paga enquanto o perfil carrega.
+  const [versao, setVersao] = useState(VERSAO_COMPLETA);
+  const versaoRef = useRef(VERSAO_COMPLETA);
+  versaoRef.current = versao;
 
   // Qual guia mostrar — ou nenhum. A decisao depende do PERFIL (a conta de
   // demonstracao recebe o passeio; quem assinou recebe o roteiro de
@@ -324,6 +326,10 @@ export default function InicioScreen({ navigation }) {
   // por outro caminho, ex: deep link). Sem banner fixo ocupando espaço —
   // o aviso só aparece como popup na hora que faz sentido.
   async function abrirBotaoGrid(btn) {
+    if (btn.exigeArquivo && !temArquivo(versao)) {
+      Alert.alert('Só na versão completa', MENSAGEM_SO_NA_VERSAO_COMPLETA);
+      return;
+    }
     if (btn.bloqueiaSemAssinatura && !(await assinaturaEstaAtiva())) {
       Alert.alert('Assinatura inativa', MENSAGEM_ASSINATURA_INATIVA);
       return;
@@ -379,10 +385,10 @@ export default function InicioScreen({ navigation }) {
       perguntarCheckin(compromisso, {
         // Só oferece "adicionar relato" pra sessão/supervisão individual —
         // grupo, evento livre etc. não têm um prontuário único pra gravar.
-        // Duas formas de relato contam igualmente (ver estaSemRelato em
-        // database.js): gravar áudio (transcrito depois) ou escrever
-        // diretamente em Novo Registro, com a data da sessão já preenchida.
-        aoRealizada: eventoIndividual && perguntarRelatoRef.current
+        // O relato é escrito em Novo Registro, com a data da sessão já
+        // preenchida. Na versão Agenda não há registro clínico, então a
+        // pergunta não existe.
+        aoRealizada: eventoIndividual && perguntarRelatoRef.current && temArquivo(versaoRef.current)
           ? () => new Promise((resolve) => {
               Alert.alert(
                 'Adicionar relato?',
@@ -397,19 +403,6 @@ export default function InicioScreen({ navigation }) {
                         patientId: compromisso.patient_id,
                         appointmentId: compromisso.id,
                         dataSessao: compromisso.date,
-                      });
-                      resolve();
-                    },
-                  },
-                  {
-                    text: 'Gravar áudio',
-                    onPress: () => {
-                      navegouPraRelato = true;
-                      navigation.navigate('NewSession', {
-                        patientId: compromisso.patient_id,
-                        patientNome: compromisso.patient_nome,
-                        platform: compromisso.modality,
-                        appointmentId: compromisso.id,
                       });
                       resolve();
                     },
@@ -464,7 +457,6 @@ export default function InicioScreen({ navigation }) {
   // foco de novo, senão vira um popup irritante toda hora que se volta
   // pra Início vindo de outra tela).
   const avisoAtrasoMostradoRef = useRef(false);
-  const avisoTranscricaoMostradoRef = useRef(false);
 
   // Preferências dos avisos que acontecem DENTRO do app — a coluna "App"
   // da matriz do Perfil. Lidas aqui, e não do state `user`, que carrega em
@@ -477,7 +469,7 @@ export default function InicioScreen({ navigation }) {
   async function lerPreferenciasDeAviso() {
     const { data } = await supabase
       .from('profiles')
-      .select('notif_registro_app, notif_registro_push, notif_atraso_app, notif_transcricao_app')
+      .select('notif_registro_app, notif_registro_push, notif_atraso_app')
       .eq('id', session.user.id)
       .maybeSingle();
     const registroApp = data?.notif_registro_app;
@@ -486,7 +478,6 @@ export default function InicioScreen({ navigation }) {
         ? data?.notif_registro_push !== false
         : registroApp !== false,
       atraso: data?.notif_atraso_app !== false,
-      transcricao: data?.notif_transcricao_app !== false,
     };
   }
 
@@ -513,32 +504,6 @@ export default function InicioScreen({ navigation }) {
     }
   }
 
-  // Canal "App" de "Transcrição pronta": quem tem o push desligado (ou a
-  // permissão do Android negada) não ficava sabendo que a transcrição
-  // terminou — a sessão ficava pronta e só se descobria por acaso.
-  async function avisarTranscricoesProntas() {
-    if (avisoTranscricaoMostradoRef.current) return;
-    try {
-      if (!(await lerPreferenciasDeAviso()).transcricao) return;
-      const itens = await obterTranscricoesConcluidas();
-      if (itens.length === 0) return;
-      avisoTranscricaoMostradoRef.current = true;
-      await marcarTranscricoesAvisadas();
-      const { titulo, mensagem } = resumirTranscricoes(itens);
-      Alert.alert(titulo, mensagem, [
-        { text: 'Depois' },
-        {
-          text: itens.length === 1 ? 'Abrir' : 'Ver sessões',
-          onPress: () => (itens.length === 1
-            ? navigation.navigate('SessionDetail', { sessionId: itens[0].id })
-            : navigation.navigate('SessoesStatus')),
-        },
-      ], { cancelable: false });
-    } catch (e) {
-      console.error('Falha ao avisar transcrições prontas:', e?.message || e);
-    }
-  }
-
   useFocusEffect(
     useCallback(() => {
       (async () => {
@@ -560,6 +525,7 @@ export default function InicioScreen({ navigation }) {
           if (cancelado) return;
           if (error) console.error('Erro ao carregar profile (Home):', error.message, error);
           setUser(data || null);
+          setVersao(data?.assinatura_versao === 'agenda' ? 'agenda' : VERSAO_COMPLETA);
           // Sem perfil não há guia; os avisos da tela não podem esperar
           // para sempre por uma decisão que não vem.
           if (!data) setGuiaDecidido(true);
@@ -568,7 +534,7 @@ export default function InicioScreen({ navigation }) {
     }, [session.user.id])
   );
 
-  // ─── Os avisos da tela: check-in, atraso, transcrição pronta ──────────
+  // ─── Os avisos da tela: check-in e atraso ──────────────────────────────
   //
   // Em sequência, não em paralelo — Alert.alert é um modal nativo único;
   // disparar dois ao mesmo tempo fazia o de atraso substituir o de
@@ -596,8 +562,6 @@ export default function InicioScreen({ navigation }) {
       await perguntarCheckinsPendentes();
       if (geracao !== geracaoFilaRef.current) return;
       await avisarRecebimentosAtrasados();
-      if (geracao !== geracaoFilaRef.current) return;
-      await avisarTranscricoesProntas();
     } finally {
       if (geracao === geracaoFilaRef.current) avisosEmAndamentoRef.current = false;
     }
@@ -762,19 +726,6 @@ export default function InicioScreen({ navigation }) {
               <MiniAgendaBox navigation={navigation} altura={widgetH} />
             </View>
 
-            <TouchableOpacity
-              style={[s.buscaExterna, { height: BUSCA_BTN_H }]}
-              activeOpacity={0.8}
-              onPress={() => navigation.navigate('Busca')}
-            >
-              <View style={s.buscaCentral}>
-                <View style={s.buscaInterna}>
-                  <Ionicons name="sparkles-outline" size={22} color="#675A9A" />
-                  <Text style={s.buscaBtnText}>Busca Dr.Sig</Text>
-                  <Ionicons name="chevron-forward" size={18} color={tinta.t400} />
-                </View>
-              </View>
-            </TouchableOpacity>
           </Animated.View>
         ) : (
           <Animated.View style={gridAnimatedStyle}>
@@ -788,7 +739,12 @@ export default function InicioScreen({ navigation }) {
             />
           ) : null}
           <View style={s.grid}>
-            {botoesAtivos.map((btn) => (
+            {botoesAtivos.map((btn) => {
+              // Na versão Agenda, Novo registro e Busca aparecem com
+              // cadeado: a pessoa vê que existem e, ao tocar, sabe como
+              // chegar a eles (abrirBotaoGrid).
+              const travado = btn.exigeArquivo && !temArquivo(versao);
+              return (
               // Moldura tripla: fina · grossa (3 dp ≈ 0,5 mm) · fina.
               // O fundo é o mesmo verde em todas as células; a cor da seção
               // vive só no medalhão.
@@ -797,19 +753,26 @@ export default function InicioScreen({ navigation }) {
                 style={[s.cellExterna, { width: CELL_W, height: modo === 'administrativa' ? cellHFinanceiro : cellH }]}
                 activeOpacity={0.8}
                 onPress={() => abrirBotaoGrid(btn)}
+                accessibilityLabel={travado ? `${btn.label} (só na versão completa)` : btn.label}
               >
                 <View style={s.cellCentral}>
                   <View style={s.cellInterna}>
-                    <Lavado de={salvia.veuForte} para={papel.alto} parada={0.74} style={s.cellCampo}>
+                    <Lavado de={salvia.veuForte} para={papel.alto} parada={0.74} style={[s.cellCampo, travado && s.cellTravada]}>
                       <View style={[s.cellMedalhao, { borderColor: btn.corBadge + '73' }]}>
-                        <Ionicons name={btn.icon} size={24} color={btn.corBadge} />
+                        <Ionicons name={btn.icon} size={30} color={btn.corBadge} />
                       </View>
                       <Text style={s.cellLabel} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.85}>{btn.label}</Text>
                     </Lavado>
+                    {travado ? (
+                      <View style={s.cadeado}>
+                        <Ionicons name="lock-closed" size={14} color={tinta.t500} />
+                      </View>
+                    ) : null}
                   </View>
                 </View>
               </TouchableOpacity>
-            ))}
+              );
+            })}
           </View>
           </Animated.View>
         )}
@@ -1050,40 +1013,6 @@ const s = StyleSheet.create({
     marginBottom: 16,
   },
 
-  // Mesma moldura tripla dos botões da grade e dos dois widgets — é o
-  // gesto que amarra a tela inteira.
-  buscaExterna: {
-    marginHorizontal: 20,
-    backgroundColor: COLORS.surface,
-    borderRadius: 19,
-    borderWidth: 1,
-    borderColor: salvia.suave,
-    padding: 2,
-    shadowColor: COLORS.sombra,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.07,
-    shadowRadius: 18,
-    elevation: 3,
-  },
-  buscaCentral: { flex: 1, borderRadius: 16, borderWidth: 3, borderColor: salvia.tinta, padding: 2 },
-  buscaInterna: {
-    flex: 1,
-    borderRadius: 11,
-    borderWidth: 1,
-    borderColor: salvia.suave,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 14,
-  },
-  buscaBtnText: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: '500',
-    color: tinta.t900,
-    lineHeight: 20,
-  },
-
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1120,16 +1049,28 @@ const s = StyleSheet.create({
   // Medalhão: círculo em papel com aro na cor da seção. O ícone vetorial
   // garante o mesmo bounding box para todos os glifos.
   cellMedalhao: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     borderWidth: 1,
     backgroundColor: papel.alto,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  cellTravada: { opacity: 0.55 },
+  cadeado: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: papel.alto,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   cellLabel: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '500',
     color: tinta.t900,
     lineHeight: 19,

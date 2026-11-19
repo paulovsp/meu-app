@@ -118,8 +118,7 @@ export default function CadastroScreen({ navigation }) {
       return;
     }
     // Nome e CPF não mudam depois — é o que sustenta o bloqueio de
-    // cadastrar a si mesmo como analisante (o app existe pra que um
-    // terceiro confirme a gravação, não pra confirmar sozinho).
+    // cadastrar a si mesmo como analisante.
     if (!validarCPF(cpf)) {
       Alert.alert('CPF inválido', 'Confira o CPF digitado.');
       return;
@@ -187,7 +186,10 @@ export default function CadastroScreen({ navigation }) {
             // isso — um campo que responde "esse codigo existe" seria um
             // verificador de quem usa o Dr.Sig.
             codigo_indicacao: codigoIndicacao || null,
-            origem_cadastro: origemCadastro || null,
+            // Quem digitou um código de indicação e não marcou outra origem
+            // veio por indicação — sem isto toda conta indicada aparecia
+            // como "desconhecida" no funil da divulgação.
+            origem_cadastro: origemCadastro || (codigoIndicacao.trim() ? 'indicacao' : null),
           },
         },
       });

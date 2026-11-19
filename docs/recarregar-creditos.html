@@ -65,16 +65,6 @@
     }
   }
 
-  // Espelha, só para ilustrar, o preço da transcrição do servidor
-  // (_shared/precificacaoIA.ts × margemCobranca.ts × creditoDoPlano.ts):
-  // US$ 0,23 por hora de áudio, cobrado em dobro, a R$ 5,08. O número que
-  // vale é o do servidor; este só dá uma ideia do que cada valor compra.
-  const REAIS_POR_HORA_DE_TRANSCRICAO = 0.23 * 2 * 5.08;
-
-  function horasQueCompra(valorBRL) {
-    return Math.floor(valorBRL / REAIS_POR_HORA_DE_TRANSCRICAO);
-  }
-
   function reais(valor) {
     return (Number(valor) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   }
@@ -179,7 +169,7 @@
         '<span class="radio" aria-hidden="true"><span></span></span>' +
         '<span class="pacote-conteudo">' +
         '<span class="pacote-nome">' + reais(valor) + ' em créditos</span>' +
-        '<span class="pacote-detalhe">Dá para cerca de ' + horasQueCompra(valor) + ' horas de transcrição, ou muitos relatórios e buscas.</span>' +
+        '<span class="pacote-detalhe">Para relatórios de resumo e perguntas na Busca Dr.Sig.</span>' +
         '</span>' +
         '</button>'
       );
@@ -380,7 +370,7 @@
       '<div class="sucesso"><div class="marca-ok">✅</div>' +
       '<h1>' + reais(valor) + ' adicionados</h1>' +
       '<p class="lede">Seu saldo de créditos de IA agora é <strong>' + reais(saldoNovo) + '</strong>. ' +
-      'Abra o app Dr.Sig: transcrição, relatórios e Busca já estão liberados.</p></div>' +
+      'Abra o app Dr.Sig: relatórios e Busca já estão liberados.</p></div>' +
       '<p class="nota">Se o saldo no app não atualizar, feche e abra Meu Perfil de novo. Qualquer coisa, ' +
       '<a href="mailto:drsig@drsig.com.br">drsig@drsig.com.br</a>.</p>'
     );

@@ -12,7 +12,7 @@
 // relevante. Antes de gastar crédito de verdade, calcula um orçamento
 // estimado (pior caso, sem desconto de cache) pra psicanalista confirmar —
 // só chama a IA depois da confirmação.
-import { getSessions, getRecords } from './database';
+import { getRecords } from './database';
 import { calcularAnosEMeses } from './validacao';
 import { criarPseudonimizador } from './pseudonimizacao';
 import { precoInputPor1M, precoOutputPor1M } from './precificacaoIA';
@@ -81,19 +81,18 @@ export function criarSessaoRedacao() {
  * ganha agora) no registro de pseudonimização da janela. */
 async function montarContextoUmaPessoa(pessoa, sessaoRedacao) {
   const marcador = sessaoRedacao.marcadorDe(pessoa.id);
-  const [sessoes, registros] = await Promise.all([
-    getSessions(pessoa.id),
-    getRecords(pessoa.id),
-  ]);
+  // As sessões transcritas de antes da remodelagem viraram registros
+  // (migration 0111), com `type = 'transcricao'`.
+  const registros = await getRecords(pessoa.id);
+
+  const rotulo = (r) => (r.type === 'transcricao'
+    ? 'Sessão transcrita'
+    : (r.category === 'estudo' || r.type === 'estudo') ? 'Estudo' : 'Registro');
 
   const todosItens = [
-    ...sessoes.map((s) => ({
-      data: s.date,
-      texto: `Sessão (${s.type === 'online' ? 'online' : 'presencial'}): ${s.transcript || '(sem transcrição)'}`,
-    })),
     ...registros.map((r) => ({
       data: r.date,
-      texto: `${r.type === 'estudo' ? 'Estudo' : 'Registro'}${r.title ? ` — ${r.title}` : ''}: ${stripHtml(r.content) || '(sem conteúdo)'}`,
+      texto: `${rotulo(r)}${r.title ? ` — ${r.title}` : ''}: ${stripHtml(r.content) || '(sem conteúdo)'}`,
     })),
   ].sort((a, b) => new Date(b.data) - new Date(a.data));
 

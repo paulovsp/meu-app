@@ -1,6 +1,7 @@
-// Currículo de cursos (Perfil → Cursos) + gravação/transcrição da aula via
-// AssemblyAI (curso-transcrever/curso-transcrever-webhook, pipeline próprio
-// — ver comentário na migration 0037). Quando o curso tem custo, gera
+// Currículo de cursos (Perfil → Cursos), com anotações das aulas na coluna
+// `transcript` (nome herdado de quando o app gravava e transcrevia a aula —
+// esse código está guardado no ramo arquivo/gravacao-transcricao-2026-11-19).
+// Quando o curso tem custo, gera
 // automaticamente uma despesa vinculada (categoria "cursos") na tela
 // Pagamentos, mantida em sincronia nas edições.
 import { supabase } from './supabase';
@@ -199,7 +200,7 @@ export async function editarCurso(id, dados) {
  * O que vai junto ao apagar um curso — e o que NÃO vai.
  *
  * Vai: as aulas na agenda (`appointments.curso_id` é cascade) e a
- * transcrição de cada aula gravada, que mora na própria linha do curso.
+ * as anotações das aulas, que moram na própria linha do curso.
  * Não vai: a despesa, que usa `set null` e sobreviveria órfã em
  * Pagamentos, sem curso nenhum atrás dela. Por isso ela é devolvida aqui:
  * quem apaga precisa poder decidir.
@@ -219,14 +220,6 @@ export async function contarDadosDoCurso(cursoId) {
 
 export async function removerCurso(id) {
   const { error } = await supabase.from('cursos').delete().eq('id', id);
-  if (error) throw error;
-}
-
-export async function marcarConsentimentoProfessor(cursoId) {
-  const { error } = await supabase
-    .from('cursos')
-    .update({ consentimento_professor: true, consentimento_em: new Date().toISOString() })
-    .eq('id', cursoId);
   if (error) throw error;
 }
 

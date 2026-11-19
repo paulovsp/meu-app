@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -36,6 +36,7 @@ import { useSwipeHorizontal } from '../hooks/useSwipeHorizontal';
 import { usePinchZoom } from '../hooks/usePinchZoom';
 import { corTipoEvento, infoTipoEvento, ehTipoGrupo } from '../services/tiposEvento';
 import { diaSemanaDeISO } from '../services/validacao';
+import { getVersaoDaConta, temArquivo, VERSAO_COMPLETA } from '../services/versao';
 
 const DIAS_LABEL = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -130,6 +131,10 @@ export default function AgendaScreen({ navigation }) {
   // aparecendo ocupado numa data específica que foi liberada de propósito.
   const [liberados, setLiberados] = useState(new Set());
   const [temTranscricaoMap, setTemTranscricaoMap] = useState({});
+  // Na versão Agenda não há relato clínico: sessão realizada é só
+  // realizada, sem o aviso "sem relato".
+  const [versao, setVersao] = useState(VERSAO_COMPLETA);
+  useEffect(() => { getVersaoDaConta().then(setVersao).catch(() => {}); }, []);
   const [carregando, setCarregando] = useState(true);
   const [menuAberto, setMenuAberto] = useState(false);
   // Esconde da visão semanal os dias sem nenhum horário configurado nem
@@ -475,7 +480,7 @@ export default function AgendaScreen({ navigation }) {
 
     let estadoInfo = null;
     if (compromisso) {
-      const temTranscricao = eventoIndividual ? !!temTranscricaoMap[compromisso.patient_id] : true;
+      const temTranscricao = eventoIndividual && temArquivo(versao) ? !!temTranscricaoMap[compromisso.patient_id] : true;
       const horarioPassou = horarioJaPassou(dataISO, slot.end_time);
       const estado = getEstadoCompromisso({
         status: compromisso.status,
@@ -815,7 +820,6 @@ export default function AgendaScreen({ navigation }) {
         contextual={{
           titulo: 'Agenda',
           itens: [
-            { icon: 'mic-outline', label: 'Nova Sessão', onPress: () => navigation.navigate('NewSession') },
             { icon: modoView === 'semanal' ? 'today-outline' : 'calendar-outline', label: modoView === 'semanal' ? 'Ver dia' : 'Ver semana', onPress: () => setModoView(modoView === 'semanal' ? 'diario' : 'semanal') },
             { icon: 'time-outline', label: 'Disponibilidade', onPress: () => navigation.navigate('EditarHorario', {}) },
           ],

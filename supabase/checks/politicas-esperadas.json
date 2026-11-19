@@ -2,6 +2,13 @@
  {
   "detalhe": "security definer",
   "nome": "authenticated",
+  "objeto": "public.arquivo_liberado(uid uuid)",
+  "regra": "",
+  "tipo": "execute"
+ },
+ {
+  "detalhe": "security definer",
+  "nome": "authenticated",
   "objeto": "public.assinatura_ativa(uid uuid)",
   "regra": "",
   "tipo": "execute"
@@ -977,6 +984,20 @@
   "nome": "records_update_own",
   "objeto": "public.records",
   "regra": "(owns_patient(patient_id) AND assinatura_ativa(auth.uid())) | (owns_patient(patient_id) AND assinatura_ativa(auth.uid()))",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "INSERT RESTRICTIVE {authenticated}",
+  "nome": "versao_agenda_sem_insert_records",
+  "objeto": "public.records",
+  "regra": " | arquivo_liberado(auth.uid())",
+  "tipo": "policy"
+ },
+ {
+  "detalhe": "UPDATE RESTRICTIVE {authenticated}",
+  "nome": "versao_agenda_sem_update_records",
+  "objeto": "public.records",
+  "regra": "arquivo_liberado(auth.uid()) | arquivo_liberado(auth.uid())",
   "tipo": "policy"
  },
  {

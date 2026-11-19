@@ -3,16 +3,18 @@
 // O app já mandava notificação pro Android; o que faltava era a metade de
 // baixo da história. Se a permissão fosse negada, `registrarPushToken`
 // desistia em silêncio, e os interruptores em Perfil continuavam ligados
-// prometendo avisos que nunca chegariam. A pessoa esperaria pelo aviso de
-// "transcrição pronta" que o Android estava descartando.
+// prometendo avisos que nunca chegariam.
+//
+// Desde a remodelagem Agenda/Arquivo isto usa só o expo-notifications: o
+// react-native-notify-kit existia pelo foreground service da gravação de
+// sessão, que saiu do app.
 //
 // Duas coisas resolvem: dizer em que estado está, e abrir a tela certa do
 // sistema. A segunda é o que economiza a pior parte — achar, dentro das
 // configurações do Android, onde fica a permissão de um app específico.
-import { Platform } from 'react-native';
+import { Linking, Platform } from 'react-native';
+import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
-import notifee, { AuthorizationStatus } from 'react-native-notify-kit';
-import { CANAL_SESSAO, CANAL_CURSO } from './protecaoGravacao';
 
 /**
  * Um canal do Android por tipo de aviso.
@@ -20,14 +22,13 @@ import { CANAL_SESSAO, CANAL_CURSO } from './protecaoGravacao';
  * Antes todo push caía num canal só, chamado "Notificações". Isso torna a
  * coluna "Celular" da matriz do Perfil inadministrável do lado do sistema:
  * quem quisesse silenciar só o aviso de atraso, deslizando a notificação
- * pro lado, silenciava junto o de transcrição pronta — e o app não tinha
- * como perceber, porque só olhava os canais de gravação.
+ * pro lado, silenciava junto todos os outros — e o app não tinha como
+ * perceber.
  *
  * Os ids são estáveis: mudar um cria um canal novo e o antigo fica lá,
  * silenciado, invisível pro app.
  */
 export const CANAIS_DE_AVISO = [
-  { id: 'transcricao', nome: 'Transcrição pronta' },
   { id: 'atraso', nome: 'Recebimento em atraso' },
   { id: 'sessao', nome: 'Sessões a confirmar' },
 ];
@@ -66,16 +67,27 @@ export async function pedirPermissaoDeNotificacao() {
  * mesmo com a permissão geral concedida.
  */
 export async function abrirConfiguracoesDeNotificacao(canalId) {
+  const pacote = Constants.expoConfig?.android?.package || 'br.com.drsig.app';
+  if (Platform.OS === 'android') {
+    try {
+      if (canalId) {
+        await Linking.sendIntent('android.settings.CHANNEL_NOTIFICATION_SETTINGS', [
+          { key: 'android.provider.extra.APP_PACKAGE', value: pacote },
+          { key: 'android.provider.extra.CHANNEL_ID', value: canalId },
+        ]);
+      } else {
+        await Linking.sendIntent('android.settings.APP_NOTIFICATION_SETTINGS', [
+          { key: 'android.provider.extra.APP_PACKAGE', value: pacote },
+        ]);
+      }
+      return true;
+    } catch (_) {}
+  }
   try {
-    await notifee.openNotificationSettings(canalId);
+    await Linking.openSettings();
     return true;
   } catch (_) {
-    try {
-      await notifee.openNotificationSettings();
-      return true;
-    } catch (__) {
-      return false;
-    }
+    return false;
   }
 }
 
@@ -89,16 +101,13 @@ export async function abrirConfiguracoesDeNotificacao(canalId) {
  */
 export async function canaisSilenciados() {
   if (Platform.OS !== 'android') return [];
-  const nomes = {
-    [CANAL_SESSAO]: 'Gravação de sessão',
-    [CANAL_CURSO]: 'Gravação de aula',
-    ...Object.fromEntries(CANAIS_DE_AVISO.map((c) => [c.id, c.nome])),
-  };
   const silenciados = [];
-  for (const id of Object.keys(nomes)) {
+  for (const { id, nome } of CANAIS_DE_AVISO) {
     try {
-      const canal = await notifee.getChannel(id);
-      if (canal?.blocked) silenciados.push({ id, nome: nomes[id] });
+      const canal = await Notifications.getNotificationChannelAsync(id);
+      if (canal && canal.importance === Notifications.AndroidImportance.NONE) {
+        silenciados.push({ id, nome });
+      }
     } catch (_) {}
   }
   return silenciados;
@@ -113,4 +122,3 @@ export async function diagnosticoDeNotificacoes() {
   return { estado, canaisSilenciados: canais };
 }
 
-export { AuthorizationStatus };

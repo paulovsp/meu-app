@@ -26,6 +26,7 @@ import {
   dataBRParaISO, dataISOParaBR, dataParaISO, mascararDataBR, interpretarDataDigitada,
 } from '../services/validacao';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
+import { useBloqueioArquivo } from '../hooks/useBloqueioArquivo';
 
 const MEDIA_IMAGES = ['images'];
 
@@ -138,6 +139,7 @@ export default function NovoRegistroScreen() {
   const route = useRoute();
 
   useBloqueioAssinatura(navigation);
+  useBloqueioArquivo(navigation);
 
   // Vindo de DetalheAnalisanteScreen.js (✏️ num registro já existente) ou
   // de DetalheRegistroScreen.js (editar) — os dois passam { record, patientId }.

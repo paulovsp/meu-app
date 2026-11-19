@@ -57,7 +57,7 @@ Deno.serve(servir('renovar-creditos', async (req) => {
     const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
     const { data: perfil, error: perfilError } = await supabaseAdmin
       .from('profiles')
-      .select('creditos_ia, assinatura_plano, assinatura_status, assinatura_expira_em, proxima_renovacao_credito')
+      .select('creditos_ia, assinatura_plano, assinatura_versao, assinatura_status, assinatura_expira_em, proxima_renovacao_credito')
       .eq('id', userId)
       .single();
     if (perfilError || !perfil) return json({ error: 'Perfil não encontrado.' }, 404);
@@ -69,6 +69,11 @@ Deno.serve(servir('renovar-creditos', async (req) => {
     const plano = perfil.assinatura_plano as string | null;
     if (!plano || !CREDITO_MENSAL_BRL[plano]) {
       return json({ renovado: false, motivo: 'sem_plano', saldoAtual: Number(perfil.creditos_ia) });
+    }
+
+    // A Agenda inteligente não usa IA, e não tem crédito mensal.
+    if (perfil.assinatura_versao === 'agenda') {
+      return json({ renovado: false, motivo: 'versao_agenda', saldoAtual: Number(perfil.creditos_ia) });
     }
 
     // Só quem tem acesso valendo ganha crédito novo. Sem isto, quem parasse

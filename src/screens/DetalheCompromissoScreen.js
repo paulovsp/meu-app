@@ -27,6 +27,7 @@ import {
 import { horarioJaPassou, getEstadoCompromisso, ESTADO_LABEL } from '../services/compromissoStatus';
 import { mensagemDeErro } from '../services/erros';
 import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
+import { getVersaoDaConta, temArquivo, VERSAO_COMPLETA } from '../services/versao';
 import { infoTipoEvento, ehTipoGrupo } from '../services/tiposEvento';
 import {
   nomeExibicaoCompromisso, perguntarPagamentoSessao, perguntarCheckin, perguntarTipoNaoRealizada,
@@ -58,6 +59,10 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
   const [compromisso, setCompromisso] = useState(null);
   const [buscou, setBuscou] = useState(false);
   const [temTranscricao, setTemTranscricao] = useState(false);
+  // Na versão Agenda não existe relato clínico: nem o aviso "sem relato"
+  // nem a pergunta "escrever o registro agora?" fazem sentido.
+  const [versao, setVersao] = useState(VERSAO_COMPLETA);
+  useEffect(() => { getVersaoDaConta().then(setVersao).catch(() => {}); }, []);
   const [agindo, setAgindo] = useState(false);
   // "Remarcar só esta sessão": mexe SÓ neste compromisso, sem tocar no
   // horário recorrente. É a metade que antes vivia escondida dentro do
@@ -136,7 +141,7 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
   const horarioPassou = horarioJaPassou(compromisso.date, compromisso.end_time);
   const estado = getEstadoCompromisso({
     status: compromisso.status,
-    temTranscricao: eventoIndividual ? temTranscricao : true,
+    temTranscricao: eventoIndividual && temArquivo(versao) ? temTranscricao : true,
     horarioPassou,
   });
   const estadoInfo = ESTADO_LABEL[estado];
@@ -252,16 +257,32 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
     }
     await perguntarPagamentoSessao(compromisso);
     setAgindo(false);
-    navigation.replace('NewSession', {
-      patientId: compromisso.patient_id,
-      patientNome: compromisso.patient_nome,
-      platform: compromisso.modality,
-      appointmentId: compromisso.id,
-    });
+    if (!temArquivo(versao)) {
+      await carregar();
+      return;
+    }
+    // O relato é escrito em Novo registro, já ligado a este compromisso e
+    // com a data da sessão preenchida (antes esta tela abria a gravação).
+    Alert.alert(
+      'Sessão realizada',
+      `Quer escrever o registro de ${compromisso.patient_nome} agora?`,
+      [
+        { text: 'Depois', onPress: () => { carregar(); } },
+        {
+          text: 'Escrever registro',
+          onPress: () => navigation.replace('AddRecord', {
+            patientId: compromisso.patient_id,
+            appointmentId: compromisso.id,
+            dataSessao: compromisso.date,
+          }),
+        },
+      ],
+      { cancelable: false },
+    );
   }
 
-  // Grupo/supervisão/outros não têm um único prontuário pra gravar — só
-  // marca como realizado, sem abrir a tela de gravação de sessão.
+  // Grupo/supervisão/outros não têm um único prontuário — só marca como
+  // realizado.
   async function marcarComoRealizado() {
     setAgindo(true);
     try {
@@ -528,7 +549,7 @@ export default function DetalheCompromissoScreen({ route, navigation }) {
       {eventoIndividual && estado === 'realizado_sem_relato' && (
         <View style={styles.avisoBox}>
           <Text style={styles.avisoTxt}>
-Nenhum relato ou transcrição foi adicionado para esta sessão ainda.
+Nenhum registro foi escrito para esta sessão ainda.
 </Text>
         </View>
       )}
@@ -722,7 +743,7 @@ Nenhum relato ou transcrição foi adicionado para esta sessão ainda.
           >
             {agindo
               ? <ActivityIndicator color="#fff" />
-              : <Text style={styles.btnIniciarTxt}>{eventoIndividual ? 'Iniciar Sessão' : 'Marcar como realizado'}</Text>}
+              : <Text style={styles.btnIniciarTxt}>{eventoIndividual ? 'Marcar sessão como realizada' : 'Marcar como realizado'}</Text>}
           </TouchableOpacity>
 
           <TouchableOpacity

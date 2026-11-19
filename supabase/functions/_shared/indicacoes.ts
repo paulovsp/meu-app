@@ -16,18 +16,31 @@
 // nenhuma. Aos dez indicados, a assinatura é cancelada no Mercado Pago e a
 // conta passa para `gratuita_indicacao` — um estado sem data, que vale
 // enquanto a condição valer.
-import { MP_API, type Cliente, type Plano } from './assinaturaMercadoPago.ts';
+import { MP_API, type Cliente, type Plano, type Versao } from './assinaturaMercadoPago.ts';
 
-/** Preço cheio de cada plano, e de quanto em quanto tempo ele é cobrado. */
-export const PRECO_BASE: Record<Plano, { precoBRL: number; mesesPorCobranca: number }> = {
-  mensal: { precoBRL: 89, mesesPorCobranca: 1 },
-  semestral: { precoBRL: 414, mesesPorCobranca: 6 },
-  anual: { precoBRL: 588, mesesPorCobranca: 12 },
+/** Preço cheio de cada plano em cada versão, e de quanto em quanto tempo
+ *  ele é cobrado. Agenda inteligente: 49 / 234 (39/mês) / 348 (29/mês).
+ *  Agenda + Arquivo inteligente: 89 / 414 / 588. */
+export const PRECO_BASE: Record<Versao, Record<Plano, { precoBRL: number; mesesPorCobranca: number }>> = {
+  agenda: {
+    mensal: { precoBRL: 49, mesesPorCobranca: 1 },
+    semestral: { precoBRL: 234, mesesPorCobranca: 6 },
+    anual: { precoBRL: 348, mesesPorCobranca: 12 },
+  },
+  completa: {
+    mensal: { precoBRL: 89, mesesPorCobranca: 1 },
+    semestral: { precoBRL: 414, mesesPorCobranca: 6 },
+    anual: { precoBRL: 588, mesesPorCobranca: 12 },
+  },
 };
 
+export function normalizarVersao(v: unknown): Versao {
+  return v === 'agenda' ? 'agenda' : 'completa';
+}
+
 /** Quanto a pessoa paga com `desconto`% de abatimento, em reais. */
-export function precoComDesconto(plano: Plano, desconto: number): number {
-  const base = PRECO_BASE[plano].precoBRL;
+export function precoComDesconto(plano: Plano, desconto: number, versao: Versao = 'completa'): number {
+  const base = PRECO_BASE[versao][plano].precoBRL;
   const bruto = base * (1 - Math.min(Math.max(desconto, 0), 100) / 100);
   return Math.round(bruto * 100) / 100;
 }
@@ -70,7 +83,7 @@ export async function aplicarDescontoDeIndicacoes(
 ): Promise<ResultadoDesconto> {
   const { data: perfil } = await admin
     .from('profiles')
-    .select('assinatura_status, assinatura_plano, assinatura_expira_em, mp_preapproval_id, indicacao_desconto_percentual')
+    .select('assinatura_status, assinatura_plano, assinatura_versao, assinatura_expira_em, mp_preapproval_id, indicacao_desconto_percentual')
     .eq('id', userId)
     .maybeSingle();
   if (!perfil) return { desconto: 0, mudou: false, acao: 'nada', detalhe: 'conta não encontrada' };
@@ -80,6 +93,7 @@ export async function aplicarDescontoDeIndicacoes(
   const atual = Number(perfil.indicacao_desconto_percentual) || 0;
   const status = String(perfil.assinatura_status || '');
   const plano = perfil.assinatura_plano as Plano | null;
+  const versao = normalizarVersao(perfil.assinatura_versao);
 
   // ── Já estava de graça e continua tendo direito ──────────────────────
   if (status === 'gratuita_indicacao' && alvo >= 100) {
@@ -120,7 +134,7 @@ export async function aplicarDescontoDeIndicacoes(
     if (!opcoes.conferirValorNoMercadoPago) {
       return { desconto: atual, mudou: false, acao: 'nada' };
     }
-    const esperado = precoComDesconto(plano, alvo);
+    const esperado = precoComDesconto(plano, alvo, versao);
     const leitura = await fetch(`${MP_API}/preapproval/${perfil.mp_preapproval_id}`, {
       headers: { Authorization: `Bearer ${mpAccessToken}` },
     });
@@ -163,13 +177,13 @@ export async function aplicarDescontoDeIndicacoes(
   }
 
   // ── Ajuste normal: muda o valor cobrado ──────────────────────────────
-  const novoValor = precoComDesconto(plano, alvo);
+  const novoValor = precoComDesconto(plano, alvo, versao);
   const resp = await fetch(`${MP_API}/preapproval/${perfil.mp_preapproval_id}`, {
     method: 'PUT',
     headers: { Authorization: `Bearer ${mpAccessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       auto_recurring: {
-        frequency: PRECO_BASE[plano].mesesPorCobranca,
+        frequency: PRECO_BASE[versao][plano].mesesPorCobranca,
         frequency_type: 'months',
         transaction_amount: novoValor,
         currency_id: 'BRL',

@@ -433,15 +433,13 @@ export default function FormularioAnalisanteScreen() {
       return;
     }
     // CPF é opcional na ficha — mas se foi preenchido, tem que ser um CPF.
-    // É ele que a autorização de gravação confere contra o documento que o
-    // analisante envia, e é ele que impede alguém de se cadastrar como o
-    // próprio analisante (migration 0076). Um dígito trocado quebra as
-    // duas coisas, e só apareceria lá na frente, sem explicação.
+    // Ele vai no recibo e na nota, e é ele que impede alguém de se
+    // cadastrar como o próprio analisante (migration 0076). Um dígito
+    // trocado só apareceria lá na frente, sem explicação.
     if (cpf.trim() && !validarCPF(cpf)) {
       Alert.alert(
         'CPF inválido',
-        'Confira o CPF digitado. Ele é usado na autorização de gravação, '
-        + 'onde é comparado com o documento que o analisante envia.'
+        'Confira o CPF digitado. Ele vai no recibo e na nota fiscal do analisante.'
       );
       return;
     }

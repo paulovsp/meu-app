@@ -1,12 +1,11 @@
 // Cobre a reescrita dos relatórios (conversa de 21/08/2026): o bug real era
 // "Resumo das últimas sessões" olhar só a tabela `sessions` — um analisante
-// com só registros manuais (Novo Registro), sem nenhuma sessão gravada,
-// nunca conseguia gerar esse relatório mesmo tendo material de sobra.
-// Também cobre que frequência/pagamento agora são gerados localmente, sem
-// nenhuma chamada à Edge Function `ia-busca` (sem custo, sem depender de
-// crédito/assinatura).
+// com só registros manuais (Novo Registro) nunca conseguia gerar esse
+// relatório. Desde a remodelagem Agenda/Arquivo os relatórios leem só
+// `records` (as transcrições antigas viraram registros, migration 0111).
+// Também cobre que frequência/pagamento são gerados localmente, sem
+// nenhuma chamada à Edge Function `ia-busca`.
 jest.mock('../database', () => ({
-  getSessions: jest.fn(),
   getRecords: jest.fn(),
   getAppointmentsByPatient: jest.fn(),
   getPagamentosPorPaciente: jest.fn(),
@@ -17,7 +16,7 @@ jest.mock('../supabase', () => ({
 }));
 
 const {
-  getSessions, getRecords, getAppointmentsByPatient, getPagamentosPorPaciente,
+  getRecords, getAppointmentsByPatient, getPagamentosPorPaciente,
   getHistoricoParalizacoes,
 } = require('../database');
 const { supabase } = require('../supabase');
@@ -44,7 +43,6 @@ beforeEach(() => {
 
 describe('resumo das últimas sessões — bug de analisante só com registros', () => {
   it('não lança erro e gera o relatório quando não há sessões, só registros', async () => {
-    getSessions.mockResolvedValue([]);
     getRecords.mockResolvedValue([
       { date: '2026-08-01', type: 'registro', title: 'Anotação', content: '<p>Conteúdo relevante.</p>' },
     ]);
@@ -63,13 +61,12 @@ describe('resumo das últimas sessões — bug de analisante só com registros',
     expect(mensagemUsuario.content).toContain('Conteúdo relevante');
   });
 
-  it('ainda lança erro quando não há sessões NEM registros', async () => {
-    getSessions.mockResolvedValue([]);
+  it('ainda lança erro quando não há registros', async () => {
     getRecords.mockResolvedValue([]);
 
     await expect(
       estimarCustoRelatorio(paciente, 'ultimas_sessoes', { quantidade: 3 })
-    ).rejects.toThrow(/ainda não tem sessões ou registros/);
+    ).rejects.toThrow(/ainda não tem registros/);
   });
 });
 
@@ -146,8 +143,7 @@ describe('relatórios locais (frequência e pagamento) — sem chamada à IA', (
 describe('resumo geral do caso — combina sessões e registros sem truncar conteúdo', () => {
   it('inclui o texto completo, sem cortar em 800/400 caracteres como antes', async () => {
     const transcricaoLonga = 'A'.repeat(2000);
-    getSessions.mockResolvedValue([{ date: '2026-01-01', type: 'presencial', transcript: transcricaoLonga }]);
-    getRecords.mockResolvedValue([]);
+    getRecords.mockResolvedValue([{ date: '2026-01-01', type: 'transcricao', content: transcricaoLonga }]);
     getHistoricoParalizacoes.mockResolvedValue([]);
     mockInsertRelatorios();
     supabase.functions.invoke.mockResolvedValue({ data: { resposta: 'ok', custo: 0 }, error: null });
@@ -160,7 +156,6 @@ describe('resumo geral do caso — combina sessões e registros sem truncar cont
   });
 
   it('usa data_inicio/data_fim (colunas reais de patient_paralizacoes) — não data_paralizacao/data_retorno', async () => {
-    getSessions.mockResolvedValue([]);
     getRecords.mockResolvedValue([{ date: '2026-01-01', type: 'estudo', content: 'x' }]);
     getHistoricoParalizacoes.mockResolvedValue([
       { data_inicio: '2025-03-01', data_fim: '2025-06-15' },

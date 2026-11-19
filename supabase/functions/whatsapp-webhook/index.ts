@@ -10,8 +10,7 @@
 //         configurar a subscription: confere hub.verify_token contra o
 //         segredo compartilhado e ecoa hub.challenge de volta).
 // POST -> mensagens recebidas. Processa foto E documento: baixa a mídia da
-//         Graph API, roda OCR (mesmo serviço já usado na autorização de
-//         gravação), tenta casar o número do remetente com
+//         Graph API, roda OCR, tenta casar o número do remetente com
 //         `patients.telefone` do profissional dono daquele phone_number_id,
 //         e — só se parecer um comprovante (palavra-chave ou valor
 //         detectado) — grava em `whatsapp_comprovantes` como 'pendente'.
@@ -22,7 +21,7 @@
 //         profissional sem nunca aparecer no app.
 //
 // O arquivo em si NUNCA é salvo — só passa em memória durante esta
-// requisição, igual à autorização de gravação. Nunca marca pagamento como
+// requisição. Nunca marca pagamento como
 // recebido sozinha: isso é sempre uma confirmação manual da profissional,
 // no app.
 //

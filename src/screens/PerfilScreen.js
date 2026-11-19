@@ -29,6 +29,7 @@ import {
 import { ehSessaoDeDemonstracao } from '../services/demonstracao';
 import { mensagemDeErro } from '../services/erros';
 import { getStatusAssinatura, reenviarInstrucoesDePlano, cancelarAssinatura } from '../services/assinatura';
+import { temArquivo } from '../services/versao';
 import Constants from 'expo-constants';
 import { enviarFotoPerfil, enviarFotoCapa } from '../services/avatar';
 import { exportarDadosUsuario } from '../services/exportacaoDados';
@@ -179,6 +180,9 @@ function CartaoDoPlano({ assinatura, reenviando, onPedirInstrucoes, cancelando, 
   return (
     <View style={[st.planoBox, { backgroundColor: info.cor.fundo, borderColor: info.cor.borda }]}>
       <Text style={[st.planoTitulo, { color: info.cor.tinta }]}>{info.titulo}</Text>
+      {assinatura.versaoLabel && situacao !== 'nenhuma' ? (
+        <Text style={st.planoTexto}>Versão: {assinatura.versaoLabel}</Text>
+      ) : null}
       <Text style={st.planoTexto}>{info.texto}</Text>
 
       {precisaDoLink && (
@@ -948,10 +952,13 @@ export default function PerfilScreen({ navigation }) {
             </Text>
             <Text style={st.statLabel}>Supervisionandos ativos</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={st.statCard} onPress={() => navigation.navigate('SessoesStatus')}>
-            <Text style={st.statNumber}>{estatisticas.sessoesSemRelato}</Text>
-            <Text style={st.statLabel}>Sessões sem relatos</Text>
-          </TouchableOpacity>
+          {/* Na versão Agenda não há relato clínico pra contar. */}
+          {temArquivo(user?.assinatura_versao) ? (
+            <TouchableOpacity style={st.statCard} onPress={() => navigation.navigate('SessoesStatus')}>
+              <Text style={st.statNumber}>{estatisticas.sessoesSemRelato}</Text>
+              <Text style={st.statLabel}>Sessões sem relatos</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
         <View style={st.statsRow}>
           <TouchableOpacity
@@ -1276,6 +1283,9 @@ export default function PerfilScreen({ navigation }) {
               </>
             )}
 
+            {/* Créditos de IA só existem na versão completa: a IA do app
+                (relatórios, Busca Dr.Sig) trabalha sobre os registros. */}
+            {temArquivo(user.assinatura_versao) && (<>
             <Text style={st.sectionTitle}>Créditos de IA</Text>
             <View style={st.infoRow}>
               <Text style={st.infoLabel}>Saldo disponível</Text>
@@ -1285,7 +1295,7 @@ export default function PerfilScreen({ navigation }) {
             </View>
             {Number(user.creditos_ia) <= 0 && (
               <Text style={st.creditosAviso}>
-                Sem créditos — transcrição, análise e o assistente clínico ficam bloqueados até recarregar.
+                Sem créditos — os relatórios por IA e a Busca Dr.Sig ficam bloqueados até recarregar.
               </Text>
             )}
 
@@ -1339,6 +1349,7 @@ export default function PerfilScreen({ navigation }) {
                 )}
               </TouchableOpacity>
             </View>
+            </>)}
 
             <Text style={st.sectionTitle}>Contador</Text>
             <View style={st.infoRow}>
@@ -1361,26 +1372,14 @@ export default function PerfilScreen({ navigation }) {
 
             <Text style={st.sectionTitle}>Apps conectados</Text>
             <Text style={st.bioSub}>
-              WhatsApp Business, Google Meet e Zoom — as ligações que algumas
-              ferramentas do app usam. Todas opcionais.
+              WhatsApp Business, para receber no app os comprovantes de
+              pagamento enviados pelos analisantes. Opcional.
             </Text>
             <TouchableOpacity
               style={st.trocarSenhaBtn}
               onPress={() => navigation.navigate('AppsConectados')}
             >
               <Text style={st.trocarSenhaBtnText}>Gerenciar apps conectados</Text>
-            </TouchableOpacity>
-
-            <Text style={st.sectionTitle}>Proteção da gravação</Text>
-            <Text style={st.bioSub}>
-              O que o Android precisa liberar pra gravação de uma sessão não
-              ser interrompida quando você sai do app.
-            </Text>
-            <TouchableOpacity
-              style={st.trocarSenhaBtn}
-              onPress={() => navigation.navigate('ProtecaoGravacao')}
-            >
-              <Text style={st.trocarSenhaBtnText}>Conferir proteção</Text>
             </TouchableOpacity>
 
             <Text style={st.sectionTitle}>Segurança</Text>
@@ -1452,9 +1451,7 @@ export default function PerfilScreen({ navigation }) {
                 </Text>
                 <Text style={st.notifAvisoTexto}>
                   {notifSistema.canaisSilenciados.map((c) => c.nome).join(', ')}
-                  {' — silenciado(s) nas configurações do Android. O aviso de '}
-                  gravação é o que mantém a captação viva com o app em
-                  segundo plano.
+                  {' — silenciado(s) nas configurações do Android.'}
                 </Text>
                 {notifSistema.canaisSilenciados.map((c) => (
                   <TouchableOpacity
@@ -1616,13 +1613,6 @@ export default function PerfilScreen({ navigation }) {
 // 'sempre' = canal obrigatório, sem interruptor. null = não se aplica.
 const LINHAS_NOTIF = [
   {
-    titulo: 'Transcrição pronta',
-    sub: 'Quando a transcrição de uma sessão terminar (ou falhar).',
-    app: 'notif_transcricao_app',
-    push: 'notif_transcricao_push',
-    email: 'notif_transcricao_email',
-  },
-  {
     titulo: 'Recebimento em atraso',
     sub: 'Quando um pagamento mensal passar do vencimento.',
     app: 'notif_atraso_app',
@@ -1655,7 +1645,6 @@ const LINHAS_NOTIF = [
 
 // Ligado por padrão, salvo os que incomodam sem ser pedidos.
 const DESLIGADO_POR_PADRAO = [
-  'notif_transcricao_email',
   'notif_atraso_push',
   'notif_sessao_push',
   'notif_sessao_email',

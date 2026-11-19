@@ -26,15 +26,15 @@ export default function AvisoPrivacidadeScreen({ onAceitar }) {
         <View style={s.item}>
           <Text style={s.itemTitulo}>Uso de IA</Text>
           <Text style={s.itemTexto}>
-            Transcrição e análise usam serviços de IA de terceiros. No envio de texto, o nome do
+            Os relatórios por IA e a Busca Dr.Sig usam serviços de IA de terceiros. O nome do
             analisante é substituído por um identificador antes de qualquer envio.
           </Text>
         </View>
 
         <View style={s.item}>
-          <Text style={s.itemTitulo}>Gravação de sessão</Text>
+          <Text style={s.itemTitulo}>Sem gravação</Text>
           <Text style={s.itemTexto}>
-            Só acontece com autorização prévia do próprio analisante, pedida por e-mail.
+            O Dr.Sig não grava áudio nem usa o microfone. Os registros de sessão são escritos por você.
           </Text>
         </View>
 

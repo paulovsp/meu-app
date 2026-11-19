@@ -1,6 +1,7 @@
 // Edge Function: mercadopago-criar-checkout-assinatura
 //
-// Gera a assinatura dos três planos. Os três são ASSINATURA de verdade
+// Gera a assinatura dos três planos, em qualquer das duas versões
+// (Agenda inteligente ou Agenda + Arquivo inteligente). Os três são ASSINATURA de verdade
 // (`preapproval` do Mercado Pago): renovam sozinhos até a pessoa cancelar,
 // só mudando de quanto em quanto tempo a cobrança acontece — 1, 6 ou 12
 // meses. Verificado contra a API: `auto_recurring.frequency` aceita 6 e 12
@@ -33,14 +34,17 @@
 // Mercado Pago (SDK v2), e o que chega nesta função é só um token de uso
 // único.
 //
-// `external_reference` = `assinatura:<plano>:<userId>` é o que liga o
-// pagamento à conta — nunca o e-mail do pagador.
+// `external_reference` = `assinatura:<plano>:<versao>:<userId>` é o que
+// liga o pagamento à conta — nunca o e-mail do pagador. A versão vai junto
+// para o webhook saber o que liberar.
 //
 // Chamada por docs/escolher-plano.html (fora do app, sem Authorization
 // automático do supabase-js — o token vai manual no header).
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { sincronizarPreapproval } from '../_shared/assinaturaMercadoPago.ts';
-import { aplicarDescontoDeIndicacoes, precoComDesconto } from '../_shared/indicacoes.ts';
+import {
+  PLANOS_VALIDOS, referenciaAssinatura, sincronizarPreapproval, VERSOES_VALIDAS, type Plano, type Versao,
+} from '../_shared/assinaturaMercadoPago.ts';
+import { aplicarDescontoDeIndicacoes, PRECO_BASE, precoComDesconto } from '../_shared/indicacoes.ts';
 import { mensagemDeRecusa } from '../_shared/recusaMercadoPago.ts';
 import { servir } from '../_shared/registrarEvento.ts';
 
@@ -55,15 +59,12 @@ const MP_PUBLIC_KEY = Deno.env.get('MERCADOPAGO_PUBLIC_KEY') || '';
 const MP_API = 'https://api.mercadopago.com';
 const CONFIRMACAO_URL = 'https://app.drsig.com.br/assinatura-confirmada.html';
 
-type Plano = 'mensal' | 'semestral' | 'anual';
-
-// Preço e ritmo de cada plano, num lugar só. `mesesPorCobranca` é o que vai
-// pro `auto_recurring.frequency`; `precoBRL` é o valor de CADA cobrança —
-// não o mensal equivalente (esse é só pra exibir, e vive no webhook).
-const PLANOS: Record<Plano, { precoBRL: number; mesesPorCobranca: number; nome: string }> = {
-  mensal: { precoBRL: 89, mesesPorCobranca: 1, nome: 'Mensal' },
-  semestral: { precoBRL: 414, mesesPorCobranca: 6, nome: 'Semestral' },
-  anual: { precoBRL: 588, mesesPorCobranca: 12, nome: 'Anual' },
+// Preço e ritmo de cada plano vivem em PRECO_BASE (_shared/indicacoes.ts),
+// por versão. Aqui ficam só os nomes que aparecem para a pessoa.
+const NOME_PLANO: Record<Plano, string> = { mensal: 'Mensal', semestral: 'Semestral', anual: 'Anual' };
+const NOME_VERSAO: Record<Versao, string> = {
+  agenda: 'Agenda inteligente',
+  completa: 'Agenda + Arquivo inteligente',
 };
 
 // Esta função é chamada de uma PÁGINA (docs/escolher-plano.html), não do
@@ -118,7 +119,7 @@ Deno.serve(servir('mercadopago-criar-checkout-assinatura', async (req) => {
     // cobrando o cartão todo mês, sem botão para cancelar.
     const { data: perfil } = await admin
       .from('profiles')
-      .select('assinatura_status, assinatura_plano, assinatura_expira_em, mp_preapproval_id, conta_demonstracao')
+      .select('assinatura_status, assinatura_plano, assinatura_versao, assinatura_expira_em, mp_preapproval_id, conta_demonstracao')
       .eq('id', userId)
       .maybeSingle();
     const renovaSozinha = perfil?.assinatura_status === 'ativa' && !!perfil?.mp_preapproval_id;
@@ -133,6 +134,7 @@ Deno.serve(servir('mercadopago-criar-checkout-assinatura', async (req) => {
         situacao: {
           status: perfil?.assinatura_status || 'sem_assinatura',
           plano: perfil?.assinatura_plano || null,
+          versao: perfil?.assinatura_versao || 'completa',
           expiraEm: perfil?.assinatura_expira_em || null,
           renovaSozinha,
           gratuitaPorIndicacoes,
@@ -141,14 +143,20 @@ Deno.serve(servir('mercadopago-criar-checkout-assinatura', async (req) => {
     }
 
     const plano = String(body?.plano || '') as Plano;
-    const config = PLANOS[plano];
+    // Sem versão no pedido (página antiga em cache), vale a completa —
+    // que era o único produto antes.
+    const versao = String(body?.versao || 'completa') as Versao;
+    const config = VERSOES_VALIDAS.includes(versao) && PLANOS_VALIDOS.includes(plano)
+      ? PRECO_BASE[versao][plano]
+      : undefined;
     if (!config) return json({ error: 'Plano inválido.' }, 400);
+    const nomeDoPlano = `${NOME_VERSAO[versao]} · ${NOME_PLANO[plano]}`;
 
     if (perfil?.conta_demonstracao) {
       return json({ error: 'A conta de demonstração não assina planos. Crie a sua conta no app.' }, 403);
     }
     if (renovaSozinha) {
-      const atual = PLANOS[perfil!.assinatura_plano as Plano]?.nome || perfil!.assinatura_plano;
+      const atual = NOME_PLANO[perfil!.assinatura_plano as Plano] || perfil!.assinatura_plano;
       return json({
         error: `Esta conta já tem o plano ${atual} ativo, renovando sozinho. Para trocar de plano, cancele o atual no app (Meu Perfil › Seu plano) e assine de novo — o acesso continua até o fim do período já pago.`,
         jaAssina: true,
@@ -169,7 +177,7 @@ Deno.serve(servir('mercadopago-criar-checkout-assinatura', async (req) => {
     const payerEmail = userData.user.email;
     if (!payerEmail) return json({ error: 'Conta sem e-mail associado.' }, 400);
 
-    const externalReference = `assinatura:${plano}:${userId}`;
+    const externalReference = referenciaAssinatura(plano, versao, userId);
 
     // O desconto por indicacoes entra JA na primeira cobranca. Sem isto,
     // quem indicou dez pessoas antes de assinar pagaria o preco cheio no
@@ -186,7 +194,7 @@ Deno.serve(servir('mercadopago-criar-checkout-assinatura', async (req) => {
     const autoRecurring = {
       frequency: config.mesesPorCobranca,
       frequency_type: 'months',
-      transaction_amount: precoComDesconto(plano, desconto),
+      transaction_amount: precoComDesconto(plano, desconto, versao),
       currency_id: 'BRL',
     };
 
@@ -201,7 +209,7 @@ Deno.serve(servir('mercadopago-criar-checkout-assinatura', async (req) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          reason: `Dr.Sig — Plano ${config.nome}`,
+          reason: `Dr.Sig — ${nomeDoPlano}`,
           auto_recurring: autoRecurring,
           payer_email: payerEmail,
           card_token_id: cardTokenId,
@@ -259,7 +267,7 @@ Deno.serve(servir('mercadopago-criar-checkout-assinatura', async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        reason: `Dr.Sig — Plano ${config.nome}`,
+        reason: `Dr.Sig — ${nomeDoPlano}`,
         auto_recurring: autoRecurring,
         payer_email: payerEmail,
         external_reference: externalReference,

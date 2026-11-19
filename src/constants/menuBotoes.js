@@ -6,11 +6,17 @@
 // mount-guard (useBloqueioAssinatura) como rede de segurança, mas checar
 // aqui evita a "piscada" de abrir a tela pra só então mostrar o aviso e
 // voltar.
+// exigeArquivo: só existe na versão "Agenda + Arquivo inteligente". Na
+// versão Agenda o botão aparece com cadeado e explica como mudar de versão
+// (ver src/services/versao.js) — some não, pra pessoa saber que existe.
+//
+// A ordem é a da grade 2×2: Novo registro e Arquivo em cima, Relatórios e
+// Busca Dr.Sig embaixo. A Busca saiu da aba Início e veio pra cá.
 export const CLINICA_BUTTONS = [
-  { id: 'session',  icon: 'mic-outline',      label: 'Nova Sessão',   screen: 'NewSession', corBadge: '#8F5456', bloqueiaSemAssinatura: true },
-  { id: 'record',   icon: 'clipboard-outline', label: 'Novo Registro', screen: 'AddRecord',  corBadge: '#447362', bloqueiaSemAssinatura: true },
-  { id: 'patients', icon: 'people-outline',    label: 'Analisantes', screen: 'Patients', corBadge: '#825F4D' },
-  { id: 'relatorios', icon: 'document-text-outline', label: 'Relatórios', screen: 'Relatorios', corBadge: '#776746' },
+  { id: 'record',     icon: 'create-outline',        label: 'Novo registro', screen: 'AddRecord',  corBadge: '#447362', bloqueiaSemAssinatura: true, exigeArquivo: true },
+  { id: 'patients',   icon: 'folder-open-outline',   label: 'Arquivo',       screen: 'Patients',   corBadge: '#825F4D' },
+  { id: 'relatorios', icon: 'document-text-outline', label: 'Relatórios',    screen: 'Relatorios', corBadge: '#776746' },
+  { id: 'busca',      icon: 'sparkles-outline',      label: 'Busca Dr.Sig',  screen: 'Busca',      corBadge: '#675A9A', exigeArquivo: true },
 ];
 
 // A aba deixou de se chamar "Administrativo" e virou "Financeiro" — e os

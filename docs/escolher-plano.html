@@ -82,30 +82,64 @@
     }
   }
 
-  // O selo diz o desconto, que é conferível na própria tabela: R$ 69 e
-  // R$ 49 por mês contra os R$ 89 do mensal. Já disse "Mais escolhido" no
-  // semestral, o que era invenção — não havia escolha nenhuma pra contar,
-  // e prova social falsa é a primeira coisa que alguém desconfia numa
-  // página de pagamento.
-  const PLANOS = [
-    {
-      id: 'mensal', nome: 'Mensal', preco: 'R$ 89', periodo: '/mês',
-      detalhe: 'Cobrado todo mês.',
-      ciclo: 'Cobrança a cada mês, até você cancelar.',
+  // Duas versões, três ciclos cada. O selo diz o desconto, que é
+  // conferível na própria tabela (o preço por mês contra o do mensal). Já
+  // disse "Mais escolhido" no semestral, o que era invenção — prova social
+  // falsa é a primeira coisa que alguém desconfia numa página de pagamento.
+  const VERSOES = {
+    completa: {
+      nome: 'Agenda + Arquivo inteligente',
+      faixa: 'R$ 49 a 89',
+      resumo: 'Agenda, fichas, financeiro, registros clínicos, Busca Dr.Sig e relatórios com IA.',
+      planos: [
+        {
+          id: 'mensal', nome: 'Mensal', preco: 'R$ 89', periodo: '/mês',
+          detalhe: 'Cobrado todo mês.',
+          ciclo: 'Cobrança a cada mês, até você cancelar.',
+        },
+        {
+          id: 'semestral', nome: 'Semestral', preco: 'R$ 414', periodo: '/6 meses',
+          detalhe: 'R$ 69 por mês — R$ 120 a menos que pagar mês a mês.',
+          ciclo: 'Cobrança a cada 6 meses, até você cancelar.',
+          selo: '22% mais barato',
+        },
+        {
+          id: 'anual', nome: 'Anual', preco: 'R$ 588', periodo: '/ano',
+          detalhe: 'R$ 49 por mês — R$ 480 a menos que pagar mês a mês.',
+          ciclo: 'Cobrança uma vez por ano, até você cancelar.',
+          selo: '45% mais barato',
+        },
+      ],
     },
-    {
-      id: 'semestral', nome: 'Semestral', preco: 'R$ 414', periodo: '/6 meses',
-      detalhe: 'R$ 69 por mês — R$ 120 a menos que pagar mês a mês.',
-      ciclo: 'Cobrança a cada 6 meses, até você cancelar.',
-      selo: '22% mais barato',
+    agenda: {
+      nome: 'Agenda inteligente',
+      faixa: 'R$ 29 a 49',
+      resumo: 'Agenda, fichas com os dados administrativos, financeiro e relatórios de frequência e pagamento. Sem registros clínicos.',
+      planos: [
+        {
+          id: 'mensal', nome: 'Mensal', preco: 'R$ 49', periodo: '/mês',
+          detalhe: 'Cobrado todo mês.',
+          ciclo: 'Cobrança a cada mês, até você cancelar.',
+        },
+        {
+          id: 'semestral', nome: 'Semestral', preco: 'R$ 234', periodo: '/6 meses',
+          detalhe: 'R$ 39 por mês — R$ 60 a menos que pagar mês a mês.',
+          ciclo: 'Cobrança a cada 6 meses, até você cancelar.',
+          selo: '20% mais barato',
+        },
+        {
+          id: 'anual', nome: 'Anual', preco: 'R$ 348', periodo: '/ano',
+          detalhe: 'R$ 29 por mês — R$ 240 a menos que pagar mês a mês.',
+          ciclo: 'Cobrança uma vez por ano, até você cancelar.',
+          selo: '40% mais barato',
+        },
+      ],
     },
-    {
-      id: 'anual', nome: 'Anual', preco: 'R$ 588', periodo: '/ano',
-      detalhe: 'R$ 49 por mês — R$ 480 a menos que pagar mês a mês.',
-      ciclo: 'Cobrança uma vez por ano, até você cancelar.',
-      selo: '45% mais barato',
-    },
-  ];
+  };
+
+  // O link pode chegar com ?versao=agenda (do site, por exemplo) para já
+  // abrir na versão certa. Sem nada, abre na completa.
+  let versaoEscolhida = params.get('versao') === 'agenda' ? 'agenda' : 'completa';
 
   let planoEscolhido = null;
   let chavePublica = null;   // null = ainda não perguntamos; '' = não configurada
@@ -189,7 +223,7 @@
   }
 
   function planoPorId(id) {
-    return PLANOS.filter(function (p) { return p.id === id; })[0];
+    return VERSOES[versaoEscolhida].planos.filter(function (p) { return p.id === id; })[0];
   }
 
   function render(html) {
@@ -270,7 +304,22 @@
   }
 
   function renderPlanos() {
-    const cartoes = PLANOS.map(function (p) {
+    const versao = VERSOES[versaoEscolhida];
+    const seletor = ['completa', 'agenda'].map(function (id) {
+      const v = VERSOES[id];
+      return (
+        '<button type="button" class="plano" role="radio" aria-checked="' + (id === versaoEscolhida) +
+        '" data-versao="' + id + '">' +
+        '<span class="radio" aria-hidden="true"><span></span></span>' +
+        '<span class="plano-conteudo">' +
+        '<span class="plano-nome">' + v.nome + '</span>' +
+        '<span class="plano-detalhe">' + v.resumo + '</span>' +
+        '</span>' +
+        '<span class="plano-preco">' + v.faixa + '<small>por mês</small></span>' +
+        '</button>'
+      );
+    }).join('');
+    const cartoes = versao.planos.map(function (p) {
       return (
         '<button type="button" class="plano" role="radio" aria-checked="false" data-plano="' + p.id + '">' +
         '<span class="radio" aria-hidden="true"><span></span></span>' +
@@ -286,14 +335,16 @@
 
     render(
       '<h1>Escolha seu plano</h1>' +
-      '<p class="lede">Os três são assinatura: renovam sozinhos até você cancelar. ' +
-      'Muda só de quanto em quanto tempo a cobrança acontece — e quanto mais longo o ciclo, ' +
-      'menor o preço por mês.</p>' +
       '<div class="erro" id="erro" style="display:none"></div>' +
+      '<p class="lede"><strong>1. A versão</strong></p>' +
+      '<div class="planos" role="radiogroup" aria-label="Versões do Dr.Sig">' + seletor + '</div>' +
+      '<p class="lede" style="margin-top:24px"><strong>2. De quanto em quanto tempo pagar</strong><br>' +
+      'Os três são assinatura: renovam sozinhos até você cancelar. Quanto mais longo o ciclo, ' +
+      'menor o preço por mês.</p>' +
       '<div class="planos" role="radiogroup" aria-label="Planos disponíveis">' + cartoes + '</div>' +
       '<button class="btn-grande" id="btn-continuar" disabled>Selecione um plano acima</button>' +
       '<div class="depois"><p>Se preferir decidir depois, é só fechar esta página. Você entra no ' +
-      'app normalmente e vê tudo que já registrou — só criar sessões, registros e cadastros fica ' +
+      'app normalmente e vê tudo que já registrou — só criar registros e cadastros fica ' +
       'bloqueado até escolher um plano. O link para voltar aqui fica em ' +
       '<strong>Meu Perfil &rsaquo; Seu plano</strong>.</p></div>' +
       '<p class="nota">Pagamento em cartão de crédito, processado pelo Mercado Pago. Assinatura ' +
@@ -304,6 +355,15 @@
 
     const botao = document.getElementById('btn-continuar');
 
+    document.querySelectorAll('[data-versao]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        const nova = el.getAttribute('data-versao');
+        if (nova === versaoEscolhida) return;
+        versaoEscolhida = nova;
+        renderPlanos();
+      });
+    });
+
     document.querySelectorAll('[data-plano]').forEach(function (el) {
       el.addEventListener('click', function () {
         planoEscolhido = el.getAttribute('data-plano');
@@ -312,7 +372,7 @@
         });
         const p = planoPorId(planoEscolhido);
         botao.disabled = false;
-        botao.textContent = 'Assinar o plano ' + p.nome + ' — ' + p.preco + p.periodo;
+        botao.textContent = 'Assinar ' + VERSOES[versaoEscolhida].nome + ' · ' + p.nome + ' — ' + p.preco + p.periodo;
       });
     });
 
@@ -344,7 +404,7 @@
         // checkout do Mercado Pago. Não é o preferido — se a pessoa tiver o
         // app do Mercado Pago, o Android o abre e some a opção de pagar sem
         // conta — mas é melhor do que não ter como assinar.
-        const r = await chamarFuncao({ plano: planoEscolhido });
+        const r = await chamarFuncao({ plano: planoEscolhido, versao: versaoEscolhida });
         if (!r.initPoint) throw new Error('Não foi possível abrir o pagamento.');
         window.location.href = r.initPoint;
       }
@@ -365,7 +425,7 @@
     render(
       '<h1>Dados do cartão</h1>' +
       '<div class="resumo">' +
-      '<span class="resumo-plano">Plano ' + p.nome +
+      '<span class="resumo-plano">' + VERSOES[versaoEscolhida].nome + ' · ' + p.nome +
       '<span class="resumo-ciclo">' + p.ciclo + '</span></span>' +
       '<span class="resumo-preco">' + p.preco + p.periodo + '</span>' +
       '</div>' +
@@ -517,7 +577,7 @@
       });
       if (!token || !token.id) throw new Error('Confira os dados do cartão e tente de novo.');
 
-      const r = await chamarFuncao({ plano: plano.id, cardTokenId: token.id });
+      const r = await chamarFuncao({ plano: plano.id, versao: versaoEscolhida, cardTokenId: token.id });
       renderSucesso(plano, r.status);
     } catch (err) {
       mostrarErro(mensagemDoErroDeCartao(err));

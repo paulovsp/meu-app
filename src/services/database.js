@@ -112,13 +112,14 @@ export async function contarDadosDoPaciente(patientId) {
     .select('id', { count: 'exact', head: true })
     .eq('patient_id', patientId);
 
-  const [sessoes, registros, compromissos, relatorios, pagamentos] = await Promise.all([
-    conta('sessions'), conta('records'), conta('appointments'),
+  // `sessions` fica fora: as transcrições antigas viraram registros
+  // (migration 0111) e contá-las de novo dobraria o número.
+  const [registros, compromissos, relatorios, pagamentos] = await Promise.all([
+    conta('records'), conta('appointments'),
     conta('relatorios'), conta('pagamentos'),
   ]);
 
   return {
-    sessoes: sessoes.count ?? 0,
     registros: registros.count ?? 0,
     compromissos: compromissos.count ?? 0,
     relatorios: relatorios.count ?? 0,
@@ -135,7 +136,12 @@ export async function deletarPaciente(id) {
   if (error) throw error;
 }
 
-// ── SESSÕES ────────────────────────────────────────────
+// ── SESSÕES (só leitura) ───────────────────────────────
+// A gravação e a transcrição de sessões saíram do app na remodelagem
+// Agenda/Arquivo (código guardado no ramo arquivo/gravacao-transcricao-
+// 2026-11-19). As transcrições antigas viraram registros (migration 0111);
+// a tabela `sessions` continua no banco intocada, e só a exportação de
+// dados (LGPD) ainda a lê — o que é da pessoa sai inteiro.
 
 export async function getSessions(patientId) {
   const { supabase } = require('./supabase');
@@ -144,13 +150,6 @@ export async function getSessions(patientId) {
     .select('*')
     .eq('patient_id', patientId)
     .order('date', { ascending: false });
-  if (error) throw error;
-  return data;
-}
-
-export async function getSessionById(id) {
-  const { supabase } = require('./supabase');
-  const { data, error } = await supabase.from('sessions').select('*').eq('id', id).maybeSingle();
   if (error) throw error;
   return data;
 }
@@ -181,93 +180,6 @@ export async function getResumoAgendaHoje() {
   return { total, concluidas };
 }
 
-export async function addSession(patientId, type, platform, category, appointmentId = null) {
-  const { supabase } = require('./supabase');
-  const { data, error } = await supabase
-    .from('sessions')
-    .insert({
-      patient_id: patientId, type: type || null, online_platform: platform || null,
-      date: new Date().toISOString(), transcript: '', audio_uri: null, category: category || null,
-      appointment_id: appointmentId || null,
-    })
-    .select()
-    .single();
-  if (error) throw error;
-  return data.id;
-}
-
-export async function updateSession(
-  id,
-  { transcript, audio_uri, category, duration_seconds, transcricao_status, transcricao_origem },
-) {
-  const { supabase } = require('./supabase');
-  const patch = {
-    transcript: transcript || '', audio_uri: audio_uri || null,
-    category: category || null, duration_seconds: duration_seconds || null,
-  };
-  // Só entram quando o chamador realmente passa — `undefined` significa "não
-  // mexe", diferente de `null`, que é o valor usado pra LIMPAR o status.
-  // Sem essa distinção não dava pra desmarcar uma transcrição travada em
-  // "processando" (ver salvarSessaoConfirmado em NovaSessaoScreen).
-  if (transcricao_status !== undefined) patch.transcricao_status = transcricao_status;
-  if (transcricao_origem !== undefined) patch.transcricao_origem = transcricao_origem;
-
-  const { error } = await supabase.from('sessions').update(patch).eq('id', id);
-  if (error) throw error;
-}
-
-export async function deleteSession(id) {
-  const { supabase } = require('./supabase');
-  const { error } = await supabase.from('sessions').delete().eq('id', id);
-  if (error) throw error;
-}
-
-/** Fallback de quando a transcrição assíncrona (AssemblyAI) falha —
- * digitação manual do texto completo (introdução + diálogo), voltando o
- * status pra `null` (mesmo tratamento das sessões antigas, transcritas
- * manualmente antes desta função existir). */
-export async function salvarTranscricaoManual(sessionId, transcript) {
-  const { supabase } = require('./supabase');
-  const { error } = await supabase
-    .from('sessions')
-    .update({ transcript: transcript || '', transcricao_status: null })
-    .eq('id', sessionId);
-  if (error) throw error;
-}
-
-// ── TRANSCRIPT TURNS ───────────────────────────────────
-
-export async function saveTranscriptTurns(sessionId, turns) {
-  const { supabase } = require('./supabase');
-  const { error: erroDelete } = await supabase.from('transcript_turns').delete().eq('session_id', sessionId);
-  if (erroDelete) throw erroDelete;
-
-  if (!turns || turns.length === 0) return;
-
-  const { error } = await supabase.from('transcript_turns').insert(
-    turns.map((turn) => ({
-      session_id: sessionId,
-      turn_index: turn.turn_index,
-      speaker: turn.speaker,
-      text: turn.text,
-      start_time_seconds: turn.start_time_seconds ?? null,
-      end_time_seconds: turn.end_time_seconds ?? null,
-    }))
-  );
-  if (error) throw error;
-}
-
-export async function getTranscriptTurns(sessionId) {
-  const { supabase } = require('./supabase');
-  const { data, error } = await supabase
-    .from('transcript_turns')
-    .select('*')
-    .eq('session_id', sessionId)
-    .order('turn_index', { ascending: true });
-  if (error) throw error;
-  return data;
-}
-
 // ── REGISTROS ──────────────────────────────────────────
 
 export async function getRecords(patientId) {
@@ -284,8 +196,7 @@ export async function getRecords(patientId) {
 /** `appointmentId`/`dataRegistro` (opcionais): registro do tipo "sessão"
  * (Novo Registro) vinculado a um compromisso específico — fecha o mesmo
  * critério de "tem relato" usado por `listarStatusSessoes`/
- * `getContagemSessoesSemRelato`, que até aqui só reconhecia relato feito
- * por gravação de áudio (`sessions`). `dataRegistro` (ISO) é a data que a
+ * `getContagemSessoesSemRelato`. `dataRegistro` (ISO) é a data que a
  * própria usuária escolheu pra sessão — sem ela, cai no comportamento de
  * sempre (data de agora). */
 export async function addRecord(patientId, type, title, content, fileUri, sessionId, category, author, appointmentId = null, dataRegistro = null) {
@@ -350,56 +261,6 @@ export function normalizarAuthor(autor) {
   if (v === 'analysand' || v === 'analisante') return 'analysand';
   if (v === 'alternado') return 'alternado';
   return 'analyst';
-}
-
-// ── FORMATAÇÃO DE TEXTO COM AUTOR ──────────────────────
-
-// ── PARSE DE TRANSCRIÇÃO ───────────────────────────────
-
-export function parseTranscriptToTurns(rawText) {
-  if (!rawText || !rawText.trim()) return [];
-
-  const lines = rawText.trim().split('\n');
-  const turns = [];
-  let currentSpeaker = null;
-  let currentText = [];
-  let turnIndex = 0;
-
-  const ANALYST_PREFIX   = /^(A|Analista)\s*:\s*/i;
-  const ANALYSAND_PREFIX = /^(P|Paciente|Analisante)\s*:\s*/i;
-
-  function flushTurn() {
-    if (currentSpeaker && currentText.length > 0) {
-      const text = currentText.join('\n').trim();
-      if (text) {
-        turns.push({ turn_index: turnIndex, speaker: currentSpeaker, text });
-        turnIndex++;
-      }
-    }
-    currentText = [];
-  }
-
-  for (const line of lines) {
-    const analystMatch   = line.match(ANALYST_PREFIX);
-    const analysandMatch = line.match(ANALYSAND_PREFIX);
-
-    if (analystMatch) {
-      flushTurn();
-      currentSpeaker = 'analyst';
-      currentText.push(line.substring(analystMatch[0].length));
-    } else if (analysandMatch) {
-      flushTurn();
-      currentSpeaker = 'analysand';
-      currentText.push(line.substring(analysandMatch[0].length));
-    } else {
-      if (!currentSpeaker) currentSpeaker = 'analyst';
-      currentText.push(line);
-    }
-  }
-
-  flushTurn();
-
-  return turns;
 }
 
 // ===================== AGENDA: DISPONIBILIDADE =====================
@@ -1168,11 +1029,10 @@ export async function getAppointmentsByDateRange(startDate, endDate) {
 }
 
 /** Compromissos passados (últimos 90 dias, status já resolvido — não
- * "agendado") cruzados com a sessão vinculada (se houver, via
- * `sessions.appointment_id` — ver migration 0042), pra tela "Sessões sem
- * relato". Sessões criadas antes dessa migration não têm o vínculo e
- * simplesmente não aparecem aqui associadas a um compromisso — a contagem
- * "sem relato" do Perfil (getContagemSessoesSemRelato) não depende disso. */
+ * "agendado") cruzados com o registro escrito vinculado (se houver, via
+ * `records.appointment_id` — migration 0046), pra tela "Sessões sem
+ * relato". As sessões transcritas de antes da remodelagem viraram
+ * registros (migration 0111) com o mesmo vínculo, então contam igual. */
 export async function listarStatusSessoes() {
   const { supabase } = require('./supabase');
   const desde = new Date();
@@ -1181,17 +1041,7 @@ export async function listarStatusSessoes() {
 
   const { data, error } = await supabase
     .from('appointments')
-    .select(
-      'id, date, start_time, status, patient_id, patients(nome), '
-      // `transcript` e `content` NÃO entram aqui de propósito. A versão
-      // anterior os trazia inteiros — 90 dias de transcrições completas —
-      // só para calcular dois booleanos por linha. Numa agenda cheia isso
-      // são megabytes de texto clínico atravessando a rede toda vez que o
-      // Perfil abre, e cresce a cada mês de uso.
-      //
-      // `transcricao_status` fica: é um rótulo curto, e a tela precisa dele.
-      + 'sessions(id, transcricao_status)'
-    )
+    .select('id, date, start_time, status, patient_id, patients(nome)')
     .neq('status', 'agendado')
     .gte('date', desdeISO)
     .order('date', { ascending: false })
@@ -1202,52 +1052,34 @@ export async function listarStatusSessoes() {
   const ids = linhas.map((a) => a.id);
 
   // "Tem conteúdo?" resolvido no servidor, por filtro: só o vínculo volta,
-  // nunca o texto.
-  const comConteudo = async (tabela, coluna) => {
-    if (ids.length === 0) return new Set();
+  // nunca o texto clínico.
+  let comRegistro = new Set();
+  if (ids.length > 0) {
     const { data: achados } = await supabase
-      .from(tabela)
+      .from('records')
       .select('appointment_id')
       .in('appointment_id', ids)
-      .not(coluna, 'is', null)
-      .neq(coluna, '');
-    return new Set((achados || []).map((r) => r.appointment_id));
-  };
+      .not('content', 'is', null)
+      .neq('content', '');
+    comRegistro = new Set((achados || []).map((r) => r.appointment_id));
+  }
 
-  const [comTranscricao, comRegistro] = await Promise.all([
-    comConteudo('sessions', 'transcript'),
-    comConteudo('records', 'content'),
-  ]);
-
-  return linhas.map((a) => {
-    const sessao = Array.isArray(a.sessions) ? a.sessions[0] : a.sessions;
-    // "Tem relato" aceita as duas formas: gravação de áudio transcrita
-    // (`sessions.transcript`) OU registro escrito manualmente em Novo
-    // Registro (tipo "Sessão"), vinculado via `records.appointment_id`
-    // (migration 0046) — antes só a primeira contava.
-    const temTranscricao = comTranscricao.has(a.id);
-    const temRegistro = comRegistro.has(a.id);
-    return {
-      appointmentId: a.id,
-      date: a.date,
-      startTime: a.start_time,
-      status: a.status,
-      patientId: a.patient_id,
-      patientNome: a.patients?.nome ?? null,
-      sessionId: sessao?.id ?? null,
-      temTranscricao,
-      temRegistro,
-      temRelato: temTranscricao || temRegistro,
-      transcricaoStatus: sessao?.transcricao_status ?? null,
-    };
-  });
+  return linhas.map((a) => ({
+    appointmentId: a.id,
+    date: a.date,
+    startTime: a.start_time,
+    status: a.status,
+    patientId: a.patient_id,
+    patientNome: a.patients?.nome ?? null,
+    temRelato: comRegistro.has(a.id),
+  }));
 }
 
 /** Verdadeiro critério de "sem relato" — usado tanto pelo contador do
  * Perfil (`getContagemSessoesSemRelato`) quanto pelo filtro padrão de
  * `SessoesStatusScreen.js`, garantindo que os dois sempre concordem: só
  * conta compromisso já REALIZADO (cancelado/falta não geram relato) sem
- * transcrição de áudio nem registro escrito vinculado. */
+ * registro escrito vinculado. */
 export function estaSemRelato(item) {
   return item.status === 'realizado' && !item.temRelato;
 }
@@ -1587,16 +1419,13 @@ export async function getAvailabilitySlotByDayAndTime(dayOfWeek, startTime) {
 }
 
 /**
- * Verifica se existe sessão (com transcrição/relato não vazio) do paciente
- * numa data específica. `sessions.date` é gravado em UTC (`toISOString()`),
- * então a comparação reconstrói a data local de cada sessão em vez de
- * comparar strings diretamente.
+ * Verifica se existe registro (relato não vazio) do paciente numa data
+ * específica. `records.date` é gravado em UTC (`toISOString()`), então a
+ * comparação reconstrói a data local em vez de comparar strings.
  */
-// Mesmo critério combinado de `estaSemRelato`: uma sessão gravada
-// (transcrita) OU um registro escrito em Novo Registro nessa data já
-// contam como relato — antes só a gravação de áudio era considerada aqui,
-// então um registro escrito não tirava o aviso "⚠ Nenhum relato..." do
-// DetalheCompromissoScreen nem o indicador da Agenda.
+// Mesmo critério de `estaSemRelato`: um registro escrito em Novo Registro
+// nessa data conta como relato. (As sessões transcritas de antes da
+// remodelagem viraram registros na migration 0111.)
 export async function temTranscricaoParaData(patientId, dataISO) {
   const mapa = await temRelatoNaDataEmLote([patientId], dataISO);
   return !!mapa[patientId];
@@ -1617,8 +1446,8 @@ export async function temTranscricaoParaData(patientId, dataISO) {
  * o texto: o "tem conteúdo?" é resolvido no servidor por filtro, e só
  * `patient_id` e `date` voltam.
  *
- * A data continua sendo comparada aqui, e não no filtro: `sessions.date` e
- * `records.date` são timestamptz gravados em UTC, e o dia que interessa é
+ * A data continua sendo comparada aqui, e não no filtro: `records.date` é
+ * timestamptz gravados em UTC, e o dia que interessa é
  * o local de quem usa. A janela de ±1 dia no servidor é folgada de
  * propósito — corta o histórico todo sem depender de fuso.
  */
@@ -1638,13 +1467,10 @@ export async function temRelatoNaDataEmLote(patientIds, dataISO) {
     .not(coluna, 'is', null)
     .neq(coluna, '');
 
-  const [{ data: sessoes }, { data: registros }] = await Promise.all([
-    semTexto(supabase.from('sessions').select('patient_id, date'), 'transcript'),
-    semTexto(supabase.from('records').select('patient_id, date'), 'content'),
-  ]);
+  const { data: registros } = await semTexto(supabase.from('records').select('patient_id, date'), 'content');
 
   const mapa = {};
-  for (const linha of [...(sessoes || []), ...(registros || [])]) {
+  for (const linha of registros || []) {
     if (dataParaISO(new Date(linha.date)) === dataISO) mapa[linha.patient_id] = true;
   }
   return mapa;

@@ -2,7 +2,7 @@
 // foram removidas (viraram simples duplicata do que DetalheAnalisanteScreen.js
 // já mostra, com edição/exclusão e tudo mais). Esta tela agora é só a geração
 // de relatórios por IA/local + o histórico dos já gerados.
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList,
   ScrollView, ActivityIndicator, Alert,
@@ -13,11 +13,12 @@ import { Ionicons } from '@expo/vector-icons';
 import CabecalhoTela from '../components/CabecalhoTela';
 import { listarPacientes } from '../services/database';
 import {
-  TIPOS_RELATORIO, OPCOES_ULTIMAS_SESSOES, gerarRelatorio, listarRelatorios, estimarCustoRelatorio,
+  TIPOS_RELATORIO, TIPOS_ADMINISTRATIVOS, OPCOES_ULTIMAS_SESSOES, gerarRelatorio, listarRelatorios, estimarCustoRelatorio,
 } from '../services/relatorios';
 import { mensagemDeErro } from '../services/erros';
 import { formatarSaldoBRL } from '../services/creditosIA';
 import { getSituacaoIA, avisoDeSaldoNegativo, avisoDeBloqueioIA } from '../services/usoDeIA';
+import { getVersaoDaConta, temArquivo, VERSAO_COMPLETA } from '../services/versao';
 
 const COLORS = {
   bg: '#F7F5F0',
@@ -47,6 +48,13 @@ export default function RelatoriosScreen() {
 
   const [quantidadeUltimas, setQuantidadeUltimas] = useState(3);
   const [gerandoTipo, setGerandoTipo] = useState(null);
+  // Na versão Agenda só os relatórios administrativos (frequência e
+  // pagamento): os de IA leem os registros clínicos, que ela não tem.
+  const [versao, setVersao] = useState(VERSAO_COMPLETA);
+  useEffect(() => { getVersaoDaConta().then(setVersao).catch(() => {}); }, []);
+  const tiposDisponiveis = temArquivo(versao)
+    ? TIPOS_RELATORIO
+    : TIPOS_RELATORIO.filter((t) => TIPOS_ADMINISTRATIVOS.includes(t.valor));
 
   useFocusEffect(
     useCallback(() => {
@@ -207,7 +215,7 @@ export default function RelatoriosScreen() {
       ) : (
         <ScrollView contentContainerStyle={s.scrollInner} keyboardShouldPersistTaps="handled">
           <Text style={s.sectionTitle}>Gerar relatório</Text>
-          {TIPOS_RELATORIO.map((tipo) => (
+          {tiposDisponiveis.map((tipo) => (
             <View key={tipo.valor} style={s.relatorioCard}>
               <Text style={s.relatorioLabel}>{tipo.label}</Text>
               {tipo.valor === 'ultimas_sessoes' && (

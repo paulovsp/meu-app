@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import {
-  View, Text, TouchableOpacity, StyleSheet, FlatList, Alert, ActivityIndicator,
+  View, Text, TouchableOpacity, StyleSheet, FlatList, ActivityIndicator, Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -50,34 +50,14 @@ export default function SessoesStatusScreen() {
   const listaFiltrada = filtro === 'sem_relato' ? lista.filter(estaSemRelato) : lista;
 
   function abrirItem(item) {
-    if (item.sessionId) {
-      navigation.navigate('SessionDetail', { sessionId: item.sessionId, pacienteNome: item.patientNome });
-      return;
-    }
-    if (item.status === 'realizado') {
-      Alert.alert(
-        'Adicionar relato',
-        `Como quer registrar a sessão de ${item.patientNome}?`,
-        [
-          { text: 'Cancelar', style: 'cancel' },
-          {
-            text: 'Escrever registro',
-            onPress: () => navigation.navigate('AddRecord', {
-              patientId: item.patientId,
-              appointmentId: item.appointmentId,
-              dataSessao: item.date,
-            }),
-          },
-          {
-            text: 'Gravar áudio',
-            onPress: () => navigation.navigate('NewSession', {
-              patientId: item.patientId,
-              patientNome: item.patientNome,
-              appointmentId: item.appointmentId,
-            }),
-          },
-        ]
-      );
+    // Realizada e ainda sem relato: vai direto escrever o registro, já
+    // ligado ao compromisso e com a data da sessão preenchida.
+    if (item.status === 'realizado' && !item.temRelato) {
+      navigation.navigate('AddRecord', {
+        patientId: item.patientId,
+        appointmentId: item.appointmentId,
+        dataSessao: item.date,
+      });
       return;
     }
     navigation.navigate('DetalheCompromisso', { appointmentId: item.appointmentId });
@@ -90,7 +70,6 @@ export default function SessoesStatusScreen() {
       horarioPassou: true,
     });
     const info = ESTADO_LABEL[estado];
-    const transcrevendo = item.transcricaoStatus === 'processando';
 
     return (
       <TouchableOpacity style={styles.card} onPress={() => abrirItem(item)}>
@@ -98,9 +77,9 @@ export default function SessoesStatusScreen() {
           <Text style={styles.nome} numberOfLines={1}>{item.patientNome || '—'}</Text>
           <Text style={styles.data}>{formatarData(item.date)} {item.startTime?.slice(0, 5)}</Text>
         </View>
-        <View style={[styles.badge, { backgroundColor: (transcrevendo ? '#7D6540' : info.cor) + '20' }]}>
-          <Text style={[styles.badgeText, { color: transcrevendo ? '#7D6540' : info.cor }]}>
-            {transcrevendo ? 'Transcrevendo...' : info.texto}
+        <View style={[styles.badge, { backgroundColor: info.cor + '20' }]}>
+          <Text style={[styles.badgeText, { color: info.cor }]}>
+            {info.texto}
           </Text>
         </View>
       </TouchableOpacity>

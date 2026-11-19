@@ -4,7 +4,7 @@
 // opostas.
 //
 // Quem entra no consultório de demonstração já tem um consultório montado
-// na frente: 15 fichas, agenda cheia, sessões transcritas. O que falta é
+// na frente: 15 fichas, agenda cheia, registros de sessão. O que falta é
 // saber que aquilo tudo existe. O guia dessa conta é um PASSEIO — leva a
 // pessoa por cada tela e diz o que ela faz.
 //
@@ -36,7 +36,7 @@ export const PASSOS_DEMONSTRACAO = [
     titulo: 'Este consultório é fictício',
     texto:
       'Você está no consultório do Sigmund Freud: 15 analisantes e supervisionandos, '
-      + 'agenda de quatro semanas, 67 registros de sessão e três sessões transcritas. '
+      + 'agenda de quatro semanas e dezenas de registros de sessão. '
       + 'Tudo inventado, e nada aqui pode ser alterado — é a mesma amostra para todo mundo.\n\n'
       + 'Vou levar você pelas telas principais. Dá para sair a qualquer momento.',
   },
@@ -51,9 +51,9 @@ export const PASSOS_DEMONSTRACAO = [
   },
   {
     rota: 'Patients',
-    titulo: 'Analisantes e supervisionandos',
+    titulo: 'O Arquivo: analisantes e supervisionandos',
     texto:
-      'A mesma tela guarda os dois, em abas separadas. Ferenczi e Stekel aparecem nas duas: '
+      'O Arquivo guarda os dois, em abas separadas. Ferenczi e Stekel aparecem nas duas: '
       + 'estão em análise e em supervisão, em dias diferentes.\n\n'
       + 'Toque em qualquer ficha para ver o histórico completo da pessoa.',
   },
@@ -110,7 +110,7 @@ export const PASSOS_DEMONSTRACAO = [
     rota: 'Cursos',
     titulo: 'Aulas e supervisão de grupo',
     texto:
-      'Aulas e grupos entram aqui, com gravação e transcrição como nas sessões. A Sociedade '
+      'Aulas e grupos entram aqui, com as suas anotações de cada curso. A Sociedade '
       + 'Psicológica das Quartas-Feiras, na agenda, é uma supervisão de grupo com cinco '
       + 'participantes.',
   },

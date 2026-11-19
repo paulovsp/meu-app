@@ -1,21 +1,16 @@
-// Apps conectados — um lugar só para as três pontes que as ferramentas do
-// app usam: WhatsApp Business (comprovantes de pagamento), Google Meet e
-// Zoom (sessões online transcritas pelo provedor).
-//
-// Antes elas estavam espalhadas: WhatsApp escondido no meio do Perfil, Meet
-// e Zoom como dois links soltos. Quem procurava "onde conecto meus apps"
-// não tinha onde olhar.
+// Apps conectados — um lugar só para as pontes que as ferramentas do app
+// usam. Hoje é só o WhatsApp Business (comprovantes de pagamento): Google
+// Meet e Zoom existiam pra transcrever sessões online e saíram junto com a
+// transcrição, na remodelagem Agenda/Arquivo.
 //
 // Cada linha mostra o estado real, não só "configurado": conectado e
-// funcionando, conectado mas sem o plano necessário, ou precisando
-// reconectar. O detalhe de cada uma fica na tela própria.
+// funcionando, ou precisando reconectar. O detalhe fica na tela própria.
 import React, { useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import CabecalhoTela from '../components/CabecalhoTela';
-import { getIntegracoes, integracaoUtilizavel, PROVEDORES } from '../services/videochamada';
 import { getIntegracaoWhatsapp } from '../services/whatsappBusiness';
 
 const COLORS = {
@@ -32,33 +27,21 @@ const COLORS = {
 export default function AppsConectadosScreen() {
   const navigation = useNavigation();
   const [carregando, setCarregando] = useState(true);
-  const [videochamadas, setVideochamadas] = useState([]);
   const [whatsapp, setWhatsapp] = useState(null);
 
-  // Recarrega a cada foco: a conexão do Meet/Zoom termina no NAVEGADOR,
-  // fora do app, então voltar pra cá tem que refletir o que mudou lá.
+  // Recarrega a cada foco: voltar da tela do WhatsApp tem que refletir o
+  // que mudou lá.
   useFocusEffect(useCallback(() => {
     let ativo = true;
     setCarregando(true);
-    Promise.all([getIntegracoes(), getIntegracaoWhatsapp()])
-      .then(([v, w]) => {
+    getIntegracaoWhatsapp()
+      .then((w) => {
         if (!ativo) return;
-        setVideochamadas(v || []);
         setWhatsapp(w);
       })
       .finally(() => { if (ativo) setCarregando(false); });
     return () => { ativo = false; };
   }, []));
-
-  function estadoVideochamada(provedorId) {
-    const integracao = (videochamadas || []).find((i) => i.provedor === provedorId);
-    if (!integracao) return { texto: 'Não conectado', cor: COLORS.textMid };
-    if (integracao.invalidado_em) return { texto: 'Reconectar', cor: COLORS.vermelho };
-    if (!integracaoUtilizavel(integracao)) {
-      return { texto: 'Conectado, sem transcrição', cor: COLORS.ambar };
-    }
-    return { texto: 'Conectado', cor: COLORS.verde };
-  }
 
   // Linha existente sem phone_number_id = configuração começada mas não
   // concluída (o Verify Token já foi gerado, as credenciais ainda não).
@@ -91,34 +74,6 @@ export default function AppsConectadosScreen() {
               onPress={() => navigation.navigate('IntegracaoWhatsapp')}
             />
 
-            <Linha
-              icone="videocam-outline"
-              cor="#447362"
-              titulo={PROVEDORES.google_meet.label}
-              descricao="Sessão online transcrita pelo próprio Google, sem gravar pelo aparelho e sem gastar créditos."
-              estado={estadoVideochamada('google_meet')}
-              onPress={() => navigation.navigate('IntegracaoVideochamada', { provedor: 'google_meet' })}
-            />
-
-            <Linha
-              icone="desktop-outline"
-              cor="#4D6B88"
-              titulo={PROVEDORES.zoom.label}
-              descricao="Mesma coisa pelo Zoom: a reunião nasce aqui e a transcrição chega sozinha."
-              estado={estadoVideochamada('zoom')}
-              onPress={() => navigation.navigate('IntegracaoVideochamada', { provedor: 'zoom' })}
-            />
-
-            <View style={s.nota}>
-              <Text style={s.notaTexto}>
-                As sessões online só são transcritas pelo Meet ou pelo Zoom
-                quando a conta tem o plano necessário — cada tela explica qual.
-                Sem isso, a sessão continua sendo gravada pelo aparelho, e aí
-                vale fazer a chamada em outro dispositivo: quando a chamada
-                está no mesmo celular, o Android entrega o microfone para ela
-                e a gravação sai muda.
-              </Text>
-            </View>
           </>
         )}
       </ScrollView>

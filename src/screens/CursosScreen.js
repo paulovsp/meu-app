@@ -65,7 +65,7 @@ export default function CursosScreen() {
             <TouchableOpacity style={s.card} onPress={() => navigation.navigate('FormularioCurso', { curso: item })}>
               <View style={s.cardHeader}>
                 <Text style={s.cardTitulo}>{item.titulo}</Text>
-                {item.transcricao_status === 'concluida' && (
+                {!!(item.transcript || '').trim() && (
                   <Ionicons name="document-text-outline" size={16} color={COLORS.btnBlue} />
                 )}
               </View>

@@ -76,18 +76,33 @@ async function montarDigestDoProfissional(
       .filter((p) => p.diasAtraso >= 1);
   }
 
-  // Sessões sem relato (transcrição vazia/nula) — mesma definição de
-  // getContagemSessoesSemRelato() no app, só que escopada manualmente por
-  // paciente aqui (service_role não passa pela RLS que faz isso sozinha
-  // pro cliente autenticado).
+  // Sessões sem relato — mesma definição de estaSemRelato() no app
+  // (listarStatusSessoes): compromisso REALIZADO nos últimos 90 dias sem
+  // registro escrito vinculado. Escopada manualmente por paciente aqui
+  // (service_role não passa pela RLS que faz isso sozinha pro cliente
+  // autenticado). Desde a remodelagem de 19/11/2026 a tabela `sessions`
+  // não recebe mais nada; o relato mora em `records`.
   let sessoesSemRelato = 0;
   if (prefs.registro && todosIds.length > 0) {
-    const { count } = await supabaseAdmin
-      .from('sessions')
-      .select('*', { count: 'exact', head: true })
+    const desde = new Date();
+    desde.setDate(desde.getDate() - 90);
+    const { data: realizados } = await supabaseAdmin
+      .from('appointments')
+      .select('id')
       .in('patient_id', todosIds)
-      .or('transcript.is.null,transcript.eq.');
-    sessoesSemRelato = count || 0;
+      .eq('status', 'realizado')
+      .gte('date', desde.toISOString().slice(0, 10));
+    const ids = (realizados || []).map((a) => a.id);
+    if (ids.length > 0) {
+      const { data: comRegistro } = await supabaseAdmin
+        .from('records')
+        .select('appointment_id')
+        .in('appointment_id', ids)
+        .not('content', 'is', null)
+        .neq('content', '');
+      const vinculados = new Set((comRegistro || []).map((r) => r.appointment_id));
+      sessoesSemRelato = ids.filter((id) => !vinculados.has(id)).length;
+    }
   }
 
   // Sessões passadas que ninguém confirmou se aconteceram — os mesmos
@@ -143,7 +158,7 @@ function montarHtml(
   if (sessoesSemRelato > 0) {
     partes.push(
       h2(`${plural(sessoesSemRelato, 'sessão', 'sessões')} sem relato`) +
-      p('Adicione a transcrição ou a anotação para manter o prontuário em dia.')
+      p('Escreva o registro para manter o prontuário em dia.')
     );
   }
   return envelope({
@@ -182,7 +197,7 @@ Deno.serve(servir('enviar-digest-diario', async (req) => {
     const { data: perfis, error } = await supabaseAdmin
       .from('profiles')
       .select('id, email, nome, expo_push_token, notif_atraso_email, '
-        + 'notif_registro_email, notif_sessao_email, notif_sessao_push')
+        + 'notif_registro_email, notif_sessao_email, notif_sessao_push, assinatura_versao')
       .in('assinatura_status', ['ativa', 'cortesia']);
     if (error) throw error;
 
@@ -195,7 +210,8 @@ Deno.serve(servir('enviar-digest-diario', async (req) => {
         const sessaoEmail = perfil.notif_sessao_email === true;
         const prefs = {
           atraso: perfil.notif_atraso_email !== false,
-          registro: perfil.notif_registro_email !== false,
+          // Na Agenda inteligente não há registro clínico a cobrar.
+          registro: perfil.notif_registro_email !== false && perfil.assinatura_versao !== 'agenda',
           // Precisa ser calculado se QUALQUER um dos dois canais quer o
           // número — senão ligar só o push não traria nada pra notificar.
           sessao: sessaoEmail || sessaoPush,

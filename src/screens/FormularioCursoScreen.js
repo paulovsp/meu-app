@@ -1,41 +1,24 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView,
-  Alert, ActivityIndicator, Platform, KeyboardAvoidingView, AppState,
+  Alert, ActivityIndicator, KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import CabecalhoTela from '../components/CabecalhoTela';
-import MedidorDeEntrada from '../components/MedidorDeEntrada';
-import { useAudioRecorder, setAudioModeAsync, requestRecordingPermissionsAsync } from 'expo-audio';
-// @notifee/react-native foi arquivado pela Invertase em 07/04/2026 — trocado
-// pelo fork mantido react-native-notify-kit (mesmo autor original recomenda
-// no README do projeto arquivado). API 100% compatível — só o caminho do
-// import muda; classe Java do foreground service continua sendo
-// app.notifee.core.ForegroundService (confirmado no pacote), então o plugin
-// plugins/withForegroundServiceMicrophone.js não precisou mudar nada.
-import notifee, { AndroidImportance, AndroidForegroundServiceType } from 'react-native-notify-kit';
-import { Ionicons } from '@expo/vector-icons';
+import { useBloqueioAssinatura } from '../hooks/useBloqueioAssinatura';
 import {
-  criarCurso, editarCurso, removerCurso, marcarConsentimentoProfessor,
+  criarCurso, editarCurso, removerCurso,
   salvarTranscricaoManual, getCursoById, contarDadosDoCurso,
   calcularCargaHoraria, terminoDerivadoDaAula,
 } from '../services/cursos';
 import { removerDespesa } from '../services/despesas';
 import { formatarMoeda } from '../services/database';
-import {
-  criarGravadorEmBlocos, enviarBlocoParaTranscricao, enviarGravacaoCompleta,
-  apagarBlocos, escolherArquivoDeAudio, MENSAGEM_SILENCIO, RECORDING_OPTIONS,
-} from '../services/gravacaoEmBlocos';
 import { mensagemDeErro } from '../services/erros';
-import { useBloqueioIA } from '../hooks/useBloqueioIA';
 import {
   dataBRParaISO, dataISOParaBR, mascararDataBR, interpretarDataDigitada,
 } from '../services/validacao';
 import { mascararHorario, normalizarHorario } from '../services/horarios';
-import {
-  diagnosticarProtecao, impedeGravacaoEmSegundoPlano, CANAL_CURSO,
-} from '../services/protecaoGravacao';
 
 const COLORS = {
   bg: '#F7F5F0',
@@ -57,24 +40,14 @@ const FORMATOS = [
 // DD/MM/AAAA (esse campo antes aceitava texto livre em AAAA-MM-DD, o único
 // lugar do app fora desse padrão).
 
-function formatarTempo(seg) {
-  const m = Math.floor(seg / 60).toString().padStart(2, '0');
-  const s = (seg % 60).toString().padStart(2, '0');
-  return `${m}:${s}`;
-}
-
 export default function FormularioCursoScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const cursoInicial = route.params?.curso || null;
   const cursoIdParam = route.params?.cursoId || null;
 
-  // useBloqueioIA e nao useBloqueioAssinatura: aqui a assinatura ativa
-  // nao basta. Sem credito, a transcricao nao roda -- e gravar uma
-  // sessao inteira que nao tem como ser transcrita e pior do que ser
-  // avisado na porta. O hook checa assinatura primeiro e credito
-  // depois, com a mensagem certa pra cada caso.
-  useBloqueioIA(navigation);
+  useBloqueioAssinatura(navigation);
+
 
   const [curso, setCurso] = useState(cursoInicial);
   const [carregandoCurso, setCarregandoCurso] = useState(!!cursoIdParam && !cursoInicial);
@@ -96,9 +69,8 @@ export default function FormularioCursoScreen() {
   const [removendo, setRemovendo] = useState(false);
   const [salvandoTranscricaoManual, setSalvandoTranscricaoManual] = useState(false);
 
-  // Chegando por notificação push (curso-transcrever-webhook), só o id vem
-  // no params — busca o registro completo pra preencher a tela, mesmo
-  // padrão do DetalheSessaoScreen.js com `sessionId`.
+  // Chegando só com o id no params, busca o curso completo pra preencher
+  // a tela.
   useEffect(() => {
     if (!cursoIdParam || cursoInicial) return;
     getCursoById(cursoIdParam).then((encontrado) => {
@@ -120,86 +92,10 @@ export default function FormularioCursoScreen() {
     }).finally(() => setCarregandoCurso(false));
   }, [cursoIdParam]);
 
-  const [gravando, setGravando] = useState(false);
-  const [preparando, setPreparando] = useState(false);
-
-  // Mesmo desenho de NovaSessaoScreen: o recorder nativo é do hook, o
-  // módulo de blocos só o opera.
-  const recorder = useAudioRecorder(RECORDING_OPTIONS);
-  const [tempo, setTempo] = useState(0);
-  const [enviandoTranscricao, setEnviandoTranscricao] = useState(false);
+  // As anotações das aulas moram na coluna `transcript` do curso — o nome
+  // ficou da época em que o app gravava e transcrevia a aula. As
+  // transcrições já feitas continuam aqui, editáveis como anotação.
   const [transcricaoManual, setTranscricaoManual] = useState(curso?.transcript || '');
-  // Nível de entrada do microfone (dBFS) pro medidor ao vivo.
-  const [nivelEntrada, setNivelEntrada] = useState(null);
-  // Sobrou bloco sem enviar: habilita tentar de novo em vez de perder a aula.
-  const [podeReenviar, setPodeReenviar] = useState(false);
-  const [progressoEnvio, setProgressoEnvio] = useState('');
-  // Ajustes do Android que podem matar a gravação em segundo plano. A tela
-  // de sessão já tinha isso desde a v19; a de aula não — e uma aula dura
-  // horas, com o celular no bolso, que é exatamente quando o sistema
-  // resolve encerrar o serviço.
-  const [pendenciasProtecao, setPendenciasProtecao] = useState([]);
-
-  const gravadorRef = useRef(null);
-  // Blocos da gravação ({ uri, indice, enviado }) — os arquivos só somem
-  // quando a aula INTEIRA foi aceita pelo servidor.
-  const blocosRef = useRef([]);
-  const timerRef = useRef(null);
-  const notificationIdRef = useRef(null);
-
-  useEffect(() => {
-    if (Platform.OS === 'android') {
-      notifee.createChannel({ id: 'gravacao_curso', name: 'Gravação de Aula', importance: AndroidImportance.LOW, sound: undefined });
-    }
-    return () => {
-      clearInterval(timerRef.current);
-      gravadorRef.current?.liberar().catch(() => {});
-      notifee.stopForegroundService().catch(() => {});
-    };
-  }, []);
-
-  useEffect(() => {
-    let ativo = true;
-    diagnosticarProtecao(CANAL_CURSO)
-      .then((lista) => { if (ativo) setPendenciasProtecao(lista); })
-      .catch(() => {});
-    return () => { ativo = false; };
-  }, []);
-
-  // Se o Android encerrar a captação com o app em segundo plano, nenhum
-  // Alert aparece na hora — a pessoa só descobriria no fim de uma aula de
-  // duas horas, com a transcrição vazia. Aqui a checagem acontece assim que
-  // ela volta pro app, ainda dando tempo de recomeçar.
-  useEffect(() => {
-    if (!gravando) return undefined;
-    const sub = AppState.addEventListener('change', async (estado) => {
-      if (estado !== 'active') return;
-      const viva = await gravadorRef.current?.estaGravando();
-      if (viva === false) {
-        Alert.alert(
-          'A gravação foi interrompida',
-          'O Android encerrou a captação enquanto o app estava em segundo plano. '
-          + 'O que foi gravado até aqui está guardado: encerre a gravação para transcrever essa parte.'
-        );
-      }
-    });
-    return () => sub.remove();
-  }, [gravando]);
-
-  // Trava qualquer forma de sair da tela (seta do cabeçalho, gesto/botão
-  // físico de voltar) enquanto a gravação anterior ainda está sendo
-  // enviada — mesmo risco de corromper o áudio descrito em iniciarGravacao().
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
-      if (!enviandoTranscricao) return;
-      e.preventDefault();
-      Alert.alert(
-        'Aguarde',
-        'A gravação ainda está sendo enviada para transcrição. Sair agora arrisca corromper o áudio — aguarde terminar.'
-      );
-    });
-    return unsubscribe;
-  }, [navigation, enviandoTranscricao]);
 
   async function salvar() {
     if (!titulo.trim()) {
@@ -227,7 +123,7 @@ export default function FormularioCursoScreen() {
       // O curso é salvo mesmo se a Agenda recusar o horário (colisão com
       // outro compromisso) — nesse caso avisa, em vez de fingir que deu tudo
       // certo ou de perder o cadastro inteiro por causa disso.
-      const base = curso ? 'Alterações salvas.' : 'Curso adicionado ao seu currículo. Agora você pode gravar a aula, se quiser.';
+      const base = curso ? 'Alterações salvas.' : 'Curso adicionado ao seu currículo.';
       if (salvo._agenda?.ok === false) {
         const detalhe = salvo._agenda.motivo === 'horario_ocupado'
           ? 'Mas o horário não entrou na Agenda: já existe outro compromisso nesse dia e horário.'
@@ -247,8 +143,8 @@ export default function FormularioCursoScreen() {
   /**
    * "Remover do seu currículo?" descrevia tirar uma linha de uma lista de
    * formação. O que a exclusão faz de verdade: apaga as aulas da agenda
-   * (`appointments.curso_id` é cascade) e a transcrição de cada aula
-   * gravada, que mora na própria linha do curso.
+   * (`appointments.curso_id` é cascade) e as anotações das aulas, que
+   * moram na própria linha do curso.
    *
    * E deixava um rastro ao contrário: a despesa usa `set null`, então
    * sobrevivia órfã em Pagamentos, sem curso nenhum atrás — um valor que
@@ -270,10 +166,10 @@ export default function FormularioCursoScreen() {
       if (dados?.aulas) {
         perdas.push(dados.aulas === 1 ? '1 aula na agenda' : `${dados.aulas} aulas na agenda`);
       }
-      if (dados?.temTranscricao) perdas.push('a transcrição da aula gravada');
+      if (dados?.temTranscricao) perdas.push('as anotações das aulas');
       const detalhe = perdas.length > 0
         ? `Isto apaga em definitivo ${perdas.join(' e ')}.`
-        : 'Isto apaga o curso e tudo que estiver ligado a ele — aulas na agenda e transcrições.';
+        : 'Isto apaga o curso e tudo que estiver ligado a ele — aulas na agenda e anotações.';
 
       const seguir = await new Promise((resolve) => {
         Alert.alert(
@@ -319,317 +215,6 @@ export default function FormularioCursoScreen() {
     })();
   }
 
-  // Vale tanto pra gravar na hora quanto pra importar um áudio já gravado —
-  // a autorização do professor é a mesma questão nos dois casos, e a Edge
-  // Function recusa o envio sem ela de qualquer jeito.
-  function pedirConsentimento(aoConfirmar) {
-    Alert.alert(
-      'Consentimento do professor',
-      'Antes de gravar, confirme com o professor/instituição que você tem autorização para gravar esta aula. A gravação e a transcrição são de uso pessoal — não devem ser divulgadas ou compartilhadas com terceiros, e cuidados legais (direitos autorais, propriedade do material) são de sua responsabilidade.',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Confirmo, tenho autorização',
-          onPress: async () => {
-            try {
-              await marcarConsentimentoProfessor(curso.id);
-              setCurso((atual) => ({ ...atual, consentimento_professor: true }));
-              aoConfirmar();
-            } catch (err) {
-              Alert.alert('Erro', mensagemDeErro(err));
-            }
-          },
-        },
-      ]
-    );
-  }
-
-  /** Mesma checagem de NovaSessaoScreen: a notificação na barra é a prova
-   *  de que o foreground service subiu — sem ele o Android tira o microfone
-   *  assim que o app sai da frente. Ver o runner registrado em index.js. */
-  async function servicoEmPrimeiroPlanoAtivo(id) {
-    for (let tentativa = 0; tentativa < 2; tentativa += 1) {
-      try {
-        const exibidas = await notifee.getDisplayedNotifications();
-        if (exibidas.some((n) => n.id === id)) return true;
-      } catch (_) {
-        return false;
-      }
-      await new Promise((r) => setTimeout(r, 400));
-    }
-    return false;
-  }
-
-  /** Devolve se a gravação está protegida em segundo plano. */
-  async function mostrarNotificacao() {
-    try {
-      await notifee.requestPermission();
-      const id = await notifee.displayNotification({
-        title: 'Gravando aula',
-        body: 'A gravação da aula está em andamento. Pode usar o celular à vontade.',
-        android: {
-          channelId: 'gravacao_curso',
-          asForegroundService: true,
-          foregroundServiceTypes: [AndroidForegroundServiceType.FOREGROUND_SERVICE_TYPE_MICROPHONE],
-          ongoing: true,
-        },
-      });
-      notificationIdRef.current = id;
-      return await servicoEmPrimeiroPlanoAtivo(id);
-    } catch (err) {
-      console.warn('Notificação:', err.message);
-      return false;
-    }
-  }
-
-  /** Quando o diagnóstico aponta ajuste do sistema que IMPEDE a proteção, a
-   *  saída é resolver, não só avisar: o botão do meio leva direto pra tela
-   *  que abre cada ajuste do Android. Mesmo diálogo de NovaSessaoScreen. */
-  function confirmarProtecaoBloqueada(lista) {
-    const itens = lista
-      .filter((p) => p.gravidade === 'impede')
-      .map((p) => `• ${p.titulo}`)
-      .join('\n');
-    return new Promise((resolve) => {
-      Alert.alert(
-        'A gravação vai parar se você sair do app',
-        `Estes ajustes do Android estão impedindo a proteção em segundo plano:\n\n${itens}\n\nDá pra resolver agora, em poucos toques.`,
-        [
-          { text: 'Cancelar', style: 'cancel', onPress: () => resolve('cancelar') },
-          { text: 'Gravar assim mesmo', onPress: () => resolve('seguir') },
-          { text: 'Ajustar agora', onPress: () => resolve('ajustar') },
-        ],
-        { cancelable: false }
-      );
-    });
-  }
-
-  /** Sem foreground service, abrir outro app interrompe a gravação. Quem
-   *  decide se grava assim mesmo é a pessoa, antes de começar. */
-  function confirmarGravacaoDesprotegida() {
-    return new Promise((resolve) => {
-      Alert.alert(
-        'Gravação em segundo plano indisponível',
-        'Não foi possível ligar a proteção que mantém a gravação viva quando você sai do app — '
-        + 'provavelmente a notificação do Dr.Sig está bloqueada nas configurações do Android. '
-        + 'Do jeito que está, abrir outro aplicativo interrompe a gravação.',
-        [
-          { text: 'Cancelar', style: 'cancel', onPress: () => resolve(false) },
-          { text: 'Gravar assim mesmo', onPress: () => resolve(true) },
-        ],
-        { cancelable: false }
-      );
-    });
-  }
-
-  async function removerNotificacao() {
-    try {
-      await notifee.stopForegroundService();
-      if (notificationIdRef.current) {
-        await notifee.cancelNotification(notificationIdRef.current);
-        notificationIdRef.current = null;
-      }
-    } catch (_) {}
-  }
-
-  async function iniciarGravacao() {
-    // Trava de segurança: sem isso, dava pra sair da tela e voltar (ou só
-    // tocar em gravar de novo) enquanto encerrarEEnviar ainda estava
-    // finalizando a gravação anterior — as duas brigam pelo único
-    // MediaRecorder nativo disponível, corrompendo o áudio da primeira
-    // (arquivo com duração certa, mas sem fala nenhuma) ou derrubando com
-    // erro. Ver a mesma trava e explicação em NovaSessaoScreen.js.
-    if (enviandoTranscricao) {
-      Alert.alert(
-        'Aguarde',
-        'A gravação anterior ainda está sendo enviada para transcrição. Aguarde terminar antes de gravar de novo — começar agora arrisca corromper a gravação em andamento.'
-      );
-      return;
-    }
-    setPreparando(true);
-    try {
-      const { granted } = await requestRecordingPermissionsAsync();
-      if (!granted) {
-        Alert.alert('Permissão negada', 'Precisamos de acesso ao microfone.');
-        return;
-      }
-      // `allowsBackgroundRecording: false` de propósito — ver a mesma
-      // decisão explicada em NovaSessaoScreen.js.
-      await setAudioModeAsync({
-        allowsRecording: true,
-        playsInSilentMode: true,
-        shouldPlayInBackground: true,
-        allowsBackgroundRecording: false,
-        interruptionMode: 'doNotMix',
-      });
-      await gravadorRef.current?.liberar();
-
-      // Primeiro o que o sistema pode fazer contra a gravação: notificação
-      // bloqueada impede o serviço de subir, e aí não adianta tentar.
-      const pendencias = await diagnosticarProtecao(CANAL_CURSO);
-      setPendenciasProtecao(pendencias);
-      const bloqueadoPeloSistema = impedeGravacaoEmSegundoPlano(pendencias);
-      if (bloqueadoPeloSistema) {
-        const escolha = await confirmarProtecaoBloqueada(pendencias);
-        if (escolha === 'cancelar') return;
-        if (escolha === 'ajustar') {
-          navigation.navigate('ProtecaoGravacao');
-          return;
-        }
-      }
-
-      // O serviço sobe ANTES do microfone: é ele que segura a permissão de
-      // gravar com o app fora da frente.
-      const protegido = await mostrarNotificacao();
-      // Segundo aviso SÓ quando o diagnóstico não achou nada e mesmo assim o
-      // serviço não subiu — com notificação bloqueada a pessoa já decidiu, e
-      // repetir o aviso seria empilhar duas caixas dizendo a mesma coisa.
-      if (!protegido && !bloqueadoPeloSistema) {
-        const seguirAssimMesmo = await confirmarGravacaoDesprotegida();
-        if (!seguirAssimMesmo) {
-          await removerNotificacao();
-          return;
-        }
-      }
-
-      blocosRef.current = [];
-      setPodeReenviar(false);
-      setNivelEntrada(null);
-      gravadorRef.current = criarGravadorEmBlocos({
-        recorder,
-        aoFecharBloco: enviarBlocoFechado,
-        aoMedirNivel: setNivelEntrada,
-        aoDetectarSilencio: () => Alert.alert('Sem som no microfone', MENSAGEM_SILENCIO),
-      });
-      await gravadorRef.current.iniciar();
-
-      setGravando(true);
-      setTempo(0);
-      timerRef.current = setInterval(() => setTempo((t) => t + 1), 1000);
-    } catch (err) {
-      Alert.alert('Erro', 'Não foi possível iniciar a gravação:\n' + err.message);
-    } finally {
-      setPreparando(false);
-    }
-  }
-
-  /** Um bloco de 1h fechou e a aula continua: sobe ele agora. Se falhar, o
-   *  arquivo fica guardado e vai junto na tentativa final — nunca se perde
-   *  bloco por falha de rede no meio de uma aula longa. */
-  async function enviarBlocoFechado(uri, indice) {
-    const bloco = { uri, indice, enviado: false };
-    blocosRef.current.push(bloco);
-    try {
-      await enviarBlocoParaTranscricao({
-        funcao: 'curso-transcrever',
-        uri,
-        cabecalhos: { 'x-curso-id': curso.id },
-        indice,
-        total: 0, // a aula ainda está rolando; o total vai no último bloco
-      });
-      bloco.enviado = true;
-    } catch (_) {}
-  }
-
-  /** Sobe todos os blocos ainda não aceitos e só então apaga os arquivos. */
-  async function enviarTudo() {
-    setProgressoEnvio(
-      blocosRef.current.length > 1
-        ? `Enviando ${blocosRef.current.length} blocos de áudio...`
-        : 'Enviando para transcrição...'
-    );
-    await enviarGravacaoCompleta({
-      funcao: 'curso-transcrever',
-      cabecalhos: { 'x-curso-id': curso.id },
-      blocos: blocosRef.current,
-    });
-    blocosRef.current = [];
-    setPodeReenviar(false);
-    setCurso((atual) => ({ ...atual, transcricao_status: 'processando' }));
-  }
-
-  async function encerrarEEnviar() {
-    clearInterval(timerRef.current);
-    setGravando(false);
-    setEnviandoTranscricao(true);
-    setProgressoEnvio('Finalizando gravação...');
-    await removerNotificacao();
-    await setAudioModeAsync({
-      allowsRecording: false,
-      playsInSilentMode: false,
-      shouldPlayInBackground: false,
-      allowsBackgroundRecording: false,
-      interruptionMode: 'mixWithOthers',
-    });
-
-    try {
-      const { uri, indice } = await gravadorRef.current.parar();
-      if (!uri) throw new Error('O arquivo de áudio não foi encontrado após a gravação.');
-      blocosRef.current.push({ uri, indice, enviado: false });
-      await enviarTudo();
-      Alert.alert('Enviado', 'A aula foi salva e está sendo transcrita. Você recebe um aviso quando terminar.');
-    } catch (err) {
-      // O áudio continua no aparelho — dá pra tentar de novo em vez de a
-      // aula inteira virar perda total.
-      setPodeReenviar(blocosRef.current.length > 0);
-      Alert.alert(
-        'Erro ao enviar para transcrição',
-        err.message + '\n\nO áudio não foi perdido: dá para tentar enviar de novo.',
-      );
-    } finally {
-      setEnviandoTranscricao(false);
-      setProgressoEnvio('');
-      setNivelEntrada(null);
-    }
-  }
-
-  async function tentarEnviarDeNovo() {
-    setEnviandoTranscricao(true);
-    try {
-      await enviarTudo();
-      Alert.alert('Enviado', 'A aula está sendo transcrita. Você recebe um aviso quando terminar.');
-    } catch (err) {
-      Alert.alert('Ainda não foi', mensagemDeErro(err));
-    } finally {
-      setEnviandoTranscricao(false);
-      setProgressoEnvio('');
-    }
-  }
-
-  /** Transcrever um áudio de aula que já existe no aparelho, em vez de
-   *  gravar na hora — gravação feita por outro aparelho, aula gravada pela
-   *  instituição, etc. Daqui pra frente é o mesmo caminho da gravação. */
-  async function importarAudio() {
-    let arquivo;
-    try {
-      arquivo = await escolherArquivoDeAudio();
-    } catch (err) {
-      Alert.alert('Não dá para enviar este arquivo', err.message);
-      return;
-    }
-    if (!arquivo) return;
-    setEnviandoTranscricao(true);
-    try {
-      blocosRef.current = [{ uri: arquivo.uri, indice: 0, enviado: false }];
-      await enviarTudo();
-      Alert.alert('Enviado', 'A aula está sendo transcrita. Você recebe um aviso quando terminar.');
-    } catch (err) {
-      setPodeReenviar(blocosRef.current.length > 0);
-      Alert.alert('Erro ao enviar para transcrição', mensagemDeErro(err));
-    } finally {
-      setEnviandoTranscricao(false);
-      setProgressoEnvio('');
-    }
-  }
-
-  /** A pessoa optou por digitar em vez de tentar o envio de novo: o áudio
-   *  não serve mais e não pode ficar largado no aparelho. */
-  async function descartarAudioGuardado() {
-    await apagarBlocos(blocosRef.current);
-    blocosRef.current = [];
-    setPodeReenviar(false);
-  }
-
   // Horário do curso: mesma digitação por números do resto do app
   // ("1930" -> 19:30). O término sai da duração da aula enquanto a pessoa
   // não digitar um próprio.
@@ -654,7 +239,7 @@ export default function FormularioCursoScreen() {
     setSalvandoTranscricaoManual(true);
     try {
       await salvarTranscricaoManual(curso.id, transcricaoManual);
-      Alert.alert('Salvo', 'Transcrição/anotações da aula salvas.');
+      Alert.alert('Salvo', 'Anotações das aulas salvas.');
     } catch (err) {
       Alert.alert('Erro', mensagemDeErro(err));
     } finally {
@@ -790,109 +375,13 @@ export default function FormularioCursoScreen() {
 
         {curso && (
           <>
-            <Text style={s.sectionTitle}>Gravação e transcrição da aula</Text>
+            <Text style={s.sectionTitle}>Anotações das aulas</Text>
             <View style={s.gravacaoCard}>
-              {!gravando && !enviandoTranscricao && curso.transcricao_status !== 'processando' && (
-                <>
-                  <TouchableOpacity
-                    style={[s.gravarBtn, preparando && { opacity: 0.7 }]}
-                    onPress={() => pedirConsentimento(iniciarGravacao)}
-                    disabled={preparando}
-                  >
-                    {preparando ? <ActivityIndicator color="#FFFFFF" /> : (
-                      <>
-                        <Ionicons name="mic-outline" size={18} color="#FFFFFF" />
-                        <Text style={s.gravarBtnText}>Gravar aula</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={s.importarBtn}
-                    onPress={() => pedirConsentimento(importarAudio)}
-                  >
-                    <Ionicons name="folder-open-outline" size={17} color={COLORS.btnBlue} />
-                    <Text style={s.importarBtnTexto}>Transcrever um áudio já gravado</Text>
-                  </TouchableOpacity>
-                  {/* Aviso discreto, não caixa de diálogo: as pendências de
-                      "arrisca" não impedem gravar, e interromper o fluxo a
-                      cada aula por causa delas seria pior que o problema. */}
-                  {pendenciasProtecao.length > 0 && (
-                    <TouchableOpacity
-                      style={s.linkProtecao}
-                      onPress={() => navigation.navigate('ProtecaoGravacao')}
-                    >
-                      <Ionicons name="alert-circle-outline" size={15} color="#B36B00" />
-                      <Text style={s.linkProtecaoTexto}>
-                        {pendenciasProtecao.length === 1
-                          ? 'Um ajuste do Android pode interromper a gravação — conferir'
-                          : `${pendenciasProtecao.length} ajustes do Android podem interromper a gravação — conferir`}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                </>
-              )}
-
-              {gravando && (
-                <View style={s.gravandoBox}>
-                  <Text style={s.gravandoTimer}>⏱ {formatarTempo(tempo)}</Text>
-                  <MedidorDeEntrada nivel={nivelEntrada} />
-                  <TouchableOpacity style={s.encerrarBtn} onPress={encerrarEEnviar} disabled={enviandoTranscricao}>
-                    {enviandoTranscricao ? <ActivityIndicator color="#FFFFFF" /> : <Text style={s.encerrarBtnText}>Encerrar e transcrever</Text>}
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {/* Enviando (a gravação já parou): sem isso a tela não sinaliza
-                  nada entre encerrar e o envio terminar. */}
-              {enviandoTranscricao && !gravando && (
-                <View style={s.statusBox}>
-                  <ActivityIndicator color={COLORS.btnBlue} />
-                  <Text style={s.statusTexto}>{progressoEnvio || 'Enviando...'}</Text>
-                </View>
-              )}
-
-              {/* Envio falhou, mas o áudio continua no aparelho. */}
-              {podeReenviar && !enviandoTranscricao && (
-                <View style={s.reenvioBox}>
-                  <Text style={s.reenvioTitulo}>A gravação não foi enviada</Text>
-                  <Text style={s.reenvioTexto}>
-                    O áudio está guardado no aparelho e não foi perdido.
-                  </Text>
-                  {/* `disabled` e não só o `!enviandoTranscricao` do bloco:
-                      o estado só chega na tela no render seguinte, e dois
-                      toques rápidos cabem antes disso — mandando o áudio
-                      duas vezes e cobrando dois créditos de IA. */}
-                  <TouchableOpacity
-                    style={[s.reenvioBtn, enviandoTranscricao && { opacity: 0.7 }]}
-                    onPress={tentarEnviarDeNovo}
-                    disabled={enviandoTranscricao}
-                  >
-                    {enviandoTranscricao
-                      ? <ActivityIndicator color="#FFFFFF" />
-                      : <Text style={s.reenvioBtnTexto}>Tentar enviar de novo</Text>}
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={descartarAudioGuardado} disabled={enviandoTranscricao}>
-                    <Text style={s.descartarTexto}>Descartar áudio e digitar à mão</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {curso.transcricao_status === 'processando' && !gravando && (
-                <View style={s.statusBox}>
-                  <ActivityIndicator color={COLORS.btnBlue} />
-                  <Text style={s.statusTexto}>Transcrevendo... você recebe um aviso quando terminar.</Text>
-                </View>
-              )}
-              {curso.transcricao_status === 'erro' && (
-                <Text style={s.statusErro}>Não foi possível transcrever a última gravação. Tente novamente.</Text>
-              )}
-
-              <Text style={s.label}>Transcrição / anotações da aula</Text>
-              <TextInput
+                            <TextInput
                 style={[s.input, s.textArea, { minHeight: 160 }]}
                 value={transcricaoManual}
                 onChangeText={setTranscricaoManual}
-                placeholder="A transcrição aparece aqui automaticamente após gravar, ou você pode digitar/colar suas anotações."
+                placeholder="Digite ou cole aqui suas anotações das aulas."
                 placeholderTextColor="#756E66"
                 multiline
               />
@@ -904,7 +393,7 @@ export default function FormularioCursoScreen() {
                 {salvandoTranscricaoManual ? (
                   <ActivityIndicator color={COLORS.btnBlue} />
                 ) : (
-                  <Text style={s.salvarTranscricaoBtnText}>Salvar transcrição/anotações</Text>
+                  <Text style={s.salvarTranscricaoBtnText}>Salvar anotações das aulas</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -949,32 +438,6 @@ const s = StyleSheet.create({
     backgroundColor: COLORS.surface, borderRadius: 14, padding: 16,
     borderWidth: 1, borderColor: COLORS.border,
   },
-  gravarBtn: {
-    flexDirection: 'row', gap: 8, backgroundColor: COLORS.btnBlue, borderRadius: 12,
-    paddingVertical: 14, alignItems: 'center', justifyContent: 'center',
-  },
-  gravarBtnText: { fontSize: 15, fontWeight: '500', color: '#FFFFFF', lineHeight: 22 },
-  gravandoBox: { alignItems: 'center', paddingVertical: 10, gap: 12 },
-  gravandoTimer: { fontSize: 30, fontWeight: '500', color: '#975451' },
-  encerrarBtn: { backgroundColor: '#975451', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 20 },
-  encerrarBtnText: { fontSize: 14, fontWeight: '500', color: '#FFFFFF', lineHeight: 20 },
-  statusBox: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
-  statusTexto: { fontSize: 13, color: COLORS.textMid, flex: 1, lineHeight: 19 },
-  statusErro: { fontSize: 13, color: '#975451', marginBottom: 8, lineHeight: 19 },
-  importarBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    marginTop: 10, marginBottom: 4, paddingVertical: 13, borderRadius: 12,
-    borderWidth: 1, borderColor: '#C6D6CE', backgroundColor: COLORS.surface,
-  },
-  importarBtnTexto: { fontSize: 14, fontWeight: '600', color: COLORS.btnBlue, lineHeight: 20 },
-  linkProtecao: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12 },
-  linkProtecaoTexto: { flex: 1, fontSize: 12.5, color: '#B36B00', lineHeight: 18, fontWeight: '600' },
-  reenvioBox: { backgroundColor: '#F7E7E6', borderRadius: 12, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: '#E5CBC9' },
-  reenvioTitulo: { fontSize: 14, fontWeight: '600', color: '#975451', marginBottom: 6, lineHeight: 20 },
-  reenvioTexto: { fontSize: 13, color: '#7A5250', lineHeight: 19, marginBottom: 10 },
-  reenvioBtn: { backgroundColor: '#975451', borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
-  reenvioBtnTexto: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
-  descartarTexto: { marginTop: 10, textAlign: 'center', fontSize: 13, color: '#7A5250', textDecorationLine: 'underline' },
   salvarTranscricaoBtn: {
     marginTop: 12, backgroundColor: COLORS.bg, borderRadius: 10, paddingVertical: 12,
     alignItems: 'center', borderWidth: 1, borderColor: COLORS.border,

@@ -16,6 +16,7 @@ import { formatarSaldoBRL } from '../services/creditosIA';
 import { mensagemDeErro } from '../services/erros';
 import { MENSAGEM_ASSINATURA_INATIVA } from '../services/assinatura';
 import { useBloqueioIA } from '../hooks/useBloqueioIA';
+import { useBloqueioArquivo } from '../hooks/useBloqueioArquivo';
 import { MENSAGEM_SEM_CREDITOS } from '../services/usoDeIA';
 
 // Estado sobrevive fora do componente — a tela é remontada sempre que sai
@@ -54,6 +55,7 @@ export default function BuscaScreen() {
   // Esta tela não faz nada sem IA paga: se a conta não pode usar, avisa e
   // volta, em vez de deixar escrever a pergunta inteira pra negar no fim.
   useBloqueioIA(navigation);
+  useBloqueioArquivo(navigation);
   const [pessoas, setPessoas] = useState([]);
   const [selecionadosIds, setSelecionadosIds] = useState(estadoPersistente.selecionadosIds);
   const [seletorAberto, setSeletorAberto] = useState(estadoPersistente.selecionadosIds.length === 0);

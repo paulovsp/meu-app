@@ -7,13 +7,13 @@ import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/nativ
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
-  getSessions, getRecords, deleteSession, deleteRecord, parsePreco, getPatientById, getModalidadeDerivada,
+  getRecords, deleteRecord, parsePreco, getPatientById, getModalidadeDerivada,
   getHistoricoParalizacoes, marcarParalizacao, marcarRetorno,
   editarPeriodoParalizacao, excluirPeriodoParalizacao,
   getAvailabilitySlotsByPatient, liberarHorariosDoPaciente, reservarHorariosDoPaciente,
 } from '../services/database';
 import { formatarValorMoeda, getCotacaoCacheada } from '../services/currency';
-import { solicitarAutorizacao, getStatusAutorizacao } from '../services/autorizacaoGravacao';
+import { getVersaoDaConta, temArquivo, VERSAO_COMPLETA } from '../services/versao';
 import { mensagemDeErro } from '../services/erros';
 import {
   dataISOParaBR, dataBRParaISO, calcularAnosEMeses, formatarAnosEMeses, mascararDataBR, interpretarDataDigitada,
@@ -63,52 +63,6 @@ function getModalidadeLabel(modalidade) {
   }
 }
 
-// ─── Status da autorização de gravação/transcrição ────
-// Motivo exato devolvido pela Edge Function confirmar-autorizacao quando o
-// documento enviado não bate — mostrar aqui pra profissional evita que ela
-// veja só "Aguardando" sem saber que o analisante já tentou e falhou, e por quê.
-const MOTIVO_REJEICAO_LABEL = {
-  documento_ilegivel: 'documento ilegível na foto',
-  cpf_nao_confere: 'CPF do documento não confere com o cadastro',
-  cpf_do_profissional: 'enviou documento da própria profissional',
-};
-
-function getAutorizacaoInfo(autorizacao) {
-  if (!autorizacao) {
-    return { texto: 'Ainda não solicitada', cor: '#8C857B', botao: 'Solicitar autorização' };
-  }
-  if (autorizacao.status === 'autorizada') {
-    const data = autorizacao.respondido_em
-      ? new Date(autorizacao.respondido_em).toLocaleDateString('pt-BR')
-      : '';
-    return { texto: `Autorizada${data ? ` em ${data}` : ''}`, cor: '#44745B', botao: 'Solicitar novamente' };
-  }
-  if (autorizacao.status === 'negada') {
-    return { texto: 'Não autorizada pelo analisante', cor: '#975451', botao: 'Solicitar novamente' };
-  }
-
-  // status === 'pendente' — ainda sem resposta, ou já tentou enviar o
-  // documento e a conferência automática rejeitou (continua pendente até
-  // esgotar as 5 tentativas ou o analisante conseguir enviar um válido).
-  const motivo = MOTIVO_REJEICAO_LABEL[autorizacao.motivo_rejeicao];
-  const bloqueada = (autorizacao.tentativas || 0) >= 5;
-  if (bloqueada) {
-    return {
-      texto: `Bloqueada — esgotou as tentativas${motivo ? ` (${motivo})` : ''}`,
-      cor: '#975451',
-      botao: 'Solicitar novamente',
-    };
-  }
-  if (motivo) {
-    return {
-      texto: `Aguardando reenvio — última tentativa falhou (${motivo})`,
-      cor: '#7D6540',
-      botao: 'Reenviar e-mail',
-    };
-  }
-  return { texto: 'Aguardando confirmação do analisante', cor: '#7D6540', botao: 'Reenviar e-mail' };
-}
-
 // ⚠️ NOVO: Badge de autor para registros
 function getAuthorBadge(author) {
   switch (author) {
@@ -120,10 +74,10 @@ function getAuthorBadge(author) {
 }
 
 function getItemTipoLabel(item) {
-  if (item._itemType === 'session') {
-    return item.transcript
-      ? { icon: 'mic-outline', label: 'Sessão Transcrita', color: '#4D6B88', bg: '#E3EAF1' }
-      : { icon: 'document-text-outline', label: 'Sessão Anotada',   color: '#7D6540', bg: '#F2E9DC' };
+  // Sessão gravada e transcrita antes da remodelagem, convertida em
+  // registro pela migration 0111 — mantém o rótulo de sempre.
+  if (item.type === 'transcricao') {
+    return { icon: 'mic-outline', label: 'Sessão Transcrita', color: '#4D6B88', bg: '#E3EAF1' };
   }
   // Registros salvos antes da correção do Novo Registro gravavam o tipo
   // (sessão/estudo/outro) na coluna `type` por engano, em vez de `category`
@@ -138,8 +92,8 @@ function getItemTipoLabel(item) {
 }
 
 // Item 10 (v13): agrupa o histórico em 3 pastas — sessões (transcritas ou
-// anotadas) ficam juntas com registros do tipo "sessão", já que a distinção
-// entre elas é só uma badge (🎙️ vs 📝), não uma pasta separada. Registro sem
+// anotadas) ficam juntas, já que a distinção entre elas é só uma badge
+// (🎙️ vs 📝), não uma pasta separada. Registro sem
 // categoria nenhuma (imagem/arquivo/nota salva antes da correção do item 6)
 // cai em "Outros", o catch-all — não faz sentido junto de sessão nem estudo.
 const PASTAS = [
@@ -149,7 +103,6 @@ const PASTAS = [
 ];
 
 function getPastaItem(item) {
-  if (item._itemType === 'session') return 'sessoes';
   const cat = item.category || (['sessao', 'estudo', 'outro'].includes(item.type) ? item.type : null);
   if (cat === 'sessao') return 'sessoes';
   if (cat === 'estudo') return 'estudos';
@@ -181,10 +134,12 @@ export default function DetalheAnalisanteScreen() {
   // valor NÃO se atualiza sozinho. Por isso `paciente` vira estado local,
   // recarregado do Supabase toda vez que a tela ganha foco.
   const [paciente, setPaciente] = useState(pacienteInicial);
-  const [sessoes, setSessoes] = useState([]);
   const [registros, setRegistros] = useState([]);
-  const [autorizacao, setAutorizacao] = useState(null);
-  const [enviandoAutorizacao, setEnviandoAutorizacao] = useState(false);
+  // Na versão Agenda (src/services/versao.js) a ficha mostra só os dados
+  // administrativos: os registros não são buscados nem aparecem — e não
+  // são apagados, voltam se a conta voltar para a versão completa.
+  const [versao, setVersao] = useState(VERSAO_COMPLETA);
+  const comArquivo = temArquivo(versao);
   const [cotacaoCache, setCotacaoCache] = useState(null);
   const [modalidadeDerivada, setModalidadeDerivada] = useState(null);
   const [removendoItemId, setRemovendoItemId] = useState(null);
@@ -203,8 +158,9 @@ export default function DetalheAnalisanteScreen() {
           const atualizado = await getPatientById(pacienteInicial.id);
           const pacienteAtual = atualizado || pacienteInicial;
           setPaciente(pacienteAtual);
-          setSessoes(await getSessions(pacienteInicial.id));
-          setRegistros(await getRecords(pacienteInicial.id));
+          const versaoAtual = await getVersaoDaConta();
+          setVersao(versaoAtual);
+          setRegistros(temArquivo(versaoAtual) ? await getRecords(pacienteInicial.id) : []);
           if (pacienteAtual.preco_moeda && pacienteAtual.preco_moeda !== 'BRL') {
             getCotacaoCacheada(pacienteAtual.preco_moeda).then(setCotacaoCache).catch(() => {});
           }
@@ -212,7 +168,6 @@ export default function DetalheAnalisanteScreen() {
           Alert.alert('Erro ao carregar', mensagemDeErro(e));
         }
       })();
-      getStatusAutorizacao(pacienteInicial.id).then(setAutorizacao).catch(() => {});
       getModalidadeDerivada(pacienteInicial.id).then(setModalidadeDerivada).catch(() => {});
       getHistoricoParalizacoes(pacienteInicial.id).then(setHistoricoParalizacoes).catch(() => {});
     }, [pacienteInicial.id])
@@ -404,32 +359,6 @@ export default function DetalheAnalisanteScreen() {
     );
   }
 
-  // ─── Autorização de gravação/transcrição ─────────────
-  async function handleSolicitarAutorizacao() {
-    if (!paciente.email || !paciente.cpf || !paciente.nascimento) {
-      Alert.alert(
-        'Dados incompletos',
-        'Para solicitar autorização, o cadastro do analisante precisa ter e-mail, CPF e data de nascimento preenchidos.',
-        [
-          { text: 'Cancelar', style: 'cancel' },
-          { text: 'Editar cadastro', onPress: () => navigation.navigate('PatientForm', { paciente }) },
-        ]
-      );
-      return;
-    }
-
-    setEnviandoAutorizacao(true);
-    const resultado = await solicitarAutorizacao(paciente);
-    setEnviandoAutorizacao(false);
-
-    if (!resultado.ok) {
-      Alert.alert('Erro', resultado.error || 'Não foi possível enviar a solicitação.');
-      return;
-    }
-    Alert.alert('E-mail enviado', `Enviamos um e-mail para ${paciente.email} pedindo a confirmação do analisante.`);
-    getStatusAutorizacao(paciente.id).then(setAutorizacao).catch(() => {});
-  }
-
   // ─── Datas formatadas ──────────────────────────────────
   const idadeText = formatarAnosEMeses(calcularAnosEMeses(paciente.nascimento));
   const tempoAnaliseText = formatarAnosEMeses(calcularAnosEMeses(paciente.data_inicio));
@@ -437,7 +366,6 @@ export default function DetalheAnalisanteScreen() {
 
   // ─── Lista unificada ─────────────────────────────────
   const todosItens = [
-    ...sessoes.map(s => ({ ...s, _itemType: 'session' })),
     ...registros.map(r => ({ ...r, _itemType: 'record' })),
   ].sort((a, b) => new Date(b.date) - new Date(a.date));
 
@@ -461,33 +389,17 @@ export default function DetalheAnalisanteScreen() {
 
   // ─── Excluir ─────────────────────────────────────────
   function confirmarExclusao(item) {
-    const tipoLabel = getItemTipoLabel(item);
-    const titulo = item._itemType === 'session'
-      ? `${tipoLabel.label} de ${formatarData(item.date)}`
-      : (item.title || 'Registro sem título');
+    const titulo = item.title || 'Registro sem título';
 
-    // Apagar uma SESSÃO não leva só a sessão: `records.session_id` e os
-    // turnos por falante são cascade, então o relato escrito a partir dela
-    // e a separação de falas vão junto. O aviso dizia "não pode ser
-    // desfeita" sem dizer o que, exatamente, se perde.
-    const detalhe = item._itemType === 'session'
-      ? '\n\nA transcrição e o relato escrito a partir desta sessão vão junto.'
-      : '';
-
-    Alert.alert('Remover item?', `Deseja remover "${titulo}"?${detalhe}\n\nEsta ação não pode ser desfeita.`, [
+    Alert.alert('Remover item?', `Deseja remover "${titulo}"?\n\nEsta ação não pode ser desfeita.`, [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Remover', style: 'destructive',
         onPress: async () => {
           setRemovendoItemId(item.id);
           try {
-            if (item._itemType === 'session') {
-              await deleteSession(item.id);
-              setSessoes(await getSessions(paciente.id));
-            } else {
-              await deleteRecord(item.id);
-              setRegistros(await getRecords(paciente.id));
-            }
+            await deleteRecord(item.id);
+            setRegistros(await getRecords(paciente.id));
           } catch (e) {
             Alert.alert('Erro ao remover', mensagemDeErro(e));
           } finally {
@@ -500,37 +412,18 @@ export default function DetalheAnalisanteScreen() {
 
   // ─── ✅ ABRIR (visualizar) ───────────────────────────
   function abrirItem(item) {
-    if (item._itemType === 'session') {
-      navigation.navigate('SessionDetail', {
-        sessao: item,
-        pacienteNome: paciente.nome || 'Analisante',
-      });
-    } else {
-      navigation.navigate('RecordDetail', {
-        record: item,
-      });
-    }
+    navigation.navigate('RecordDetail', { record: item });
   }
 
   // ─── ✅ EDITAR (✏️) ──────────────────────────────────
   function editarItem(item) {
-    if (item._itemType === 'session') {
-      navigation.navigate('SessionDetail', {
-        sessao: item,
-        pacienteNome: paciente.nome || 'Analisante',
-      });
-    } else {
-      navigation.navigate('AddRecord', {
-        record: item,
-        patientId: paciente.id,
-      });
-    }
+    navigation.navigate('AddRecord', { record: item, patientId: paciente.id });
   }
 
   // ─── Render item ─────────────────────────────────────
   function renderItem({ item }) {
     const tipo = getItemTipoLabel(item);
-    const preview = item._itemType === 'session' ? item.transcript : item.content;
+    const preview = item.content;
 
     // ⚠️ NOVO: badge de autor para registros
     const authorBadge = item._itemType === 'record' && item.author
@@ -573,7 +466,7 @@ export default function DetalheAnalisanteScreen() {
               <Text style={styles.itemPreview} numberOfLines={3}>{stripHtml(preview)}</Text>
             ) : (
               <Text style={styles.itemSemConteudo}>
-                {item._itemType === 'session' ? 'Sem transcrição' : 'Sem conteúdo'}
+                Sem conteúdo
               </Text>
             )}
           </View>
@@ -604,7 +497,6 @@ export default function DetalheAnalisanteScreen() {
 
   // ─── Header do FlatList (info do paciente) ───────────
   function ListHeader() {
-    const autorizacaoInfo = getAutorizacaoInfo(autorizacao);
     return (
       <View>
         {/* Card principal — toque para editar os dados do analisante */}
@@ -681,26 +573,6 @@ export default function DetalheAnalisanteScreen() {
           </TouchableOpacity>
         ))}
 
-        {/* Autorização de gravação/transcrição pelo analisante */}
-        <View style={styles.cardAutorizacao}>
-          <View style={styles.autorizacaoTopo}>
-            <Ionicons name="shield-checkmark-outline" size={18} color="#497363" />
-            <Text style={styles.autorizacaoTitulo}>Autorização de gravação</Text>
-          </View>
-          <Text style={[styles.autorizacaoStatus, { color: autorizacaoInfo.cor }]}>
-            {autorizacaoInfo.texto}
-          </Text>
-          <TouchableOpacity
-            style={[styles.btnAutorizacao, enviandoAutorizacao && { opacity: 0.6 }]}
-            activeOpacity={0.8}
-            disabled={enviandoAutorizacao}
-            onPress={handleSolicitarAutorizacao}
-          >
-            <Text style={styles.btnAutorizacaoTexto}>
-              {enviandoAutorizacao ? 'Enviando...' : autorizacaoInfo.botao}
-            </Text>
-          </TouchableOpacity>
-        </View>
         <View style={styles.divisoria} />
 
         {/* Acompanhamento */}
@@ -773,7 +645,11 @@ export default function DetalheAnalisanteScreen() {
         ListEmptyComponent={
           <View style={styles.vazio}>
             <Ionicons name="leaf-outline" size={34} color="#A8CBBA" style={styles.vazioIcone} />
-            <Text style={styles.vazioTexto}>Nenhuma sessão ou registro ainda</Text>
+            <Text style={styles.vazioTexto}>
+              {comArquivo
+                ? 'Nenhum registro ainda'
+                : 'Na versão Agenda inteligente, a ficha guarda só os dados administrativos.'}
+            </Text>
           </View>
         }
         showsVerticalScrollIndicator={false}
@@ -921,20 +797,6 @@ const styles = StyleSheet.create({
   modalBtnExcluirTexto: { color: '#975451', fontWeight: '500', fontSize: 14, lineHeight: 20 },
   modalBtnCancelar: { alignItems: 'center', paddingVertical: 10, marginTop: 2 },
   modalBtnCancelarTexto: { color: '#8C857B', fontSize: 14, lineHeight: 20 },
-
-  // Card de autorização de gravação/transcrição
-  cardAutorizacao: {
-    backgroundColor: '#FDFCFA', marginHorizontal: 16, marginTop: 12,
-    borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#EAE5DC',
-  },
-  autorizacaoTopo: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
-  autorizacaoTitulo: { fontSize: 14, fontWeight: '500', color: '#302C28', lineHeight: 20 },
-  autorizacaoStatus: { fontSize: 13, marginBottom: 10, lineHeight: 19 },
-  btnAutorizacao: {
-    backgroundColor: '#E3EAF1', borderRadius: 10, paddingVertical: 10,
-    alignItems: 'center', borderWidth: 1, borderColor: '#C4D3E0',
-  },
-  btnAutorizacaoTexto: { fontSize: 13, fontWeight: '500', color: '#497363', lineHeight: 19 },
 
   // Dados do acompanhamento
   dadosCard: {

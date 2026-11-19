@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import {
   View,
@@ -10,6 +10,8 @@ import {
   ActivityIndicator,
   TextInput,
   FlatList,
+  Keyboard,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -179,6 +181,47 @@ export default function NovoRegistroScreen() {
     () => htmlParaTextoPlano(removerIntroducaoAutomatica(registroExistente?.content))
   );
   const [alturaEditor, setAlturaEditor] = useState(ALTURA_BASE_EDITOR);
+
+  // ─── teclado ──────────────────────────────────────────────────────────
+  // No Android (SDK 54, edge-to-edge) a janela não encolhe mais quando o
+  // teclado abre: sem ajuste, o teclado cobre o fim da tela e não dá nem
+  // pra rolar até a caixa de texto. O KeyboardAvoidingView (behavior
+  // "padding" nas duas plataformas) encolhe a área rolável; aqui guardamos
+  // a altura visível dela pra limitar o editor a esse espaço e rolamos até
+  // a caixa em edição quando o teclado termina de abrir.
+  const scrollRef = useRef(null);
+  const yCampos = useRef({});
+  const campoEmFoco = useRef(null);
+  const [alturaVisivel, setAlturaVisivel] = useState(0);
+  const [tecladoAberto, setTecladoAberto] = useState(false);
+
+  function rolarAteCampo(nome) {
+    const y = yCampos.current[nome];
+    if (y == null || !scrollRef.current) return;
+    scrollRef.current.scrollTo({ y: Math.max(0, y - 12), animated: true });
+  }
+
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', () => {
+      setTecladoAberto(true);
+      // espera a área rolável encolher (padding do KeyboardAvoidingView)
+      setTimeout(() => { if (campoEmFoco.current) rolarAteCampo(campoEmFoco.current); }, 60);
+    });
+    const hide = Keyboard.addListener('keyboardDidHide', () => setTecladoAberto(false));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+
+  // Com o teclado aberto, o editor não passa da altura que sobra na tela
+  // (descontado o rótulo "Conteúdo"), pra caixa inteira — e o cursor —
+  // ficarem visíveis; o texto excedente rola dentro da própria caixa.
+  const alturaEditorNaTela = tecladoAberto && alturaVisivel > 0
+    ? Math.min(alturaEditor, Math.max(100, alturaVisivel - 56))
+    : alturaEditor;
+
+  function aoFocar(nome) {
+    campoEmFoco.current = nome;
+    if (tecladoAberto) rolarAteCampo(nome);
+  }
 
   useEffect(() => {
     async function carregar() {
@@ -375,7 +418,14 @@ export default function NovoRegistroScreen() {
     <SafeAreaView style={s.container} edges={['left', 'right', 'bottom']}>
       <CabecalhoTela titulo={editando ? 'Editar Registro' : 'Novo Registro'} onVoltar={() => navigation.goBack()} />
 
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.form}>
+      <KeyboardAvoidingView style={s.flex} behavior="padding">
+      <ScrollView
+        ref={scrollRef}
+        style={s.flex}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={s.form}
+        onLayout={(e) => setAlturaVisivel(e.nativeEvent.layout.height)}
+      >
         <View style={s.infoRow}>
           <Text style={s.infoLabel}>Analisante:</Text>
           <Text style={s.infoValue}>{paciente?.nome}</Text>
@@ -405,7 +455,7 @@ export default function NovoRegistroScreen() {
         </View>
 
         {tipo === 'sessao' && (
-          <View style={s.fieldGroup}>
+          <View style={s.fieldGroup} onLayout={(e) => { yCampos.current.data = e.nativeEvent.layout.y; }}>
             <Text style={s.label}>Data da sessão *</Text>
             <TextInput
               style={s.inputTitulo}
@@ -413,6 +463,7 @@ export default function NovoRegistroScreen() {
               placeholderTextColor="#A9A299"
               value={dataSessaoRegistro}
               onChangeText={(t) => setDataSessaoRegistro(mascararDataBR(t))}
+              onFocus={() => aoFocar('data')}
               onBlur={() => setDataSessaoRegistro((v) => interpretarDataDigitada(v) || v)}
               keyboardType="numeric"
               maxLength={10}
@@ -423,7 +474,7 @@ export default function NovoRegistroScreen() {
           </View>
         )}
 
-        <View style={s.fieldGroup}>
+        <View style={s.fieldGroup} onLayout={(e) => { yCampos.current.titulo = e.nativeEvent.layout.y; }}>
           <Text style={s.label}>Título *</Text>
           <TextInput
             style={s.inputTitulo}
@@ -431,6 +482,7 @@ export default function NovoRegistroScreen() {
             placeholderTextColor="#A9A299"
             value={titulo}
             onChangeText={setTitulo}
+            onFocus={() => aoFocar('titulo')}
           />
         </View>
 
@@ -461,19 +513,20 @@ export default function NovoRegistroScreen() {
           </View>
         )}
 
-        <View style={s.fieldGroup}>
+        <View style={s.fieldGroup} onLayout={(e) => { yCampos.current.conteudo = e.nativeEvent.layout.y; }}>
           <Text style={s.label}>Conteúdo</Text>
           {/* Caixa de texto simples — cresce até 3x a altura inicial
               acompanhando o texto; passado isso, rola por dentro dela
               mesma (scroll nativo do TextInput multiline). */}
           <TextInput
-            style={[s.editorInput, { height: alturaEditor }]}
+            style={[s.editorInput, { height: alturaEditorNaTela }]}
             multiline
             textAlignVertical="top"
             placeholder="Escreva aqui o conteúdo do registro..."
             placeholderTextColor="#A9A299"
             value={conteudo}
             onChangeText={setConteudo}
+            onFocus={() => aoFocar('conteudo')}
             onContentSizeChange={(e) => {
               const alturaConteudo = e.nativeEvent.contentSize.height;
               setAlturaEditor(Math.min(Math.max(alturaConteudo, ALTURA_BASE_EDITOR), ALTURA_MAX_EDITOR));
@@ -491,12 +544,14 @@ export default function NovoRegistroScreen() {
 
         <View style={{ height: 60 }} />
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F7F5F0' },
+  flex: { flex: 1 },
   stepLabel: { fontSize: 16, color: '#756E66', padding: 20, paddingBottom: 8, lineHeight: 23 },
   form:        { padding: 20, gap: 18 },
   fieldGroup:  { gap: 8 },

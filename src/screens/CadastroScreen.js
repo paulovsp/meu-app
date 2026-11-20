@@ -33,6 +33,7 @@ const HEADER_H = 220;
 const ORIGENS_DE_CADASTRO = [
   { valor: 'indicacao', rotulo: 'Indicação de colega' },
   { valor: 'instagram', rotulo: 'Instagram' },
+  { valor: 'facebook', rotulo: 'Facebook' },
   { valor: 'google', rotulo: 'Google' },
   { valor: 'instituto', rotulo: 'Instituto ou evento' },
   { valor: 'outro', rotulo: 'Outro' },

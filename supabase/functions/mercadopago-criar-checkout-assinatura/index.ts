@@ -1,7 +1,7 @@
 // Edge Function: mercadopago-criar-checkout-assinatura
 //
 // Gera a assinatura dos três planos, em qualquer das duas versões
-// (Agenda inteligente ou Agenda + Arquivo inteligente). Os três são ASSINATURA de verdade
+// (Agenda ou Agenda + Arquivo de Registros). Os três são ASSINATURA de verdade
 // (`preapproval` do Mercado Pago): renovam sozinhos até a pessoa cancelar,
 // só mudando de quanto em quanto tempo a cobrança acontece — 1, 6 ou 12
 // meses. Verificado contra a API: `auto_recurring.frequency` aceita 6 e 12
@@ -64,8 +64,8 @@ const CONFIRMACAO_URL = 'https://app.drsig.com.br/assinatura-confirmada.html';
 // por versão. Aqui ficam só os nomes que aparecem para a pessoa.
 const NOME_PLANO: Record<Plano, string> = { mensal: 'Mensal', semestral: 'Semestral', anual: 'Anual' };
 const NOME_VERSAO: Record<Versao, string> = {
-  agenda: 'Agenda inteligente',
-  completa: 'Agenda + Arquivo inteligente',
+  agenda: 'Agenda',
+  completa: 'Agenda + Arquivo de Registros',
 };
 
 // Esta função é chamada de uma PÁGINA (docs/escolher-plano.html), não do

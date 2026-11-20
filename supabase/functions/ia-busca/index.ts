@@ -75,9 +75,9 @@ Deno.serve(servir('ia-busca', async (req) => {
     if (perfilError || !perfil) return json({ error: 'Perfil não encontrado.' }, 404);
 
     // A Busca Dr.Sig e os relatórios com IA são da versão completa. O app
-    // já esconde os dois na Agenda inteligente; isto é a trava de verdade.
+    // já esconde os dois na Agenda; isto é a trava de verdade.
     if (perfil.assinatura_versao === 'agenda') {
-      return json({ error: 'Disponível só na versão Agenda + Arquivo inteligente.', soNaVersaoCompleta: true }, 403);
+      return json({ error: 'Disponível só na versão Agenda + Arquivo de Registros.', soNaVersaoCompleta: true }, 403);
     }
 
     if (await ehContaDemonstracao(supabaseAdmin, userId)) return respostaDemonstracao();

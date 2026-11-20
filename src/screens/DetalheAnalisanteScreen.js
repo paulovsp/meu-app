@@ -648,7 +648,7 @@ export default function DetalheAnalisanteScreen() {
             <Text style={styles.vazioTexto}>
               {comArquivo
                 ? 'Nenhum registro ainda'
-                : 'Na versão Agenda inteligente, a ficha guarda só os dados administrativos.'}
+                : 'Na versão Agenda, a ficha guarda só os dados administrativos.'}
             </Text>
           </View>
         }

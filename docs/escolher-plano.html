@@ -88,7 +88,7 @@
   // falsa é a primeira coisa que alguém desconfia numa página de pagamento.
   const VERSOES = {
     completa: {
-      nome: 'Agenda + Arquivo inteligente',
+      nome: 'Agenda + Arquivo de Registros',
       faixa: 'R$ 49 a 89',
       resumo: 'Agenda, fichas, financeiro, registros clínicos, Busca Dr.Sig e relatórios com IA.',
       planos: [
@@ -112,7 +112,7 @@
       ],
     },
     agenda: {
-      nome: 'Agenda inteligente',
+      nome: 'Agenda',
       faixa: 'R$ 29 a 49',
       resumo: 'Agenda, fichas com os dados administrativos, financeiro e relatórios de frequência e pagamento. Sem registros clínicos.',
       planos: [
@@ -251,7 +251,7 @@
     } else {
       acao = botaoTroca('agenda', 'Passar para a ' + VERSOES.agenda.nome,
         'Você continua com tudo até ' + (ate || 'o fim do período já pago') + '. A partir daí a conta fica só com a agenda ' +
-        'e a cobrança passa a ser ' + (plano ? plano.preco + plano.periodo : 'a da Agenda inteligente') +
+        'e a cobrança passa a ser ' + (plano ? plano.preco + plano.periodo : 'a da Agenda') +
         '. Os registros que você já escreveu continuam guardados e podem ser lidos.');
     }
 

@@ -146,13 +146,13 @@ function emailDeBoasVindas(nome: string, linkSignup: string): string {
         '<strong>Cursos</strong> — o histórico da sua formação continuada, com as anotações das aulas.',
       ])
       + h2('Duas versões, sem fidelidade')
-      + p('<strong>Agenda inteligente</strong> — agenda, fichas com os dados administrativos, financeiro e relatórios de frequência e pagamento.')
+      + p('<strong>Agenda</strong> — agenda, fichas com os dados administrativos, financeiro e relatórios de frequência e pagamento.')
       + tabela([
         ['Mensal', 'R$ 49 por mês'],
         ['Semestral', 'R$ 234 a cada 6 meses (R$ 39/mês)'],
         ['Anual', 'R$ 348 por ano (R$ 29/mês)'],
       ])
-      + p('<strong>Agenda + Arquivo inteligente</strong> — tudo da Agenda, mais os registros clínicos, a Busca Dr.Sig e os relatórios de evolução com IA.')
+      + p('<strong>Agenda + Arquivo de Registros</strong> — tudo da Agenda, mais os registros clínicos, a Busca Dr.Sig e os relatórios de evolução com IA.')
       + tabela([
         ['Mensal', 'R$ 89 por mês'],
         ['Semestral', 'R$ 414 a cada 6 meses (R$ 69/mês)'],

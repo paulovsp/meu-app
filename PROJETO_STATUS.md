@@ -19,8 +19,8 @@ ele mesmo psicanalista, que não programa) pra uso próprio, e virou produto.
 - Gravação e transcrição de sessões e aulas saíram do app e do servidor
   (Meet/Zoom juntos, porque só existiam para transcrever). Código guardado
   no ramo `arquivo/gravacao-transcricao-2026-11-19`.
-- Duas versões: **Agenda inteligente** (sem registros clínicos, sem IA;
-  relatórios de frequência e pagamento) e **Agenda + Arquivo inteligente**
+- Duas versões: **Agenda** (sem registros clínicos, sem IA;
+  relatórios de frequência e pagamento) e **Agenda + Arquivo de Registros**
   (tudo). Quem já assinava fica na completa. Trava no app
   (`src/services/versao.js`) e no banco (migration 0112).
 - Troca de versão sem assinatura nova (migration 0113): pela página de
@@ -67,8 +67,8 @@ ele mesmo psicanalista, que não programa) pra uso próprio, e virou produto.
   chaves de API direto. A transcrição (AssemblyAI) saiu na remodelagem de
   19/11/2026.
 - **Pagamentos**: Mercado Pago. Os três ciclos (mensal, semestral, anual)
-  são assinatura recorrente em cartão, nas duas versões: Agenda inteligente
-  (R$ 49 / 234 / 348) e Agenda + Arquivo inteligente (R$ 89 / 414 / 588).
+  são assinatura recorrente em cartão, nas duas versões: Agenda
+  (R$ 49 / 234 / 348) e Agenda + Arquivo de Registros (R$ 89 / 414 / 588).
   A versão vai no `external_reference` e fica em
   `profiles.assinatura_versao` (migration 0112). Recarga de créditos de IA
   só em cartão.

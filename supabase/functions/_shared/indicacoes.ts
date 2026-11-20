@@ -19,8 +19,8 @@
 import { MP_API, type Cliente, type Plano, type Versao } from './assinaturaMercadoPago.ts';
 
 /** Preço cheio de cada plano em cada versão, e de quanto em quanto tempo
- *  ele é cobrado. Agenda inteligente: 49 / 234 (39/mês) / 348 (29/mês).
- *  Agenda + Arquivo inteligente: 89 / 414 / 588. */
+ *  ele é cobrado. Agenda: 49 / 234 (39/mês) / 348 (29/mês).
+ *  Agenda + Arquivo de Registros: 89 / 414 / 588. */
 export const PRECO_BASE: Record<Versao, Record<Plano, { precoBRL: number; mesesPorCobranca: number }>> = {
   agenda: {
     mensal: { precoBRL: 49, mesesPorCobranca: 1 },

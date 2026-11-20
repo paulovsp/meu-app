@@ -210,7 +210,7 @@ Deno.serve(servir('enviar-digest-diario', async (req) => {
         const sessaoEmail = perfil.notif_sessao_email === true;
         const prefs = {
           atraso: perfil.notif_atraso_email !== false,
-          // Na Agenda inteligente não há registro clínico a cobrar.
+          // Na Agenda não há registro clínico a cobrar.
           registro: perfil.notif_registro_email !== false && perfil.assinatura_versao !== 'agenda',
           // Precisa ser calculado se QUALQUER um dos dois canais quer o
           // número — senão ligar só o push não traria nada pra notificar.

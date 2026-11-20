@@ -6,7 +6,7 @@
 // mount-guard (useBloqueioAssinatura) como rede de segurança, mas checar
 // aqui evita a "piscada" de abrir a tela pra só então mostrar o aviso e
 // voltar.
-// exigeArquivo: só existe na versão "Agenda + Arquivo inteligente". Na
+// exigeArquivo: só existe na versão "Agenda + Arquivo de Registros". Na
 // versão Agenda o botão aparece com cadeado e explica como mudar de versão
 // (ver src/services/versao.js) — some não, pra pessoa saber que existe.
 //

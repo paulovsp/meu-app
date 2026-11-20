@@ -20,8 +20,8 @@ export const MP_API = 'https://api.mercadopago.com';
 export type Plano = 'mensal' | 'semestral' | 'anual';
 export const PLANOS_VALIDOS: Plano[] = ['mensal', 'semestral', 'anual'];
 
-/** 'agenda' = Agenda inteligente (sem registros clínicos nem IA);
- *  'completa' = Agenda + Arquivo inteligente. Ver migration 0112. */
+/** 'agenda' = Agenda (sem registros clínicos nem IA);
+ *  'completa' = Agenda + Arquivo de Registros. Ver migration 0112. */
 export type Versao = 'agenda' | 'completa';
 export const VERSOES_VALIDAS: Versao[] = ['agenda', 'completa'];
 
@@ -139,7 +139,7 @@ export async function aplicarAssinaturaPorId(
   }
 
   if (estado.assinatura_status !== 'ativa' || !estado.assinatura_plano) return;
-  // A Agenda inteligente não usa IA (sem Busca, sem relatórios com IA):
+  // A Agenda não usa IA (sem Busca, sem relatórios com IA):
   // não há crédito a entregar.
   if (estado.assinatura_versao === 'agenda') return;
   const creditoUsd = creditoMensalUsd(estado.assinatura_plano);

@@ -1,9 +1,9 @@
 // As duas versões do Dr.Sig.
 //
-//  'agenda'   — Agenda inteligente: agenda, financeiro, fiscal, afazeres e
+//  'agenda'   — Agenda: agenda, financeiro, fiscal, afazeres e
 //               a ficha administrativa de cada analisante. Sem registros
 //               clínicos, sem Busca Dr.Sig, sem relatórios por IA.
-//  'completa' — Agenda + Arquivo inteligente: tudo.
+//  'completa' — Agenda + Arquivo de Registros: tudo.
 //
 // A coluna é `profiles.assinatura_versao` (migration 0112). Quem decide de
 // verdade é o banco (`arquivo_liberado`, nas políticas de `records`); isto
@@ -19,15 +19,15 @@ export const VERSAO_AGENDA = 'agenda';
 export const VERSAO_COMPLETA = 'completa';
 
 export const VERSAO_LABEL = {
-  [VERSAO_AGENDA]: 'Agenda inteligente',
-  [VERSAO_COMPLETA]: 'Agenda + Arquivo inteligente',
+  [VERSAO_AGENDA]: 'Agenda',
+  [VERSAO_COMPLETA]: 'Agenda + Arquivo de Registros',
 };
 
 // Sem preço e sem link de propósito: o Google Play não permite nenhum dos
 // dois nas telas do app. O caminho é o mesmo do plano — e-mail com o link.
 export const MENSAGEM_SO_NA_VERSAO_COMPLETA =
-  'Esta parte faz parte da versão Agenda + Arquivo inteligente. A sua conta está na ' +
-  'versão Agenda inteligente, que guarda só os dados administrativos dos analisantes.\n\n' +
+  'Esta parte faz parte da versão Agenda + Arquivo de Registros. A sua conta está na ' +
+  'versão Agenda, que guarda só os dados administrativos dos analisantes.\n\n' +
   'Para mudar de versão, abra Meu Perfil › Seu plano e toque em "Receber o link por e-mail".';
 
 /** A versão da conta logada. Na dúvida (sem sessão, erro de rede),

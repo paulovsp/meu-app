@@ -27,7 +27,7 @@ export const TIPOS_RELATORIO = [
 export const OPCOES_ULTIMAS_SESSOES = [1, 2, 3, 5, 10];
 
 // Os dois relatórios administrativos, calculados no app sem IA. São os
-// únicos da versão Agenda inteligente.
+// únicos da versão Agenda.
 export const TIPOS_ADMINISTRATIVOS = ['frequencia', 'pagamento'];
 const TIPOS_LOCAIS = new Set(TIPOS_ADMINISTRATIVOS);
 

@@ -71,7 +71,7 @@ Deno.serve(servir('renovar-creditos', async (req) => {
       return json({ renovado: false, motivo: 'sem_plano', saldoAtual: Number(perfil.creditos_ia) });
     }
 
-    // A Agenda inteligente não usa IA, e não tem crédito mensal.
+    // A Agenda não usa IA, e não tem crédito mensal.
     if (perfil.assinatura_versao === 'agenda') {
       return json({ renovado: false, motivo: 'versao_agenda', saldoAtual: Number(perfil.creditos_ia) });
     }

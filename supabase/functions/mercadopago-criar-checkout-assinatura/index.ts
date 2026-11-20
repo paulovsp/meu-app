@@ -42,7 +42,8 @@
 // automático do supabase-js — o token vai manual no header).
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
-  PLANOS_VALIDOS, referenciaAssinatura, sincronizarPreapproval, VERSOES_VALIDAS, type Plano, type Versao,
+  PLANOS_VALIDOS, referenciaAssinatura, sincronizarPreapproval, VALOR_MENSAL_EQUIVALENTE, VERSOES_VALIDAS,
+  type Plano, type Versao,
 } from '../_shared/assinaturaMercadoPago.ts';
 import { aplicarDescontoDeIndicacoes, PRECO_BASE, precoComDesconto } from '../_shared/indicacoes.ts';
 import { mensagemDeRecusa } from '../_shared/recusaMercadoPago.ts';
@@ -119,7 +120,7 @@ Deno.serve(servir('mercadopago-criar-checkout-assinatura', async (req) => {
     // cobrando o cartão todo mês, sem botão para cancelar.
     const { data: perfil } = await admin
       .from('profiles')
-      .select('assinatura_status, assinatura_plano, assinatura_versao, assinatura_expira_em, mp_preapproval_id, conta_demonstracao')
+      .select('assinatura_status, assinatura_plano, assinatura_versao, assinatura_versao_proxima, assinatura_versao_muda_em, assinatura_expira_em, mp_preapproval_id, conta_demonstracao')
       .eq('id', userId)
       .maybeSingle();
     const renovaSozinha = perfil?.assinatura_status === 'ativa' && !!perfil?.mp_preapproval_id;
@@ -135,10 +136,101 @@ Deno.serve(servir('mercadopago-criar-checkout-assinatura', async (req) => {
           status: perfil?.assinatura_status || 'sem_assinatura',
           plano: perfil?.assinatura_plano || null,
           versao: perfil?.assinatura_versao || 'completa',
+          versaoProxima: perfil?.assinatura_versao_proxima || null,
+          versaoMudaEm: perfil?.assinatura_versao_muda_em || null,
           expiraEm: perfil?.assinatura_expira_em || null,
           renovaSozinha,
           gratuitaPorIndicacoes,
         },
+      });
+    }
+
+    // ─── Trocar de versão sem assinar de novo ──────────────────────────
+    //
+    // Regra do Paulo (20/11/2026): nada de cobrança proporcional, e nunca
+    // cobrar um período cheio mais caro que a pessoa não vai usar inteiro.
+    // Então a troca só mexe no valor da PRÓXIMA cobrança:
+    //   • subida (agenda → completa): a completa vale já, e o resto do
+    //     período pago sai de cortesia;
+    //   • descida (completa → agenda): a pessoa usa a completa até o fim do
+    //     que já pagou, e a conta vira agenda na renovação.
+    // O valor é trocado na própria assinatura (PUT em auto_recurring, que o
+    // Mercado Pago aceita sem a pessoa reautorizar — ver indicacoes.ts), sem
+    // cancelar nem criar outra.
+    if (body?.acao === 'trocar_versao') {
+      if (perfil?.conta_demonstracao) {
+        return json({ error: 'A conta de demonstração não assina planos.' }, 403);
+      }
+      if (!renovaSozinha || !perfil?.assinatura_plano) {
+        return json({ error: 'Não há assinatura ativa para trocar. Escolha a versão e assine normalmente.' }, 409);
+      }
+      const alvo = String(body?.versao || '') as Versao;
+      if (!VERSOES_VALIDAS.includes(alvo)) return json({ error: 'Versão inválida.' }, 400);
+      const planoAtual = perfil.assinatura_plano as Plano;
+      if (!PLANOS_VALIDOS.includes(planoAtual)) return json({ error: 'Plano atual desconhecido.' }, 409);
+
+      const atual: Versao = perfil.assinatura_versao === 'agenda' ? 'agenda' : 'completa';
+      const pendente = perfil.assinatura_versao_proxima as Versao | null;
+      if (alvo === atual && !pendente) {
+        return json({ error: `Sua conta já está na versão ${NOME_VERSAO[alvo]}.` }, 400);
+      }
+
+      const { data: descontoBruto } = await admin.rpc('desconto_por_indicacoes', { uid: userId });
+      const desconto = Math.min(Number(descontoBruto) || 0, 90);
+      const valor = precoComDesconto(planoAtual, desconto, alvo);
+
+      const put = await fetch(`${MP_API}/preapproval/${perfil.mp_preapproval_id}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${MP_ACCESS_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reason: `Dr.Sig — ${NOME_VERSAO[alvo]} · ${NOME_PLANO[planoAtual]}`,
+          auto_recurring: {
+            frequency: PRECO_BASE[alvo][planoAtual].mesesPorCobranca,
+            frequency_type: 'months',
+            transaction_amount: valor,
+            currency_id: 'BRL',
+          },
+        }),
+      });
+      if (!put.ok) {
+        const detalhe = await put.text().catch(() => '');
+        console.error('trocar_versao: o Mercado Pago recusou o novo valor.', {
+          userId, alvo, valor, http: put.status, detalhe: detalhe.slice(0, 300),
+        });
+        return json({ error: 'Não foi possível trocar agora. Nada mudou na sua assinatura. Tente de novo mais tarde.' }, 502);
+      }
+
+      // Só grava depois que o Mercado Pago aceitou: a conta nunca promete
+      // um valor que a fatura não tem.
+      let patch: Record<string, unknown>;
+      let mudaEm: string | null = null;
+      if (alvo === atual) {
+        // Desistiu de uma descida agendada.
+        patch = { assinatura_versao_proxima: null, assinatura_versao_muda_em: null };
+      } else if (alvo === 'completa') {
+        patch = { assinatura_versao: 'completa', assinatura_versao_proxima: null, assinatura_versao_muda_em: null };
+      } else {
+        mudaEm = perfil.assinatura_expira_em || null;
+        patch = mudaEm && new Date(mudaEm).getTime() > Date.now()
+          ? { assinatura_versao_proxima: 'agenda', assinatura_versao_muda_em: mudaEm }
+          : { assinatura_versao: 'agenda', assinatura_versao_proxima: null, assinatura_versao_muda_em: null };
+      }
+      patch.assinatura_valor_mensal_equivalente = VALOR_MENSAL_EQUIVALENTE[alvo][planoAtual];
+      const { error: erroGravar } = await admin.from('profiles').update(patch).eq('id', userId);
+      if (erroGravar) {
+        // O valor no Mercado Pago já mudou; a conferência diária
+        // (assinatura-processar-ciclo) não sabe reconstituir a troca, então
+        // fica registrado para conferência humana.
+        console.error('trocar_versao: Mercado Pago atualizado, mas a conta não.', { userId, alvo, erroGravar });
+        return json({ error: 'A troca ficou pela metade. Escreva para drsig@drsig.com.br que a gente resolve.' }, 500);
+      }
+      return json({
+        ok: true,
+        versao: patch.assinatura_versao ?? atual,
+        versaoProxima: patch.assinatura_versao_proxima ?? null,
+        mudaEm: patch.assinatura_versao_muda_em ?? null,
+        proximaCobranca: perfil.assinatura_expira_em || null,
+        valor,
       });
     }
 

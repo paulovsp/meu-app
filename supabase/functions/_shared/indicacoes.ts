@@ -83,7 +83,7 @@ export async function aplicarDescontoDeIndicacoes(
 ): Promise<ResultadoDesconto> {
   const { data: perfil } = await admin
     .from('profiles')
-    .select('assinatura_status, assinatura_plano, assinatura_versao, assinatura_expira_em, mp_preapproval_id, indicacao_desconto_percentual')
+    .select('assinatura_status, assinatura_plano, assinatura_versao, assinatura_versao_proxima, assinatura_expira_em, mp_preapproval_id, indicacao_desconto_percentual')
     .eq('id', userId)
     .maybeSingle();
   if (!perfil) return { desconto: 0, mudou: false, acao: 'nada', detalhe: 'conta não encontrada' };
@@ -93,7 +93,10 @@ export async function aplicarDescontoDeIndicacoes(
   const atual = Number(perfil.indicacao_desconto_percentual) || 0;
   const status = String(perfil.assinatura_status || '');
   const plano = perfil.assinatura_plano as Plano | null;
-  const versao = normalizarVersao(perfil.assinatura_versao);
+  // O preço é o da versão que vai ser cobrada na próxima renovação: numa
+  // descida agendada (completa → agenda), a conta ainda está na completa,
+  // mas o Mercado Pago já cobra o valor da agenda.
+  const versao = normalizarVersao(perfil.assinatura_versao_proxima || perfil.assinatura_versao);
 
   // ── Já estava de graça e continua tendo direito ──────────────────────
   if (status === 'gratuita_indicacao' && alvo >= 100) {

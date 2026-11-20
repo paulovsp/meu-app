@@ -206,10 +206,8 @@
       texto = 'O plano ' + nome + ' está valendo' + (ate ? ' até <strong>' + ate + '</strong>' : '') +
         '. Abra o app e entre com o seu e-mail e senha. Perto do fim, o app avisa como continuar.';
     } else {
-      titulo = 'Você já tem um plano ativo';
-      texto = 'O plano ' + nome + ' está valendo e renova sozinho' + (ate ? ' — a próxima cobrança é em ' + ate : '') +
-        '. Para trocar de plano, cancele o atual no app, em <strong>Meu Perfil &rsaquo; Seu plano</strong>, ' +
-        'e volte aqui: o acesso continua até o fim do período já pago, e nada é apagado.';
+      renderTrocaDeVersao(s);
+      return;
     }
     render(
       '<div class="sucesso"><div class="marca-ok">✅</div>' +
@@ -219,6 +217,92 @@
         ? '<a class="btn-grande" href="' + ABRIR_APP + '" style="display:block;text-align:center;text-decoration:none;">Abrir o Dr.Sig</a>'
         : '') +
       '<p class="nota">Qualquer dúvida, <a href="mailto:drsig@drsig.com.br">drsig@drsig.com.br</a>.</p>'
+    );
+  }
+
+  // ─── Quem já assina: trocar de versão sem assinar de novo ────────────
+  //
+  // Sem cobrança proporcional. A troca só muda o valor da PRÓXIMA cobrança:
+  // subir vale na hora (o resto do período pago sai de cortesia); descer
+  // fica para o fim do período já pago. Mudar de mensal para anual (ou o
+  // contrário) continua sendo cancelar e assinar de novo.
+  function renderTrocaDeVersao(s) {
+    const atual = s.versao === 'agenda' ? 'agenda' : 'completa';
+    const proxima = s.versaoProxima || null;
+    const outra = atual === 'agenda' ? 'completa' : 'agenda';
+    const ate = s.expiraEm ? dataBR(s.expiraEm) : '';
+    const plano = VERSOES[outra].planos.filter(function (p) { return p.id === s.plano; })[0];
+    const planoAtual = VERSOES[atual].planos.filter(function (p) { return p.id === s.plano; })[0];
+    const nomePlano = NOME_DO_PLANO[s.plano] || '';
+
+    let situacao = 'Você assina a <strong>' + VERSOES[atual].nome + '</strong> (' + nomePlano + '), que renova sozinha' +
+      (ate ? '. A próxima cobrança é em <strong>' + ate + '</strong>' : '') + '.';
+    let acao = '';
+    if (proxima && proxima !== atual) {
+      situacao += ' Está combinado: a partir de ' + (s.versaoMudaEm ? dataBR(s.versaoMudaEm) : ate) +
+        ' a conta passa para a <strong>' + VERSOES[proxima].nome + '</strong>, já com o valor dela.';
+      acao = botaoTroca(atual, 'Continuar na ' + VERSOES[atual].nome,
+        'Cancela a mudança. A próxima cobrança volta a ser ' + (planoAtual ? planoAtual.preco + planoAtual.periodo : 'a de hoje') + '.');
+    } else if (outra === 'completa') {
+      acao = botaoTroca('completa', 'Passar para a ' + VERSOES.completa.nome,
+        'Libera agora os registros, a Busca e os relatórios com IA. Até ' + (ate || 'a próxima cobrança') +
+        ' é cortesia: você não paga nada a mais. Depois, a cobrança passa a ser ' +
+        (plano ? plano.preco + plano.periodo : 'a da versão completa') + '.');
+    } else {
+      acao = botaoTroca('agenda', 'Passar para a ' + VERSOES.agenda.nome,
+        'Você continua com tudo até ' + (ate || 'o fim do período já pago') + '. A partir daí a conta fica só com a agenda ' +
+        'e a cobrança passa a ser ' + (plano ? plano.preco + plano.periodo : 'a da Agenda inteligente') +
+        '. Os registros que você já escreveu continuam guardados e podem ser lidos.');
+    }
+
+    render(
+      '<h1>Seu plano</h1>' +
+      '<p class="lede">' + situacao + '</p>' +
+      '<div class="erro" id="erro" style="display:none"></div>' +
+      acao +
+      '<p class="nota">Para mudar de mensal para semestral ou anual (ou o contrário), cancele o atual no app, em ' +
+      '<strong>Meu Perfil &rsaquo; Seu plano</strong>, e volte aqui: o acesso continua até o fim do período já pago, ' +
+      'e nada é apagado. Qualquer dúvida, <a href="mailto:drsig@drsig.com.br">drsig@drsig.com.br</a>.</p>'
+    );
+
+    const botao = document.getElementById('btn-trocar');
+    if (!botao) return;
+    botao.addEventListener('click', async function () {
+      const alvo = botao.getAttribute('data-alvo');
+      botao.disabled = true;
+      const rotulo = botao.textContent;
+      botao.textContent = 'Trocando…';
+      try {
+        const r = await chamarFuncao({ acao: 'trocar_versao', versao: alvo });
+        renderTrocaFeita(r);
+      } catch (err) {
+        mostrarErro(err.message || 'Não foi possível trocar. Tente de novo.');
+        botao.disabled = false;
+        botao.textContent = rotulo;
+      }
+    });
+  }
+
+  function botaoTroca(alvo, rotulo, explicacao) {
+    return '<p class="lede" style="margin-top:8px">' + explicacao + '</p>' +
+      '<button class="btn-grande" id="btn-trocar" data-alvo="' + alvo + '">' + rotulo + '</button>';
+  }
+
+  function renderTrocaFeita(r) {
+    let texto;
+    if (r.versaoProxima) {
+      texto = 'Combinado. Você continua com a ' + VERSOES[r.versao].nome + ' até ' + dataBR(r.mudaEm) +
+        '. Depois, a conta passa para a ' + VERSOES[r.versaoProxima].nome + ', já com o valor dela.';
+    } else {
+      texto = 'Pronto: sua conta está na <strong>' + VERSOES[r.versao].nome + '</strong>.' +
+        (r.proximaCobranca ? ' A próxima cobrança, em ' + dataBR(r.proximaCobranca) + ', já vem com o valor dela.' : '') +
+        ' Feche e abra o app para ver a mudança.';
+    }
+    render(
+      '<div class="sucesso"><div class="marca-ok">✅</div>' +
+      '<h1>Troca feita</h1>' +
+      '<p class="lede">' + texto + '</p></div>' +
+      '<a class="btn-grande" href="' + ABRIR_APP + '" style="display:block;text-align:center;text-decoration:none;">Abrir o Dr.Sig</a>'
     );
   }
 

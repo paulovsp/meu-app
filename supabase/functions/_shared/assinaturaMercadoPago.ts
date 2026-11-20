@@ -70,6 +70,9 @@ export type EstadoAssinatura = {
   mp_preapproval_id: string | null;
   assinatura_plano?: Plano;
   assinatura_versao?: Versao;
+  // Troca de versão agendada (ver decidirVersao). `null` limpa.
+  assinatura_versao_proxima?: Versao | null;
+  assinatura_versao_muda_em?: string | null;
   assinatura_ciclo_inicio?: string;
   assinatura_valor_mensal_equivalente?: number;
 };
@@ -95,6 +98,8 @@ export async function aplicarAssinaturaPorId(
   if (estado.mp_preapproval_id) patch.mp_preapproval_id = estado.mp_preapproval_id;
   if (estado.assinatura_plano) patch.assinatura_plano = estado.assinatura_plano;
   if (estado.assinatura_versao) patch.assinatura_versao = estado.assinatura_versao;
+  if (estado.assinatura_versao_proxima !== undefined) patch.assinatura_versao_proxima = estado.assinatura_versao_proxima;
+  if (estado.assinatura_versao_muda_em !== undefined) patch.assinatura_versao_muda_em = estado.assinatura_versao_muda_em;
   if (estado.assinatura_ciclo_inicio) patch.assinatura_ciclo_inicio = estado.assinatura_ciclo_inicio;
   if (estado.assinatura_valor_mensal_equivalente != null) {
     patch.assinatura_valor_mensal_equivalente = estado.assinatura_valor_mensal_equivalente;
@@ -224,6 +229,46 @@ export async function cancelarPreapproval(mpAccessToken: string, preapprovalId: 
   return false;
 }
 
+/**
+ * Qual versão a conta tem AGORA, e qual será cobrada na próxima renovação.
+ *
+ * A versão nasce do `external_reference` da assinatura. Mas ela pode ser
+ * trocada depois, sem assinatura nova (assinatura-trocar-versao): aí o
+ * Mercado Pago continua com a referência antiga, e quem manda passa a ser a
+ * conta. Por isso a referência só decide quando a assinatura é NOVA para a
+ * conta (outro preapproval id). Sem isto, a conferência diária desfaria
+ * toda troca de versão no dia seguinte.
+ *
+ * A descida (completa → agenda) é agendada: a pessoa usa a completa até o
+ * fim do que já pagou, e só então a conta vira agenda. A subida vale na
+ * hora (ver assinatura-trocar-versao), então nunca fica agendada.
+ */
+export function decidirVersao(
+  perfil: {
+    mp_preapproval_id?: string | null;
+    assinatura_versao?: string | null;
+    assinatura_versao_proxima?: string | null;
+    assinatura_versao_muda_em?: string | null;
+  } | null,
+  preapprovalId: string,
+  versaoDaReferencia: Versao,
+  agora: Date = new Date(),
+): { versao: Versao; versaoProxima: Versao | null; mudaEm: string | null } {
+  if (!perfil || perfil.mp_preapproval_id !== preapprovalId) {
+    return { versao: versaoDaReferencia, versaoProxima: null, mudaEm: null };
+  }
+  const atual: Versao = perfil.assinatura_versao === 'agenda' ? 'agenda' : 'completa';
+  const proxima = VERSOES_VALIDAS.includes(perfil.assinatura_versao_proxima as Versao)
+    ? perfil.assinatura_versao_proxima as Versao
+    : null;
+  if (!proxima) return { versao: atual, versaoProxima: null, mudaEm: null };
+  const mudaEm = perfil.assinatura_versao_muda_em ? new Date(perfil.assinatura_versao_muda_em) : null;
+  if (!mudaEm || mudaEm.getTime() <= agora.getTime()) {
+    return { versao: proxima, versaoProxima: null, mudaEm: null };
+  }
+  return { versao: atual, versaoProxima: proxima, mudaEm: mudaEm.toISOString() };
+}
+
 export type ResultadoSincronizacao =
   | { ok: true; situacao: string; plano?: Plano; userId?: string }
   | { ok: false; erro: string; httpMercadoPago?: number };
@@ -261,9 +306,15 @@ export async function sincronizarPreapproval(
     return { ok: true, situacao: 'nao_identificado' };
   }
 
-  const { plano, versao, userId } = referencia;
+  const { plano, userId } = referencia;
 
   if (preapproval.status === 'authorized') {
+    const { data: perfilAtual } = await supabaseAdmin
+      .from('profiles')
+      .select('mp_preapproval_id, assinatura_versao, assinatura_versao_proxima, assinatura_versao_muda_em')
+      .eq('id', userId)
+      .maybeSingle();
+    const { versao, versaoProxima, mudaEm } = decidirVersao(perfilAtual, preapprovalId, referencia.versao);
     const cicloInicio = preapproval.date_created ? new Date(preapproval.date_created) : new Date();
     // `next_payment_date` é a data da PRÓXIMA cobrança — exatamente até
     // onde o acesso vale. Numa renovação ela já vem adiantada de um ciclo,
@@ -277,8 +328,11 @@ export async function sincronizarPreapproval(
       mp_preapproval_id: preapprovalId,
       assinatura_plano: plano,
       assinatura_versao: versao,
+      assinatura_versao_proxima: versaoProxima,
+      assinatura_versao_muda_em: mudaEm,
       assinatura_ciclo_inicio: cicloInicio.toISOString(),
-      assinatura_valor_mensal_equivalente: VALOR_MENSAL_EQUIVALENTE[versao][plano],
+      // O que é cobrado a partir da próxima renovação.
+      assinatura_valor_mensal_equivalente: VALOR_MENSAL_EQUIVALENTE[versaoProxima ?? versao][plano],
     }, mpAccessToken);
     return { ok: true, situacao: 'ativa', plano, userId };
   }

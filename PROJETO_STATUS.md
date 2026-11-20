@@ -23,6 +23,11 @@ ele mesmo psicanalista, que não programa) pra uso próprio, e virou produto.
   relatórios de frequência e pagamento) e **Agenda + Arquivo inteligente**
   (tudo). Quem já assinava fica na completa. Trava no app
   (`src/services/versao.js`) e no banco (migration 0112).
+- Troca de versão sem assinatura nova (migration 0113): pela página de
+  planos, quem já assina sobe ou desce de versão. Sem cobrança
+  proporcional: subir vale na hora (resto do período é cortesia), descer
+  vale no fim do período pago; só o valor da próxima cobrança muda no
+  Mercado Pago.
 - Transcrições antigas viram registros `type = 'transcricao'`
   (migration 0111).
 

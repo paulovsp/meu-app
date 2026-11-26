@@ -82,3 +82,31 @@ export function somarMinutos(horario, minutos) {
 export function terminoPadrao(horarioInicio) {
   return somarMinutos(horarioInicio, DURACAO_PADRAO_SESSAO_MIN);
 }
+
+const DIAS_CURTOS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+const ORDEM_DA_SEMANA = [1, 2, 3, 4, 5, 6, 0]; // segunda primeiro
+
+/**
+ * "Seg 14:00, Qua 10:00" — o resumo dos horários fixos de uma pessoa, lido
+ * da grade de verdade (availability_slots).
+ *
+ * A ficha mostrava `patients.horario`, um texto gravado só quando se salva
+ * o formulário do analisante. Mudar o horário pela Agenda, liberar os
+ * horários na paralisação ou trocar pela tela de Disponibilidade deixava a
+ * ficha mostrando o horário antigo. Horário avulso fica de fora (é de uma
+ * data só); quinzenal e personalizado ganham a frequência ao lado.
+ */
+export function resumoDosHorarios(slots) {
+  const fixos = (slots || []).filter((s) => s.start_time && (s.recorrencia_tipo || 'semanal') !== 'avulso');
+  if (fixos.length === 0) return null;
+  return [...fixos]
+    .sort((a, b) => (ORDEM_DA_SEMANA.indexOf(a.day_of_week) - ORDEM_DA_SEMANA.indexOf(b.day_of_week))
+      || String(a.start_time).localeCompare(String(b.start_time)))
+    .map((s) => {
+      const hora = String(s.start_time).slice(0, 5);
+      const tipo = s.recorrencia_tipo || 'semanal';
+      const freq = tipo === 'quinzenal' ? ' (quinzenal)' : (tipo === 'personalizada' ? ' (personalizado)' : '');
+      return `${DIAS_CURTOS[s.day_of_week] ?? ''} ${hora}${freq}`;
+    })
+    .join(', ');
+}

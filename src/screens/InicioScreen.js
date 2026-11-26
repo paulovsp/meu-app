@@ -13,8 +13,9 @@ import {
 import { ehSessaoDeDemonstracao } from '../services/demonstracao';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
+import { getResumoAgendaHoje } from '../services/agendaResumo';
 import {
-  getResumoAgendaHoje, listarCompromissosAguardandoCheckin, getRecebimentosDoMes, totalEntradasDoMes,
+  listarCompromissosAguardandoCheckin, getRecebimentosDoMes, totalEntradasDoMes,
 } from '../services/database';
 import { getTotalSaidasDoMes } from '../services/despesas';
 import ResumoFinanceiroBanner, { RESUMO_FINANCEIRO_H } from '../components/ResumoFinanceiroBanner';
@@ -203,7 +204,7 @@ function FreudAvatar() {
 
 export default function InicioScreen({ navigation }) {
   const { session } = useAuth();
-  const [resumoAgenda, setResumoAgenda] = useState({ total: 0, concluidas: 0 });
+  const [resumoAgenda, setResumoAgenda] = useState({ total: 0, concluidas: 0, proximaMudanca: null });
   const [user, setUser] = useState(null);
   const [modo, setModo] = useState('inicio'); // 'inicio' | 'clinica' | 'administrativa'
   const [menuAberto, setMenuAberto] = useState(false);
@@ -504,15 +505,42 @@ export default function InicioScreen({ navigation }) {
     }
   }
 
+  // Contador "x/y sessões hoje". Lê o dia como a Agenda lê (cancelamentos,
+  // remarcações, horários apagados só naquele dia, avulsos, férias — ver
+  // getResumoAgendaHoje). Recarrega ao voltar para a Início, ao voltar do
+  // segundo plano e no minuto em que a próxima sessão termina, para o
+  // "concluídas" andar sozinho com a tela aberta.
+  const carregarResumoAgenda = useCallback(async () => {
+    try {
+      setResumoAgenda(await getResumoAgendaHoje());
+    } catch {
+      setResumoAgenda({ total: 0, concluidas: 0, proximaMudanca: null });
+    }
+  }, []);
+  const carregarResumoAgendaRef = useRef(carregarResumoAgenda);
+  carregarResumoAgendaRef.current = carregarResumoAgenda;
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (estado) => {
+      if (estado === 'active' && focadaRef.current) carregarResumoAgendaRef.current();
+    });
+    return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    const quando = resumoAgenda.proximaMudanca;
+    if (!quando) return undefined;
+    const faltam = new Date(quando).getTime() - Date.now();
+    if (faltam <= 0 || faltam > 86400000) return undefined;
+    const t = setTimeout(() => {
+      if (focadaRef.current) carregarResumoAgendaRef.current();
+    }, faltam + 1000);
+    return () => clearTimeout(t);
+  }, [resumoAgenda.proximaMudanca]);
+
   useFocusEffect(
     useCallback(() => {
-      (async () => {
-        try {
-          setResumoAgenda(await getResumoAgendaHoje());
-        } catch {
-          setResumoAgenda({ total: 0, concluidas: 0 });
-        }
-      })();
+      carregarResumoAgendaRef.current();
       processarEnviosFiscaisAutomaticos().catch((e) => console.error('Falha no catch-up fiscal automático:', e?.message || e));
       verificarEEnviarAlertaAtraso().catch((e) => console.error('Falha no alerta de atraso:', e?.message || e));
       let cancelado = false;

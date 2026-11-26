@@ -195,7 +195,7 @@ export default function FinanceiroScreen() {
           const fimSemana = getFimSemana(inicioSemana);
           setCarregandoMes(true);
           const [planoResultado, recebimentos, pagas] = await Promise.all([
-            getPlanoFinanceiro(hoje),
+            getPlanoFinanceiro(hoje, { ajustarPelaAgenda: true }),
             getRecebimentosDoMes(anoSel, mesSel),
             getSessoesPagasNoIntervalo(toISO(inicioSemana), toISO(fimSemana)),
           ]);

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -224,14 +224,21 @@ export default function CobrancaScreen() {
     }
   }, [ano, mesIndex]);
 
-  useEffect(() => {
-    supabase
-      .from('profiles')
-      .select('nome, pix_key, template_cobranca')
-      .eq('id', session.user.id)
-      .single()
-      .then(({ data }) => setProfissional(data || null));
-  }, [session.user.id]);
+  // Chave Pix e modelo da mensagem de cobrança: relidos a cada foco. Antes
+  // era só na abertura, e quem trocava a chave Pix no Perfil (ou o texto em
+  // Mensagens personalizadas) e voltava para cá cobrava com a antiga.
+  useFocusEffect(
+    useCallback(() => {
+      let cancelado = false;
+      supabase
+        .from('profiles')
+        .select('nome, pix_key, template_cobranca')
+        .eq('id', session.user.id)
+        .single()
+        .then(({ data }) => { if (!cancelado) setProfissional(data || null); });
+      return () => { cancelado = true; };
+    }, [session.user.id])
+  );
 
   // useFocusEffect já cobre tanto a montagem inicial quanto voltar o foco
   // pra esta tela (ex: após editar um analisante) — um useEffect adicional

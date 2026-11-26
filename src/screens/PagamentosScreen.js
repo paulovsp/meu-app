@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import {
-  listarDespesas, adicionarDespesa, removerDespesa,
+  listarDespesas, adicionarDespesa, editarDespesa, removerDespesa,
   getResumoAssinaturaECreditosDoMes, CATEGORIAS_DESPESA, labelCategoria, somarSaidas,
 } from '../services/despesas';
 import { mensagemDeErro } from '../services/erros';
@@ -47,6 +47,8 @@ export default function PagamentosScreen() {
   const [modalVisivel, setModalVisivel] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [menuAberto, setMenuAberto] = useState(false);
+  // null = lançando uma despesa nova; com id = editando uma já lançada.
+  const [editandoId, setEditandoId] = useState(null);
 
   const [categoria, setCategoria] = useState('outros');
   const [descricao, setDescricao] = useState('');
@@ -83,11 +85,36 @@ export default function PagamentosScreen() {
   }
 
   function abrirModal() {
+    setEditandoId(null);
     setCategoria('outros');
     setDescricao('');
     setValor('');
     setDataBR(dataISOParaBR(hojeISO()));
     setRecorrente(false);
+    setModalVisivel(true);
+  }
+
+  function abrirEdicao(item) {
+    // Despesa criada a partir de um curso: quem manda nela é o curso (ao
+    // salvar o curso, a despesa é reescrita com o custo/data dele). Editar
+    // aqui seria desfeito na próxima edição do curso, então leva pro curso.
+    if (item.curso_id) {
+      Alert.alert(
+        'Despesa de curso',
+        `"${item.descricao}" vem do cadastro do curso. Para mudar o valor ou a data, edite o curso.`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Abrir curso', onPress: () => navigation.navigate('FormularioCurso', { cursoId: item.curso_id }) },
+        ],
+      );
+      return;
+    }
+    setEditandoId(item.id);
+    setCategoria(item.categoria || 'outros');
+    setDescricao(item.descricao || '');
+    setValor(String(Number(item.valor || 0)).replace('.', ','));
+    setDataBR(dataISOParaBR(item.data));
+    setRecorrente(!!item.recorrente);
     setModalVisivel(true);
   }
 
@@ -110,7 +137,9 @@ export default function PagamentosScreen() {
     }
     setSalvando(true);
     try {
-      await adicionarDespesa({ categoria, descricao, valor: valorNum, data: dataISO, recorrente });
+      const campos = { categoria, descricao, valor: valorNum, data: dataISO, recorrente };
+      if (editandoId) await editarDespesa(editandoId, campos);
+      else await adicionarDespesa(campos);
       setModalVisivel(false);
       carregar();
     } catch (err) {
@@ -192,6 +221,7 @@ export default function PagamentosScreen() {
           ) : (
             despesas.map((d) => (
               <View key={d.id} style={s.despesaLinha}>
+                <TouchableOpacity style={s.despesaToque} onPress={() => abrirEdicao(d)} activeOpacity={0.6}>
                 <View style={{ flex: 1 }}>
                   <Text style={s.despesaDescricao}>{d.descricao}</Text>
                   <Text style={s.despesaMeta}>
@@ -200,7 +230,11 @@ export default function PagamentosScreen() {
                   </Text>
                 </View>
                 <Text style={s.despesaValor}>{formatarMoeda(d.valor)}</Text>
-                <TouchableOpacity style={s.removerBtn} onPress={() => handleRemover(d)}>
+                </TouchableOpacity>
+                <TouchableOpacity style={s.removerBtn} onPress={() => abrirEdicao(d)} accessibilityLabel="Editar despesa">
+                  <Ionicons name="create-outline" size={18} color={COLORS.textMid} />
+                </TouchableOpacity>
+                <TouchableOpacity style={s.removerBtn} accessibilityLabel="Remover despesa" onPress={() => handleRemover(d)}>
                   <Ionicons name="trash-outline" size={18} color={COLORS.textMid} />
                 </TouchableOpacity>
               </View>
@@ -217,7 +251,7 @@ export default function PagamentosScreen() {
         <KeyboardAvoidingView style={s.modalOverlay} behavior="padding">
           <ScrollView contentContainerStyle={s.modalScrollWrap} keyboardShouldPersistTaps="handled">
             <View style={s.modalCard}>
-              <Text style={s.modalTitulo}>Nova despesa</Text>
+              <Text style={s.modalTitulo}>{editandoId ? 'Editar despesa' : 'Nova despesa'}</Text>
 
               <Text style={s.modalLabel}>Categoria</Text>
               <View style={s.categoriaGrid}>
@@ -337,6 +371,7 @@ const s = StyleSheet.create({
   despesaDescricao: { fontSize: 14, fontWeight: '500', color: COLORS.textDark, lineHeight: 20 },
   despesaMeta: { fontSize: 12, color: COLORS.textMid, marginTop: 2, lineHeight: 17 },
   despesaValor: { fontSize: 14, fontWeight: '500', color: COLORS.textDark, lineHeight: 20 },
+  despesaToque: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   removerBtn: { padding: 4 },
   fab: {
     position: 'absolute', right: 20, bottom: 20, width: 56, height: 56, borderRadius: 28,

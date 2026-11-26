@@ -15,6 +15,7 @@ import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import {
   getResumoAgendaHoje, listarCompromissosAguardandoCheckin, getRecebimentosDoMes, totalEntradasDoMes,
+  getFeriasDoAnalistaHoje,
 } from '../services/database';
 import { getTotalSaidasDoMes } from '../services/despesas';
 import ResumoFinanceiroBanner, { RESUMO_FINANCEIRO_H } from '../components/ResumoFinanceiroBanner';
@@ -22,6 +23,7 @@ import { processarEnviosFiscaisAutomaticos } from '../services/fiscalAutomatico'
 import { obterRecebimentosAtrasados, verificarEEnviarAlertaAtraso } from '../services/alertaAtraso';
 import { horarioJaPassou } from '../services/compromissoStatus';
 import { perguntarCheckin } from '../services/checkinCompromisso';
+import AvisoFerias from '../components/AvisoFerias';
 import { useSwipeHorizontal } from '../hooks/useSwipeHorizontal';
 import { registrarPushToken } from '../services/pushToken';
 import { supabase } from '../services/supabase';
@@ -553,12 +555,25 @@ export default function InicioScreen({ navigation }) {
   // navegar para outra tela e voltar (ou de o Android matar o processo).
   const focadaRef = useRef(false);
   const avisosEmAndamentoRef = useRef(false);
+  const avisoFeriasMostradoRef = useRef(false);
+  const [feriasDoAnalista, setFeriasDoAnalista] = useState(null);
 
   async function dispararAvisos() {
     if (avisosEmAndamentoRef.current) return;
     avisosEmAndamentoRef.current = true;
     const geracao = geracaoFilaRef.current;
     try {
+      // Férias do analista: silêncio total. Nada de "a sessão aconteceu?"
+      // nem de atraso; no lugar, o aviso brincalhão — uma vez por abertura
+      // do app (volta a aparecer depois de o app ir para o segundo plano).
+      const ferias = await getFeriasDoAnalistaHoje().catch(() => null);
+      if (ferias) {
+        if (!avisoFeriasMostradoRef.current && geracao === geracaoFilaRef.current) {
+          avisoFeriasMostradoRef.current = true;
+          setFeriasDoAnalista(ferias);
+        }
+        return;
+      }
       await perguntarCheckinsPendentes();
       if (geracao !== geracaoFilaRef.current) return;
       await avisarRecebimentosAtrasados();
@@ -588,6 +603,7 @@ export default function InicioScreen({ navigation }) {
 
   useEffect(() => {
     const assinatura = AppState.addEventListener('change', (estado) => {
+      if (estado === 'background') avisoFeriasMostradoRef.current = false;
       if (estado === 'active' && focadaRef.current && guiaDecidido && !guia) dispararAvisosRef.current();
     });
     return () => assinatura.remove();
@@ -794,6 +810,11 @@ export default function InicioScreen({ navigation }) {
           aoTerminar={() => setGuia(null)}
         />
       )}
+      <AvisoFerias
+        visivel={!!feriasDoAnalista}
+        ferias={feriasDoAnalista}
+        onFechar={() => setFeriasDoAnalista(null)}
+      />
     </SafeAreaView>
   );
 }

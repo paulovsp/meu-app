@@ -17,10 +17,11 @@
 // de sexta, aparece a segunda, se o fim de semana estiver livre.
 import {
   getAppointmentsByDateRange, getAvailabilitySlots, slotAtivoNaData,
-  getHorariosLiberadosNoIntervalo, ensureAppointmentsForDate,
+  getHorariosLiberadosNoIntervalo, ensureAppointmentsForDate, getFerias,
 } from './database';
 import { corTipoEvento, ehTipoGrupo } from './tiposEvento';
 import { dataParaISO, dataISOParaData } from './validacao';
+import { STATUS_FERIAS, horarioFicaEmFerias } from './ferias';
 
 const COR_LIVRE = '#43A047';
 const COR_FERIAS = '#8E7BAA';
@@ -232,4 +233,118 @@ export async function getPreviaDaAgenda(agora = new Date()) {
   // Duas semanas sem nada marcado: mostra hoje, vazio, em vez de mentir
   // sobre um dia distante.
   return { dataISO: inicioISO, rotulo: 'Hoje', blocos: [], viradaEm: null };
+}
+
+// ─── Quantas sessões o dia tem de verdade ─────────────────────────────────
+//
+// O contador "x/y sessões hoje" (Início) e o "Sessões hoje" (Perfil) liam só
+// a grade fixa (availability_slots). Tudo o que a Agenda muda num dia
+// específico ficava de fora: sessão cancelada, horário apagado só naquele
+// dia, sessão remarcada para outro horário ou outro dia, sessão avulsa,
+// férias. A Agenda mostrava uma coisa e o contador outra. E os dois
+// contadores ainda contavam diferente entre si (um contava férias, o outro
+// não; um contava grupo, o outro não).
+//
+// Agora os dois usam esta função, que olha o dia como a Agenda olha.
+
+/** Tipo que é sessão (individual ou em grupo, de análise ou supervisão).
+ *  "Outros" (compromisso pessoal, reunião) ocupa a agenda mas não é sessão. */
+function ehTipoSessao(tipo) {
+  return (tipo || 'sessao_individual') !== 'outros';
+}
+
+/** Compromisso que ainda é sessão naquele dia: nem cancelado, nem em férias. */
+function compromissoEhSessao(c) {
+  if (!c) return false;
+  if (c.status === 'cancelado' || c.status === STATUS_FERIAS) return false;
+  return ehTipoSessao(c.tipo);
+}
+
+/**
+ * As sessões de um dia, cada uma com início e fim. Pura (sem banco), para
+ * ser testável.
+ *
+ * Regra, horário por horário, igual à da Agenda:
+ *  - há compromisso naquele horário → vale o compromisso (cancelado, em
+ *    férias ou "outros" não conta; remarcado para cá conta);
+ *  - não há compromisso → vale a grade fixa, se o horário está ativo nessa
+ *    data, tem alguém, não foi apagado só nesse dia e não cai em férias;
+ *  - compromisso fora de qualquer horário da grade (avulso, remarcado) entra
+ *    também.
+ */
+export function sessoesDoDia({ slots, compromissos, liberados, ferias, dataISO }) {
+  const diaSemana = dataISOParaData(dataISO)?.getDay();
+  const doDia = (compromissos || []).filter((c) => !c.date || c.date === dataISO);
+  // Mais de um compromisso no mesmo horário (um cancelado e um novo marcado
+  // no lugar): vale o que não foi cancelado.
+  const porHora = new Map();
+  for (const c of doDia) {
+    const atual = porHora.get(c.start_time);
+    if (!atual || (atual.status === 'cancelado' && c.status !== 'cancelado')) porHora.set(c.start_time, c);
+  }
+  const liberadosNoDia = new Set(
+    (liberados || []).filter((l) => !l.date || l.date === dataISO).map((l) => l.start_time)
+  );
+
+  const sessoes = [];
+  const horasVistas = new Set();
+
+  for (const slot of slots || []) {
+    if (slot.day_of_week !== diaSemana) continue;
+    if (!slotAtivoNaData(slot, dataISO)) continue;
+    if (horasVistas.has(slot.start_time)) continue;
+    horasVistas.add(slot.start_time);
+
+    const compromisso = porHora.get(slot.start_time);
+    if (compromisso) {
+      if (compromissoEhSessao(compromisso)) {
+        sessoes.push({ startTime: compromisso.start_time, endTime: compromisso.end_time || slot.end_time });
+      }
+      continue;
+    }
+    if (liberadosNoDia.has(slot.start_time)) continue;
+    const tipo = slot.tipo || 'sessao_individual';
+    const temAlguem = !!slot.patient_id || ehTipoGrupo(tipo);
+    if (!temAlguem || !ehTipoSessao(tipo)) continue;
+    if (horarioFicaEmFerias(slot, dataISO, ferias || [])) continue;
+    sessoes.push({ startTime: slot.start_time, endTime: slot.end_time });
+  }
+
+  for (const c of porHora.values()) {
+    if (horasVistas.has(c.start_time)) continue;
+    if (compromissoEhSessao(c)) sessoes.push({ startTime: c.start_time, endTime: c.end_time });
+  }
+
+  sessoes.sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+  return sessoes;
+}
+
+/** "x de y sessões já terminaram" — pura. Sessão sem horário de fim conta
+ *  como terminada 50 minutos depois do início. */
+export function resumirSessoes(sessoes, agora = new Date()) {
+  const agoraMin = agora.getHours() * 60 + agora.getMinutes();
+  const fimDe = (s) => minutos(s.endTime) ?? ((minutos(s.startTime) ?? 0) + 50);
+  const concluidas = sessoes.filter((s) => fimDe(s) <= agoraMin).length;
+  const futuras = sessoes.map(fimDe).filter((m) => m > agoraMin);
+  // Quando o próximo "concluídas" muda — para a tela se atualizar sozinha.
+  let proximaMudanca = null;
+  if (futuras.length > 0) {
+    proximaMudanca = new Date(agora);
+    proximaMudanca.setHours(0, Math.min(...futuras), 0, 0);
+  }
+  return { total: sessoes.length, concluidas, proximaMudanca };
+}
+
+/** Resumo de hoje para o contador da Início e do Perfil. */
+export async function getResumoAgendaHoje(agora = new Date()) {
+  const hojeISO = dataParaISO(agora);
+  const [slots, compromissos, liberados, ferias] = await Promise.all([
+    getAvailabilitySlots(),
+    getAppointmentsByDateRange(hojeISO, hojeISO),
+    getHorariosLiberadosNoIntervalo(hojeISO, hojeISO),
+    getFerias().catch(() => []),
+  ]);
+  return resumirSessoes(sessoesDoDia({
+    slots, compromissos, liberados, ferias, dataISO: hojeISO,
+  }), agora);
 }

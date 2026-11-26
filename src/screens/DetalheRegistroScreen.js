@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,9 +12,9 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Sharing from 'expo-sharing';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { WebView } from 'react-native-webview';
-import { deleteRecord } from '../services/database';
+import { deleteRecord, getRecordById } from '../services/database';
 import { mensagemDeErro } from '../services/erros';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import CabecalhoTela from '../components/CabecalhoTela';
@@ -30,7 +30,19 @@ export default function DetalheRegistroScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const route = useRoute();
-  const { record } = route.params;
+  // O registro chega pela navegação, mas é relido do banco toda vez que a
+  // tela volta ao foco: depois de "Editar" e salvar, a tela mostrava o
+  // texto antigo até sair e entrar de novo.
+  const [record, setRecord] = useState(route.params.record);
+  useFocusEffect(
+    useCallback(() => {
+      let cancelado = false;
+      getRecordById(route.params.record.id)
+        .then((atual) => { if (!cancelado && atual) setRecord(atual); })
+        .catch(() => {});
+      return () => { cancelado = true; };
+    }, [route.params.record.id])
+  );
   const { width } = useWindowDimensions();
   const [loading, setLoading] = useState(false);
   const [webViewHeight, setWebViewHeight] = useState(300);

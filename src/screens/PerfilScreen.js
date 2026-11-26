@@ -10,10 +10,11 @@ import CabecalhoTela from '../components/CabecalhoTela';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import {
-  getPlanoFinanceiro, getRecebimentosDoMes, getPrecoMedioSessao,
+  getRecebimentosDoMes, getPrecoMedioSessao,
   getContagemAnalisantesESupervisionandos, getContagemSessoesSemRelato, getResumoHorariosSemanais,
   filtrarRecebimentosMensais, calcularStatusGeralRecebimentos, getGanhosMensaisEstimados,
 } from '../services/database';
+import { getResumoAgendaHoje } from '../services/agendaResumo';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -221,7 +222,6 @@ export default function PerfilScreen({ navigation }) {
   const { session, sairLocalmente } = useAuth();
   const [user, setUser] = useState(null);
   const [carregando, setCarregando] = useState(true);
-  const [plano, setPlano] = useState(null);
   // Situação da assinatura — o app nunca mostrou isso em lugar nenhum.
   const [assinatura, setAssinatura] = useState(null);
   const [reenviando, setReenviando] = useState(false);
@@ -235,7 +235,7 @@ export default function PerfilScreen({ navigation }) {
     precoMedio: 0, totalAnalisantes: 0, totalSupervisionandos: 0, sessoesSemRelato: 0,
     analisantesAtivos: 0, supervisionandosAtivos: 0, ganhosMes: 0,
     pagamentosRecebidos: 0, pagamentosTotal: 0, pagamentosStatusCor: 'verde',
-    horariosOcupados: 0, horariosTotal: 0,
+    horariosOcupados: 0, horariosTotal: 0, sessoesHoje: 0,
   });
   const [editando, setEditando] = useState(false);
   const [salvando, setSalvando] = useState(false);
@@ -287,14 +287,13 @@ export default function PerfilScreen({ navigation }) {
     setCarregando(true);
     const hoje = new Date();
 
-    // As 3 buscas abaixo são independentes entre si — antes rodavam uma
+    // As buscas abaixo são independentes entre si — antes rodavam uma
     // depois da outra (perfil, DEPOIS plano, DEPOIS estatísticas), somando
     // o tempo das três. Disparadas juntas com Promise.all, o tempo total
     // vira o da mais lenta, não a soma — é isso que fazia o Perfil demorar
     // tanto pra abrir.
-    const [perfilResultado, planoResultado, statsResultado] = await Promise.all([
+    const [perfilResultado, statsResultado] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', session.user.id).single(),
-      getPlanoFinanceiro(hoje).catch((e) => ({ __erro: e })),
       // Promise.allSettled (não Promise.all) — uma consulta falhando não pode
       // zerar as OUTRAS estatísticas que carregaram normalmente. Cada card
       // mostra o que conseguiu buscar; erros individuais só vão pro console.
@@ -305,6 +304,7 @@ export default function PerfilScreen({ navigation }) {
         getResumoHorariosSemanais(),
         getRecebimentosDoMes(hoje.getFullYear(), hoje.getMonth()),
         getGanhosMensaisEstimados(),
+        getResumoAgendaHoje(),
       ]),
     ]);
 
@@ -354,13 +354,8 @@ export default function PerfilScreen({ navigation }) {
         .catch(() => {});
     }
 
-    if (planoResultado?.__erro) {
-      Alert.alert('Erro ao carregar', mensagemDeErro(planoResultado.__erro));
-    } else {
-      setPlano(planoResultado);
-    }
 
-    const [precoMedio, contagemAnalisantes, sessoesSemRelato, horarios, recebimentos, ganhos] = statsResultado;
+    const [precoMedio, contagemAnalisantes, sessoesSemRelato, horarios, recebimentos, ganhos, resumoHoje] = statsResultado;
     [
       ['getPrecoMedioSessao', precoMedio],
       ['getContagemAnalisantesESupervisionandos', contagemAnalisantes],
@@ -368,6 +363,7 @@ export default function PerfilScreen({ navigation }) {
       ['getResumoHorariosSemanais', horarios],
       ['getRecebimentosDoMes', recebimentos],
       ['getGanhosMensaisEstimados', ganhos],
+      ['getResumoAgendaHoje', resumoHoje],
     ].forEach(([nome, resultado]) => {
       if (resultado.status === 'rejected') {
         console.error(`Erro ao carregar estatística (${nome}):`, resultado.reason?.message || resultado.reason);
@@ -392,6 +388,9 @@ export default function PerfilScreen({ navigation }) {
           pagamentosStatusCor: calcularStatusGeralRecebimentos(mensais),
         };
       })(),
+      // Mesmo número da Início ("x/y sessões hoje"): o dia como a Agenda o
+      // mostra, não só a grade fixa.
+      sessoesHoje: resumoHoje.status === 'fulfilled' ? resumoHoje.value.total : atual.sessoesHoje,
       horariosOcupados: horarios.status === 'fulfilled' ? horarios.value.ocupados : atual.horariosOcupados,
       horariosTotal: horarios.status === 'fulfilled' ? horarios.value.total : atual.horariosTotal,
     }));
@@ -897,7 +896,7 @@ export default function PerfilScreen({ navigation }) {
         <Text style={st.sectionTitle}>Sua atividade</Text>
         <View style={st.statsRow}>
           <View style={st.statCard}>
-            <Text style={st.statNumber}>{plano?.itensDiario?.length ?? 0}</Text>
+            <Text style={st.statNumber}>{estatisticas.sessoesHoje ?? 0}</Text>
             <Text style={st.statLabel}>Sessões hoje</Text>
           </View>
           <View style={st.statCard}>

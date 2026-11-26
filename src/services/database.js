@@ -158,31 +158,8 @@ export async function getSessions(patientId) {
   return data;
 }
 
-/**
- * Resumo da agenda de hoje pro card da tela inicial: quantos horários
- * ocupados (availability_slots com patient_id) existem hoje e quantos já
- * passaram do horário de término, no formato "concluídas/total".
- */
-export async function getResumoAgendaHoje() {
-  const { supabase } = require('./supabase');
-  const hoje = new Date();
-  const diaSemana = hoje.getDay();
-  const hojeISO = dataParaISO(hoje);
-  const horaAtual = `${String(hoje.getHours()).padStart(2, '0')}:${String(hoje.getMinutes()).padStart(2, '0')}`;
-
-  const { data, error } = await supabase
-    .from('availability_slots')
-    .select('end_time, recorrencia_tipo, data_avulsa, recorrencia_data_referencia, recorrencia_semanas_ativas')
-    .eq('day_of_week', diaSemana)
-    .not('patient_id', 'is', null);
-  if (error) throw error;
-  // Horário quinzenal/personalizado que não está "ligado" hoje (semana de
-  // folga do ciclo) não deve contar — mesmo cuidado de getPlanoFinanceiro.
-  const doDiaAtivos = data.filter((s) => slotAtivoNaData(s, hojeISO));
-  const total = doDiaAtivos.length;
-  const concluidas = doDiaAtivos.filter((s) => s.end_time <= horaAtual).length;
-  return { total, concluidas };
-}
+// O resumo de hoje (contador "x/y sessões hoje") mora em agendaResumo.js
+// (getResumoAgendaHoje), junto com a regra do dia que a Agenda usa.
 
 // ── REGISTROS ──────────────────────────────────────────
 
@@ -218,6 +195,14 @@ export async function addRecord(patientId, type, title, content, fileUri, sessio
     .single();
   if (error) throw error;
   return data.id;
+}
+
+/** Um registro pelo id — para a tela de detalhe reler depois de editar. */
+export async function getRecordById(id) {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase.from('records').select('*').eq('id', id).maybeSingle();
+  if (error) throw error;
+  return data;
 }
 
 export async function deleteRecord(id) {
@@ -2081,16 +2066,107 @@ export function datasDasOcorrenciasNoMes(slot, ano, mesIndex) {
  * recorrente de cada analisante e do preço de sessão cadastrado na ficha.
  * `dataRef` define o "hoje"/mês de referência (padrão: data atual).
  */
+/**
+ * A ocorrência de um horário fixo numa data ainda vale, olhando a Agenda?
+ * Pura, para ser testável.
+ *
+ * O "Previsto hoje"/"Previsto esta semana" do Financeiro lia só a grade
+ * fixa: sessão cancelada, horário apagado só naquele dia ou sessão
+ * remarcada para outro horário continuavam lá como se nada tivesse mudado.
+ *  - há compromisso nesse dia e hora: cancelado não vale; de outra pessoa
+ *    (o horário foi liberado e usado por outro) também não;
+ *  - não há compromisso e o horário foi apagado só nesse dia: não vale.
+ * Férias continuam com a régua de sempre (ocorrenciaContaComFerias).
+ */
+export function ocorrenciaValePelaAgenda(slot, dataISO, { compromissos = [], liberados = [] } = {}) {
+  const mesmos = (compromissos || []).filter((c) => c.date === dataISO && c.start_time === slot.start_time);
+  if (mesmos.length > 0) {
+    const ativo = mesmos.find((c) => c.status !== 'cancelado');
+    if (!ativo) return false;
+    if (ehTipoGrupo(ativo.tipo)) {
+      // Grupo: vale para quem segue no grupo nessa data.
+      const ids = (ativo.participantes || []).map((p) => p.id);
+      return ids.length === 0 || ids.includes(slot.patient_id);
+    }
+    return !ativo.patient_id || ativo.patient_id === slot.patient_id;
+  }
+  return !(liberados || []).some((l) => l.date === dataISO && l.start_time === slot.start_time);
+}
+
+/**
+ * Sessões marcadas na Agenda fora da grade fixa da pessoa (remarcadas para
+ * outro horário ou dia, avulsas) entre duas datas — uma linha por pessoa,
+ * no formato dos itens do plano. Pura, para ser testável.
+ */
+export function sessoesForaDaGrade({ slots, compromissos, inicioISO, fimISO, ferias = [] }) {
+  const ativoNaData = (patientId, dataISO, hora) => (slots || []).some((s) => (
+    s.patient_id === patientId && s.start_time === hora
+    && s.day_of_week === diaSemanaDeISO(dataISO) && slotAtivoNaData(s, dataISO)
+  ));
+  const itens = [];
+  for (const c of compromissos || []) {
+    if (c.date < inicioISO || c.date > fimISO) continue;
+    if (c.status === 'cancelado' || c.tipo === 'outros') continue;
+    const pessoas = ehTipoGrupo(c.tipo)
+      ? (c.participantes || []).map((p) => ({
+        id: p.id, nome: p.nome, preco: p.precoSessao, moeda: p.precoMoeda, tipoCobranca: p.tipoCobranca,
+      }))
+      : (c.patient_id ? [{
+        id: c.patient_id, nome: c.patient_nome, preco: c.patient_preco,
+        moeda: c.patient_preco_moeda, tipoCobranca: c.patient_tipo_cobranca || 'mensal',
+      }] : []);
+    for (const p of pessoas) {
+      if (ativoNaData(p.id, c.date, c.start_time)) continue; // já vem pela grade
+      if (c.status === STATUS_FERIAS && !ocorrenciaContaComFerias(p.id, c.date, ferias)) continue;
+      itens.push({
+        patient_id: p.id,
+        nome: p.nome,
+        date: c.date,
+        day_of_week: diaSemanaDeISO(c.date),
+        start_time: c.start_time,
+        end_time: c.end_time,
+        modality: c.modality,
+        preco_bruto: p.preco,
+        preco_moeda: p.moeda,
+        tipo_cobranca: p.tipoCobranca,
+      });
+    }
+  }
+  return itens;
+}
+
 export async function getPlanoFinanceiro(dataRef = new Date(), opcoes = {}) {
-  const [slots, ferias] = await Promise.all([
-    opcoes.slots ? opcoes.slots : getSlotsOcupados(),
-    opcoes.ferias ? opcoes.ferias : getFeriasSemFalhar(),
-  ]);
   const diaSemanaHoje = dataRef.getDay();
   const ano = dataRef.getFullYear();
   const mesIndex = dataRef.getMonth();
   const hojeISO = dataParaISO(dataRef);
   const inicioSemana = inicioDaSemana(dataRef);
+  const inicioSemanaISO = dataParaISO(inicioSemana);
+  const fimSemanaISO = dataParaISO(adicionarDias(inicioSemana, 6));
+
+  // O dia e a semana como a Agenda mostra (cancelamentos, remarcações,
+  // horários apagados só num dia). Só quem mostra "hoje"/"esta semana" pede
+  // — as contas do mês já partem dos compromissos. Falhar aqui não derruba
+  // o plano: ele cai na grade fixa, como antes.
+  const lerAgenda = opcoes.ajustarPelaAgenda
+    ? Promise.all([
+      getAppointmentsByDateRange(inicioSemanaISO, fimSemanaISO),
+      getHorariosLiberadosNoIntervalo(inicioSemanaISO, fimSemanaISO),
+    ]).then(([compromissos, liberados]) => ({ compromissos, liberados }))
+      .catch((e) => { console.warn('[plano] agenda da semana não carregou', e?.message); return null; })
+    : Promise.resolve(null);
+
+  const [slots, ferias, agendaSemana] = await Promise.all([
+    opcoes.slots ? opcoes.slots : getSlotsOcupados(),
+    opcoes.ferias ? opcoes.ferias : getFeriasSemFalhar(),
+    lerAgenda,
+  ]);
+  const valePelaAgenda = (slot, dataISO) => !agendaSemana || ocorrenciaValePelaAgenda(slot, dataISO, agendaSemana);
+  const foraDaGrade = agendaSemana
+    ? sessoesForaDaGrade({
+      slots, compromissos: agendaSemana.compromissos, inicioISO: inicioSemanaISO, fimISO: fimSemanaISO, ferias,
+    })
+    : [];
 
   // Busca a cotação de cada moeda estrangeira envolvida UMA vez só (não
   // uma vez por horário) — antes rodava um round-trip ao Supabase por slot
@@ -2098,7 +2174,8 @@ export async function getPlanoFinanceiro(dataRef = new Date(), opcoes = {}) {
   // somando o tempo de todos. Isso sozinho já deixava Financeiro, Fiscal e
   // Recebíveis lentos pra abrir (os três chamam esta função).
   const moedasEstrangeiras = [...new Set(
-    slots.map((s) => s.patient_preco_moeda).filter((m) => m && m !== 'BRL')
+    [...slots.map((s) => s.patient_preco_moeda), ...foraDaGrade.map((i) => i.preco_moeda)]
+      .filter((m) => m && m !== 'BRL')
   )];
   const taxas = Object.fromEntries(
     await Promise.all(moedasEstrangeiras.map(async (moeda) => [moeda, await converterParaBRL(1, moeda)]))
@@ -2122,7 +2199,8 @@ export async function getPlanoFinanceiro(dataRef = new Date(), opcoes = {}) {
     // continua sempre ativo).
     const dataOcorrenciaSemana = dataParaISO(adicionarDias(inicioSemana, slot.day_of_week));
     if (slotAtivoNaData(slot, dataOcorrenciaSemana)
-      && ocorrenciaContaComFerias(slot.patient_id, dataOcorrenciaSemana, ferias)) {
+      && ocorrenciaContaComFerias(slot.patient_id, dataOcorrenciaSemana, ferias)
+      && valePelaAgenda(slot, dataOcorrenciaSemana)) {
       totalSemanal += preco;
       itensSemanal.push({
         patient_id: slot.patient_id,
@@ -2137,7 +2215,8 @@ export async function getPlanoFinanceiro(dataRef = new Date(), opcoes = {}) {
     }
 
     if (slot.day_of_week === diaSemanaHoje && slotAtivoNaData(slot, hojeISO)
-      && ocorrenciaContaComFerias(slot.patient_id, hojeISO, ferias)) {
+      && ocorrenciaContaComFerias(slot.patient_id, hojeISO, ferias)
+      && valePelaAgenda(slot, hojeISO)) {
       totalDiario += preco;
       itensDiario.push({
         patient_id: slot.patient_id,
@@ -2167,6 +2246,28 @@ export async function getPlanoFinanceiro(dataRef = new Date(), opcoes = {}) {
     }
     porPaciente[pid].sessoesMes += ocorrencias;
     porPaciente[pid].subtotal += subtotalMes;
+  }
+
+  // Remarcadas para fora da grade e avulsas: entram no dia/semana em que de
+  // fato acontecem (o mês já as conta pelos compromissos).
+  for (const extra of foraDaGrade) {
+    const preco = precoEmBRL(parsePreco(extra.preco_bruto), extra.preco_moeda);
+    const item = {
+      patient_id: extra.patient_id,
+      nome: extra.nome,
+      day_of_week: extra.day_of_week,
+      start_time: extra.start_time,
+      end_time: extra.end_time,
+      modality: extra.modality,
+      preco,
+      tipo_cobranca: extra.tipo_cobranca,
+    };
+    totalSemanal += preco;
+    itensSemanal.push(item);
+    if (extra.date === hojeISO) {
+      totalDiario += preco;
+      itensDiario.push(item);
+    }
   }
 
   const itensMensal = Object.values(porPaciente).sort((a, b) => a.nome.localeCompare(b.nome));

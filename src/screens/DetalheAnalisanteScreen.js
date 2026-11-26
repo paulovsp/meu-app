@@ -13,6 +13,7 @@ import {
   getAvailabilitySlotsByPatient, liberarHorariosDoPaciente, reservarHorariosDoPaciente,
 } from '../services/database';
 import { formatarValorMoeda, getCotacaoCacheada } from '../services/currency';
+import { resumoDosHorarios } from '../services/horarios';
 import { getVersaoDaConta, temArquivo, VERSAO_COMPLETA } from '../services/versao';
 import { mensagemDeErro } from '../services/erros';
 import {
@@ -151,6 +152,10 @@ export default function DetalheAnalisanteScreen() {
   const [dataFimEdicao, setDataFimEdicao] = useState('');
   const [salvandoPeriodo, setSalvandoPeriodo] = useState(false);
 
+  // undefined = ainda não leu a grade (mostra o texto da ficha); '' = sem
+  // horário fixo.
+  const [horarioAtual, setHorarioAtual] = useState(undefined);
+
   useFocusEffect(
     useCallback(() => {
       (async () => {
@@ -169,6 +174,11 @@ export default function DetalheAnalisanteScreen() {
         }
       })();
       getModalidadeDerivada(pacienteInicial.id).then(setModalidadeDerivada).catch(() => {});
+      // "Horário" da ficha vem da grade de verdade, não do texto gravado no
+      // formulário — ver resumoDosHorarios. Se a leitura falhar, fica o texto.
+      getAvailabilitySlotsByPatient(pacienteInicial.id)
+        .then((slots) => setHorarioAtual(resumoDosHorarios(slots) || ''))
+        .catch(() => setHorarioAtual(undefined));
       getHistoricoParalizacoes(pacienteInicial.id).then(setHistoricoParalizacoes).catch(() => {});
     }, [pacienteInicial.id])
   );
@@ -586,7 +596,7 @@ export default function DetalheAnalisanteScreen() {
         {/* Acompanhamento */}
         <View style={styles.dadosCard}>
           <InfoRow label="Modalidade" value={getModalidadeLabel(modalidadeDerivada)} icon="desktop-outline" />
-          <InfoRow label="Horário" value={paciente.horario} icon="time-outline" />
+          <InfoRow label="Horário" value={horarioAtual === undefined ? paciente.horario : horarioAtual} icon="time-outline" />
           <InfoRow label="Preço da sessão" value={getPrecoLabel(paciente, cotacaoCache)} icon="cash-outline" />
           <InfoRow
             label="Dia de pagamento"

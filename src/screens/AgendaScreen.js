@@ -28,6 +28,7 @@ import {
   getHorariosLiberadosNoIntervalo,
   temRelatoNaDataEmLote,
   slotAtivoNaData,
+  horariosTemporariamenteLivres,
 } from '../services/database';
 import { formatarValorMoeda } from '../services/currency';
 import { horarioJaPassou, getEstadoCompromisso, ESTADO_LABEL } from '../services/compromissoStatus';
@@ -44,6 +45,11 @@ const SLOT_HEIGHT_BASE = 34;
 
 const COR_PRESENCIAL = '#C3DFCF'; // verde claro
 const COR_ONLINE = '#44745B'; // verde escuro
+// Horário temporariamente livre: o analisante não vem toda semana e esta
+// semana não é dele (ver horariosTemporariamenteLivres).
+const COR_TEMP_LIVRE = '#F2C94C'; // amarelo
+const COR_TEMP_LIVRE_TEXTO = '#5C4A0E';
+const COR_TEMP_LIVRE_FUNDO = '#FBF1CF';
 
 function toISO(date) {
   const ano = date.getFullYear();
@@ -574,6 +580,94 @@ export default function AgendaScreen({ navigation }) {
     );
   }
 
+  // Horário de quem não vem toda semana, numa semana que não é dele: fica
+  // amarelo e livre pra marcar outra coisa só nessa data (o horário dele
+  // continua valendo nas semanas dele).
+  function marcarNaFolga({ slot, dataISO }) {
+    navigation.navigate('MarcarHorarioAvulso', {
+      dataISO,
+      startTime: slot.start_time,
+      endTime: slot.end_time,
+      modality: slot.modality,
+    });
+  }
+
+  function nomeDoDonoDaFolga(slot) {
+    return nomeExibicaoEvento({
+      tipo: slot.tipo || 'sessao_individual',
+      patientNome: slot.patient_name,
+      participantes: slot.participantes,
+      titulo: slot.titulo,
+    });
+  }
+
+  // Próxima data em que o horário volta a valer (no máximo 4 semanas à
+  // frente, o tamanho do ciclo).
+  function proximaDataDoSlot(slot, dataISO) {
+    const [a, mes, d] = dataISO.split('-').map(Number);
+    for (let semana = 1; semana <= 4; semana++) {
+      const data = new Date(a, mes - 1, d + semana * 7);
+      if (slotAtivoNaData(slot, toISO(data))) {
+        return `${String(data.getDate()).padStart(2, '0')}/${String(data.getMonth() + 1).padStart(2, '0')}`;
+      }
+    }
+    return null;
+  }
+
+  function renderFolgaBotao({ slot, dataISO, key, m }) {
+    return (
+      <TouchableOpacity
+        key={key}
+        style={[styles.slotBtn, { height: m.slotH, backgroundColor: COR_TEMP_LIVRE }]}
+        onPress={() => marcarNaFolga({ slot, dataISO })}
+        activeOpacity={0.75}
+      >
+        <Text
+          style={[styles.slotHorarioTxt, { color: COR_TEMP_LIVRE_TEXTO, fontSize: m.fH, lineHeight: Math.round(m.fH * 1.2) }]}
+          numberOfLines={1}
+        >
+          {slot.start_time}
+        </Text>
+        <Text
+          style={[styles.slotPacienteTxt, { color: COR_TEMP_LIVRE_TEXTO, fontSize: m.fN, lineHeight: Math.round(m.fN * 1.2), marginBottom: m.fBadge + 2 }]}
+          numberOfLines={m.linhasNome}
+        >
+          Livre
+        </Text>
+        <BarraModalidade modality={slot.modality} fonte={m.fBadge} />
+      </TouchableOpacity>
+    );
+  }
+
+  function renderFolgaDiarioCard({ slot, dataISO, key }) {
+    const nome = nomeDoDonoDaFolga(slot);
+    const volta = proximaDataDoSlot(slot, dataISO);
+    return (
+      <TouchableOpacity
+        key={key}
+        style={[styles.diaCard, { borderLeftColor: COR_TEMP_LIVRE }]}
+        onPress={() => marcarNaFolga({ slot, dataISO })}
+        activeOpacity={0.75}
+      >
+        <View style={styles.diaCardTopo}>
+          <Text style={styles.diaCardHorario}>
+            {slot.start_time}
+            {slot.end_time ? ` – ${slot.end_time}` : ''}
+          </Text>
+          <View style={[styles.diaCardStatus, { backgroundColor: COR_TEMP_LIVRE_FUNDO }]}>
+            <Text style={[styles.diaCardStatusTxt, { color: COR_TEMP_LIVRE_TEXTO }]}>
+              Temporariamente livre
+            </Text>
+          </View>
+        </View>
+        <Text style={styles.diaCardLivreTxt}>
+          {nome ? `${nome} não tem sessão nesta semana` : 'Sem sessão nesta semana'}
+          {volta ? ` · volta em ${volta}` : ''}
+        </Text>
+      </TouchableOpacity>
+    );
+  }
+
   // Tudo o que aparece num dia, na ordem do relógio: os horários recorrentes
   // do dia da semana e, entre eles, os compromissos que não batem com
   // nenhum horário recorrente (avulsos, ou um recorrente remarcado "só
@@ -598,7 +692,10 @@ export default function AgendaScreen({ navigation }) {
         key: `virtual-${dataISO}-${appointment.id}`,
       }));
     const recorrentes = slots.map((slot) => ({ slot, key: `availability-${dataISO}-${slot.id}` }));
-    return [...recorrentes, ...semSlot].sort((a, b) => compararHorarios(a.slot, b.slot));
+    const folgas = horariosTemporariamenteLivres(availability, dataISO, appointments)
+      .filter((slot) => !estaLiberado(dataISO, slot.start_time))
+      .map((slot) => ({ slot, folga: true, key: `folga-${dataISO}-${slot.id}` }));
+    return [...recorrentes, ...semSlot, ...folgas].sort((a, b) => compararHorarios(a.slot, b.slot));
   }
 
   function renderColunaDia(data, m) {
@@ -628,7 +725,9 @@ export default function AgendaScreen({ navigation }) {
         >
           {itens.length === 0 && <Text style={styles.semHorarios}>—</Text>}
 
-          {itens.map(({ slot, key }) => renderSlotBotao({ slot, dataISO, key, m }))}
+          {itens.map(({ slot, key, folga }) => (folga
+            ? renderFolgaBotao({ slot, dataISO, key, m })
+            : renderSlotBotao({ slot, dataISO, key, m })))}
         </ScrollView>
       </View>
     );
@@ -638,7 +737,8 @@ export default function AgendaScreen({ navigation }) {
     const dataISO = toISO(data);
     const temSlot = slotsDoDiaDaSemana(data.getDay(), dataISO).length > 0;
     const temCompromissoAvulso = appointments.some((a) => a.date === dataISO);
-    return temSlot || temCompromissoAvulso;
+    const temFolga = horariosTemporariamenteLivres(availability, dataISO, appointments).length > 0;
+    return temSlot || temCompromissoAvulso || temFolga;
   }
 
   function renderSemanal() {
@@ -667,8 +767,7 @@ export default function AgendaScreen({ navigation }) {
     const dataISO = toISO(dataRef);
     const diaSemana = dataRef.getDay();
     const slots = slotsDoDiaDaSemana(diaSemana, dataISO);
-    const semNadaHoje =
-      slots.length === 0 && appointments.filter((a) => a.date === dataISO).length === 0;
+    const semNadaHoje = itensDoDia(dataISO, slots).length === 0;
 
     return (
       <View style={styles.diarioContainer}>
@@ -700,7 +799,9 @@ export default function AgendaScreen({ navigation }) {
             </Text>
           )}
 
-          {itensDoDia(dataISO, slots).map(({ slot, key }) => renderSlotDiarioCard({ slot, dataISO, key }))}
+          {itensDoDia(dataISO, slots).map(({ slot, key, folga }) => (folga
+            ? renderFolgaDiarioCard({ slot, dataISO, key })
+            : renderSlotDiarioCard({ slot, dataISO, key })))}
         </ScrollView>
       </View>
     );

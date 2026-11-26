@@ -1,7 +1,7 @@
 import {
   mesDeCompetencia, diaDeVencimento, sessaoEhCobravel, STATUS_PREVISTOS,
 } from './competencia';
-import { dataParaISO, hojeISO } from './validacao';
+import { dataParaISO, hojeISO, diaSemanaDeISO } from './validacao';
 import { ehTipoGrupo } from './tiposEvento';
 
 // ── PACIENTES (Supabase — tabela `patients`) ───────────
@@ -361,6 +361,40 @@ export function slotAtivoNaData(slot, dataISO) {
   if (semanas < 0) return false;
   const semanaCiclo = (semanas % 4) + 1;
   return slot.recorrencia_semanas_ativas.includes(semanaCiclo);
+}
+
+/** Horários "temporariamente livres" de uma data: o analisante tem horário
+ * quinzenal/personalizado (1, 2 ou 3 vezes no ciclo de 4 semanas) nesse dia
+ * da semana, mas esta semana não é dele. Sem isto o horário simplesmente
+ * sumia da Agenda nas semanas de folga, e a psicanalista não via que o
+ * espaço estava vago. Só entra quando:
+ *  - o horário tem alguém (analisante, grupo ou "outros") — um horário
+ *    livre não precisa de aviso de folga;
+ *  - a 1ª sessão já aconteceu (antes dela não há ciclo);
+ *  - nenhum outro horário ativo nessa data começa na mesma hora (ex: dois
+ *    quinzenais que se revezam), e não há compromisso marcado nessa hora.
+ * Devolve um item por hora de início, na ordem do relógio. */
+export function horariosTemporariamenteLivres(slots, dataISO, compromissos = []) {
+  const diaSemana = diaSemanaDeISO(dataISO);
+  const doDia = (slots || []).filter((s) => s.day_of_week === diaSemana);
+  const ocupadasPorAtivos = new Set(
+    doDia.filter((s) => slotAtivoNaData(s, dataISO)).map((s) => s.start_time)
+  );
+  const ocupadasPorCompromisso = new Set(
+    (compromissos || []).filter((a) => a.date === dataISO).map((a) => a.start_time)
+  );
+  const porHora = new Map();
+  for (const s of doDia) {
+    const tipo = s.recorrencia_tipo || 'semanal';
+    if (tipo !== 'quinzenal' && tipo !== 'personalizada') continue;
+    const temAlguem = !!s.patient_id || s.tipo === 'outros' || ehTipoGrupo(s.tipo);
+    if (!temAlguem) continue;
+    if (!s.recorrencia_data_referencia || s.recorrencia_data_referencia > dataISO) continue;
+    if (slotAtivoNaData(s, dataISO)) continue;
+    if (ocupadasPorAtivos.has(s.start_time) || ocupadasPorCompromisso.has(s.start_time)) continue;
+    if (!porHora.has(s.start_time)) porHora.set(s.start_time, s);
+  }
+  return [...porHora.values()].sort((a, b) => String(a.start_time).localeCompare(String(b.start_time)));
 }
 
 /**

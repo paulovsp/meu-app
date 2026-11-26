@@ -1,7 +1,7 @@
 // ─── Férias (do analista e de cada analisante/supervisionando) ──────────
 //
 // Dois jeitos de sair de férias, guardados na tabela `ferias` (migration
-// 0114):
+// 0115):
 //   • do ANALISTA (tipo 'analista'): o consultório inteiro para no período.
 //     Quem paga e quem não paga é escolhido cliente por cliente
 //     (`ferias_pacientes`); quem não estiver na lista — alguém cadastrado

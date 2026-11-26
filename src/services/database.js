@@ -1527,7 +1527,7 @@ export async function getPatientById(patientId) {
   return data;
 }
 
-// ── Férias (migration 0114) ────────────────────────────
+// ── Férias (migration 0115) ────────────────────────────
 //
 // Regras e contas em services/ferias.js. Aqui só o que lê e grava: as
 // férias em si e o reflexo delas nos compromissos da agenda.

@@ -165,6 +165,19 @@ export default function RelatoriosScreen() {
     return (
       <SafeAreaView style={s.safe} edges={['bottom']}>
         <CabecalhoTela titulo="Relatórios" onVoltar={() => navigation.goBack()} />
+        {/* Antes da lista de nomes: o relatório da clínica inteira, por
+            semana, mês, ano ou período livre (RelatoriosGeraisScreen). */}
+        <TouchableOpacity style={s.geraisCard} onPress={() => navigation.navigate('RelatoriosGerais')}>
+          <View style={s.geraisIcone}>
+            <Ionicons name="stats-chart-outline" size={20} color="#FFFFFF" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={s.geraisTitulo}>Relatórios gerais da clínica</Text>
+            <Text style={s.geraisTexto}>Sessões, recebimentos e pendências por semana, mês, ano ou período</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={COLORS.textLight} />
+        </TouchableOpacity>
+        <Text style={s.individuaisTitulo}>Relatórios individuais</Text>
         <View style={s.buscaWrap}>
           <Ionicons name="search-outline" size={18} color={COLORS.textMid} />
           <TextInput
@@ -269,9 +282,23 @@ export default function RelatoriosScreen() {
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.bg },
+  geraisCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: COLORS.surface, marginHorizontal: 16, marginTop: 16, borderRadius: 14,
+    padding: 14, borderWidth: 1, borderColor: COLORS.btnBlue,
+  },
+  geraisIcone: {
+    width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.btnBlue,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  geraisTitulo: { fontSize: 15, fontWeight: '600', color: COLORS.textDark, lineHeight: 21 },
+  geraisTexto: { fontSize: 12, color: COLORS.textMid, marginTop: 2, lineHeight: 17 },
+  individuaisTitulo: {
+    fontSize: 13, fontWeight: '600', color: COLORS.textMid, marginHorizontal: 16, marginTop: 18, lineHeight: 19,
+  },
   buscaWrap: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: COLORS.surface, margin: 16, marginBottom: 8, borderRadius: 12,
+    backgroundColor: COLORS.surface, margin: 16, marginTop: 8, marginBottom: 8, borderRadius: 12,
     paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: COLORS.border,
   },
   buscaInput: { flex: 1, fontSize: 15, color: COLORS.textDark, lineHeight: 22 },

@@ -52,6 +52,7 @@ import FormularioFeriasScreen from '../screens/FormularioFeriasScreen';
 import AfazeresScreen from '../screens/AfazeresScreen';
 import RelatoriosScreen from '../screens/RelatoriosScreen';
 import DetalheRelatorioScreen from '../screens/DetalheRelatorioScreen';
+import RelatoriosGeraisScreen from '../screens/RelatoriosGeraisScreen';
 import IntegracaoWhatsappScreen from '../screens/IntegracaoWhatsappScreen';
 import AppsConectadosScreen from '../screens/AppsConectadosScreen';
 import SessoesStatusScreen from '../screens/SessoesStatusScreen';
@@ -164,6 +165,12 @@ function AppStackNavigator() {
         name="DetalheRelatorio"
         component={DetalheRelatorioScreen}
         options={{ title: 'Relatório' }}
+      />
+
+      <Stack.Screen
+        name="RelatoriosGerais"
+        component={RelatoriosGeraisScreen}
+        options={{ title: 'Relatórios gerais' }}
       />
 
       {/* Financeiro */}

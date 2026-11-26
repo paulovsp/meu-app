@@ -23,6 +23,7 @@ import { corTipoEvento, ehTipoGrupo } from './tiposEvento';
 import { dataParaISO, dataISOParaData } from './validacao';
 
 const COR_LIVRE = '#43A047';
+const COR_FERIAS = '#8E7BAA';
 
 /** Quanto tempo o dia que acabou ainda continua em cartaz. */
 export const MINUTOS_APOS_ULTIMO = 60;
@@ -89,11 +90,13 @@ export function montarBlocosDoDia({ slots, compromissos, liberados, dataISO }) {
     const tipo = livreNoDia ? 'sessao_individual' : (compromisso?.tipo || slot.tipo || 'sessao_individual');
     const ocupado = !livreNoDia
       && (!!compromisso || !!slot.patient_id || tipo === 'outros' || ehTipoGrupo(tipo));
+    const emFerias = !livreNoDia && compromisso?.status === 'ferias';
     lista.push({
       key: `slot-${slot.id}-${dataISO}`,
       startTime: slot.start_time,
       endTime: compromisso?.end_time || slot.end_time,
-      cor: ocupado ? corTipoEvento(tipo) : COR_LIVRE,
+      // Férias: lavanda, a mesma cor da Agenda.
+      cor: emFerias ? COR_FERIAS : (ocupado ? corTipoEvento(tipo) : COR_LIVRE),
       nome: livreNoDia ? nomeCurto({ tipo }) : nomeCurto({
         tipo,
         patientNome: compromisso?.patient_nome || slot.patient_name,
@@ -111,7 +114,7 @@ export function montarBlocosDoDia({ slots, compromissos, liberados, dataISO }) {
       key: `compromisso-${c.id}`,
       startTime: c.start_time,
       endTime: c.end_time,
-      cor: corTipoEvento(c.tipo),
+      cor: c.status === 'ferias' ? COR_FERIAS : corTipoEvento(c.tipo),
       nome: nomeCurto({
         tipo: c.tipo,
         patientNome: c.patient_nome,

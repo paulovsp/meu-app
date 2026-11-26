@@ -540,6 +540,14 @@ export default function DetalheAnalisanteScreen() {
           <Ionicons name="chevron-forward" size={18} color="#A9A299" style={styles.infoCardEditHint} />
         </TouchableOpacity>
 
+        {/* Férias do cliente: período, paga ou não paga (ver FeriasScreen) */}
+        <TouchableOpacity
+          style={styles.btnFerias}
+          onPress={() => navigation.navigate('Ferias', { patientId: paciente.id, patientNome: paciente.nome })}
+        >
+          <Text style={styles.btnFeriasTexto}>☀ Férias</Text>
+        </TouchableOpacity>
+
         {/* Paralisação ⇄ Retorno da análise (item G.20) */}
         <TouchableOpacity
           style={[styles.btnParalizacao, paciente.data_paralizacao && styles.btnRetorno]}
@@ -759,6 +767,12 @@ const styles = StyleSheet.create({
   },
   btnParalizacaoTexto: { color: '#975451', fontWeight: '500', fontSize: 14, lineHeight: 20 },
   btnRetorno: { backgroundColor: '#E2EFE8', borderColor: '#C3DFCF' },
+  btnFerias: {
+    marginHorizontal: 16, marginTop: 12,
+    backgroundColor: '#EEE8F5', borderRadius: 12, paddingVertical: 12,
+    alignItems: 'center', borderWidth: 1, borderColor: '#D8CDE8',
+  },
+  btnFeriasTexto: { color: '#6E5A8A', fontWeight: '500', fontSize: 14, lineHeight: 20 },
   btnRetornoTexto: { color: '#44745B' },
   historicoLink: {
     fontSize: 12.5, color: '#497363', fontWeight: '600',

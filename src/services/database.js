@@ -4,7 +4,7 @@ import {
 import { dataParaISO, hojeISO, diaSemanaDeISO } from './validacao';
 import { ehTipoGrupo } from './tiposEvento';
 import {
-  STATUS_FERIAS, horarioFicaEmFerias, sessaoCobravelComFerias, sessaoPrevistaComFerias,
+  STATUS_FERIAS, horarioFicaEmFerias, feriasDoAnalistaNaData, sessaoCobravelComFerias, sessaoPrevistaComFerias,
   ocorrenciaContaComFerias, valorMensalFixoComFerias, datasDoPeriodo,
 } from './ferias';
 
@@ -1552,6 +1552,14 @@ async function getFeriasSemFalhar() {
     console.warn('[ferias] leitura falhou', e?.message);
     return [];
   }
+}
+
+/** As férias do analista que valem hoje, ou null. É o interruptor do
+ * silêncio: com elas, a Início não pergunta por sessões nem avisa de
+ * atraso, e o app não manda push. */
+export async function getFeriasDoAnalistaHoje() {
+  const ferias = await getFeriasSemFalhar();
+  return feriasDoAnalistaNaData(ferias, hojeISO());
 }
 
 /**

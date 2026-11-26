@@ -9,6 +9,7 @@
 // ser mais imediato.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { servir } from '../_shared/registrarEvento.ts';
+import { hojeEmBrasilia } from '../_shared/feriasDoAnalista.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -45,6 +46,18 @@ Deno.serve(servir('enviar-alerta-atraso', async (req) => {
       .select('expo_push_token, notif_atraso_push')
       .eq('id', userData.user.id)
       .single();
+
+    // Férias do analista: nenhum push. O app já não chama esta função nas
+    // férias; isto cobre versões antigas do app.
+    const hoje = hojeEmBrasilia();
+    const { data: emFerias } = await supabaseUser
+      .from('ferias')
+      .select('id')
+      .eq('tipo', 'analista')
+      .lte('data_inicio', hoje)
+      .gte('data_fim', hoje)
+      .limit(1);
+    if (emFerias && emFerias.length > 0) return json({ ok: true, silenciado: 'ferias' });
 
     const titulo = `${atrasados.length} recebimento${atrasados.length === 1 ? '' : 's'} em atraso`;
     const erros: string[] = [];

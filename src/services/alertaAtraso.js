@@ -6,7 +6,7 @@
 // (Edge Function enviar-digest-diario, via cron, sempre no mesmo horário).
 // Esta função só cuida do push (mais imediato) e da lista pro pop-up da
 // tela inicial.
-import { getRecebimentosDoMes } from './database';
+import { getRecebimentosDoMes, getFeriasDoAnalistaHoje } from './database';
 import { hojeISO } from './validacao';
 
 function diasNoMes(ano, mesIndex) {
@@ -40,6 +40,8 @@ export async function obterRecebimentosAtrasados() {
  * marca a data do envio pra não repetir no mesmo dia. Silencioso: falhas só
  * vão pro console, não interrompem o uso do app. */
 export async function verificarEEnviarAlertaAtraso() {
+  // Férias do analista: nenhum push (pedido do Paulo, 26/11/2026).
+  if (await getFeriasDoAnalistaHoje()) return;
   const atrasados = await obterRecebimentosAtrasados();
   if (atrasados.length === 0) return;
 

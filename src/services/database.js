@@ -1278,7 +1278,7 @@ export async function ensureAppointmentsForDate(dataISO, dayOfWeek) {
       .eq('day_of_week', dayOfWeek)
       .or('patient_id.not.is.null,tipo.in.(sessao_grupo,supervisao_grupo,outros)'),
     supabase.from('horarios_liberados').select('start_time').eq('user_id', userId).eq('date', dataISO),
-    getFerias(),
+    getFeriasSemFalhar(),
   ]);
   if (error) throw error;
   if (erroLiberados) throw erroLiberados;
@@ -1312,7 +1312,7 @@ export async function getOrCreateAppointmentForSlot(slot, dataISO) {
   // esse horário está de fato livre nessa data.
   if (liberado) return null;
 
-  const ferias = await getFerias();
+  const ferias = await getFeriasSemFalhar();
   const status = horarioFicaEmFerias(slot, dataISO, ferias) ? STATUS_FERIAS : 'agendado';
   await inserirAppointmentSeNaoExiste(userId, slot, dataISO, status);
   const { data, error } = await supabase
@@ -1539,7 +1539,10 @@ export async function getFerias() {
   const { supabase } = require('./supabase');
   const { data, error } = await supabase
     .from('ferias')
-    .select('id, tipo, patient_id, data_inicio, data_fim, paga, observacao, created_at, patients(nome), ferias_pacientes(patient_id, paga)')
+    // `ferias` chega a `patients` por dois caminhos (patient_id direto e
+    // pela tabela ferias_pacientes): sem dizer qual chave usar, o Supabase
+    // recusa a consulta ("more than one relationship was found").
+    .select('id, tipo, patient_id, data_inicio, data_fim, paga, observacao, created_at, patients!patient_id(nome), ferias_pacientes(patient_id, paga)')
     .order('data_inicio', { ascending: false });
   if (error) {
     // Banco ainda sem a tabela (app atualizado antes da migration): a
@@ -1552,6 +1555,18 @@ export async function getFerias() {
     patient_nome: patients?.nome ?? null,
     pacientes: ferias_pacientes || [],
   }));
+}
+
+/** Mesmas férias, mas sem derrubar quem chamou se a leitura falhar: a
+ * Agenda e o Financeiro seguem abrindo (sem as férias) em vez de dar erro.
+ * A tela de Férias usa `getFerias`, que mostra o erro. */
+async function getFeriasSemFalhar() {
+  try {
+    return await getFerias();
+  } catch (e) {
+    console.warn('[ferias] leitura falhou', e?.message);
+    return [];
+  }
 }
 
 /**
@@ -2061,7 +2076,7 @@ export function datasDasOcorrenciasNoMes(slot, ano, mesIndex) {
 export async function getPlanoFinanceiro(dataRef = new Date(), opcoes = {}) {
   const [slots, ferias] = await Promise.all([
     opcoes.slots ? opcoes.slots : getSlotsOcupados(),
-    opcoes.ferias ? opcoes.ferias : getFerias(),
+    opcoes.ferias ? opcoes.ferias : getFeriasSemFalhar(),
   ]);
   const diaSemanaHoje = dataRef.getDay();
   const ano = dataRef.getFullYear();
@@ -2262,7 +2277,7 @@ export async function getSessoesCobrancaDoMes(patientId, ano, mesIndex, feriasDa
   const fim = `${ano}-${String(mesIndex + 1).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
   // Férias entram na busca; quais cobram (as pagas) é decidido abaixo.
   const COBRAVEIS = ['realizado', 'nao_realizado', STATUS_FERIAS];
-  const ferias = feriasDadas || await getFerias();
+  const ferias = feriasDadas || await getFeriasSemFalhar();
 
   const [
     { data: individuais, error: errA },
@@ -2411,7 +2426,7 @@ export async function contarSessoesDoMesPorPaciente(patientIds, ano, mesIndex, f
       .in('patient_id', patientIds)
       .in('appointments.status', comFerias)
       .gte('appointments.date', inicio).lte('appointments.date', fim),
-    feriasDadas ? Promise.resolve(feriasDadas) : getFerias(),
+    feriasDadas ? Promise.resolve(feriasDadas) : getFeriasSemFalhar(),
   ]);
   if (errI) throw errI;
   if (errG) throw errG;
@@ -2488,7 +2503,7 @@ export async function contarSessoesFuturasDoMes(ano, mesIndex, opcoes = {}) {
     opcoes.slots ? Promise.resolve(opcoes.slots) : getSlotsOcupados(),
     supabase.from('appointments').select('date, start_time').eq('user_id', userId).gte('date', desde).lte('date', fim),
     supabase.from('horarios_liberados').select('date, start_time').eq('user_id', userId).gte('date', desde).lte('date', fim),
-    opcoes.ferias ? Promise.resolve(opcoes.ferias) : getFerias(),
+    opcoes.ferias ? Promise.resolve(opcoes.ferias) : getFeriasSemFalhar(),
   ]);
   if (errA) throw errA;
   if (errL) throw errL;
@@ -2536,7 +2551,7 @@ export async function getRecebimentosDoMes(ano, mesIndex) {
   // Independentes entre si — rodar em sequência somava o tempo das duas.
   // Horários e férias lidos uma vez só e repassados a todas as contas
   // abaixo (antes cada uma buscava os horários de novo).
-  const [slotsOcupados, ferias] = await Promise.all([getSlotsOcupados(), getFerias()]);
+  const [slotsOcupados, ferias] = await Promise.all([getSlotsOcupados(), getFeriasSemFalhar()]);
   const opcoesBase = { slots: slotsOcupados, ferias };
   const [plano, statusMap] = await Promise.all([
     getPlanoFinanceiro(new Date(ano, mesIndex, 1), opcoesBase),

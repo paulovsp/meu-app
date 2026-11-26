@@ -123,7 +123,7 @@ export default function DetalheCobrancaSessaoScreen() {
                   {item.emGrupo ? '  ·  em grupo' : ''}
                 </Text>
                 <Text style={s.linhaSub}>
-                  {(item.startTime || '').slice(0, 5)} · {item.status === 'nao_realizado' ? 'Falta' : 'Realizada'}
+                  {(item.startTime || '').slice(0, 5)} · {item.status === 'nao_realizado' ? 'Falta' : item.status === 'ferias' ? 'Férias paga' : 'Realizada'}
                   {item.emGrupo && item.presente === false ? ' (faltou)' : ''}
                   {item.pago
                     ? ` · ${formatarMoeda(item.valorPago)}`

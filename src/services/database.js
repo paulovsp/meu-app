@@ -1,8 +1,12 @@
 import {
-  mesDeCompetencia, diaDeVencimento, sessaoEhCobravel, STATUS_PREVISTOS,
+  mesDeCompetencia, diaDeVencimento, STATUS_PREVISTOS,
 } from './competencia';
 import { dataParaISO, hojeISO, diaSemanaDeISO } from './validacao';
 import { ehTipoGrupo } from './tiposEvento';
+import {
+  STATUS_FERIAS, horarioFicaEmFerias, sessaoCobravelComFerias, sessaoPrevistaComFerias,
+  ocorrenciaContaComFerias, valorMensalFixoComFerias, datasDoPeriodo,
+} from './ferias';
 
 // ── PACIENTES (Supabase — tabela `patients`) ───────────
 
@@ -1226,7 +1230,7 @@ async function sincronizarParticipantesAppointment(appointmentId, slotId) {
   if (errInsert) throw errInsert;
 }
 
-async function inserirAppointmentSeNaoExiste(userId, slot, dataISO) {
+async function inserirAppointmentSeNaoExiste(userId, slot, dataISO, status = 'agendado') {
   const { supabase } = require('./supabase');
   const { error } = await supabase
     .from('appointments')
@@ -1234,7 +1238,7 @@ async function inserirAppointmentSeNaoExiste(userId, slot, dataISO) {
       {
         user_id: userId, patient_id: slot.patient_id, date: dataISO,
         start_time: slot.start_time, end_time: slot.end_time,
-        modality: slot.modality, status: 'agendado',
+        modality: slot.modality, status,
         tipo: slot.tipo || 'sessao_individual', titulo: slot.titulo || null,
       },
       { onConflict: 'user_id,date,start_time', ignoreDuplicates: true }
@@ -1267,13 +1271,14 @@ async function inserirAppointmentSeNaoExiste(userId, slot, dataISO) {
 export async function ensureAppointmentsForDate(dataISO, dayOfWeek) {
   const { supabase } = require('./supabase');
   const userId = await getUserId();
-  const [{ data: slots, error }, { data: liberadosData, error: erroLiberados }] = await Promise.all([
+  const [{ data: slots, error }, { data: liberadosData, error: erroLiberados }, ferias] = await Promise.all([
     supabase
       .from('availability_slots')
       .select('*')
       .eq('day_of_week', dayOfWeek)
       .or('patient_id.not.is.null,tipo.in.(sessao_grupo,supervisao_grupo,outros)'),
     supabase.from('horarios_liberados').select('start_time').eq('user_id', userId).eq('date', dataISO),
+    getFerias(),
   ]);
   if (error) throw error;
   if (erroLiberados) throw erroLiberados;
@@ -1281,7 +1286,10 @@ export async function ensureAppointmentsForDate(dataISO, dayOfWeek) {
   for (const slot of slots) {
     if (!slotAtivoNaData(slot, dataISO)) continue;
     if (liberados.has(slot.start_time)) continue;
-    await inserirAppointmentSeNaoExiste(userId, slot, dataISO);
+    // Dentro das férias o compromisso já nasce em férias: não vira
+    // "a sessão aconteceu?" no check-in nem conta como falta.
+    const status = horarioFicaEmFerias(slot, dataISO, ferias) ? STATUS_FERIAS : 'agendado';
+    await inserirAppointmentSeNaoExiste(userId, slot, dataISO, status);
   }
 }
 
@@ -1304,7 +1312,9 @@ export async function getOrCreateAppointmentForSlot(slot, dataISO) {
   // esse horário está de fato livre nessa data.
   if (liberado) return null;
 
-  await inserirAppointmentSeNaoExiste(userId, slot, dataISO);
+  const ferias = await getFerias();
+  const status = horarioFicaEmFerias(slot, dataISO, ferias) ? STATUS_FERIAS : 'agendado';
+  await inserirAppointmentSeNaoExiste(userId, slot, dataISO, status);
   const { data, error } = await supabase
     .from('appointments')
     .select(APPOINTMENT_SELECT_COM_PACIENTE)
@@ -1515,6 +1525,176 @@ export async function getPatientById(patientId) {
   const { data, error } = await supabase.from('patients').select('*').eq('id', patientId).maybeSingle();
   if (error) throw error;
   return data;
+}
+
+// ── Férias (migration 0114) ────────────────────────────
+//
+// Regras e contas em services/ferias.js. Aqui só o que lê e grava: as
+// férias em si e o reflexo delas nos compromissos da agenda.
+
+/** Todas as férias da conta (do analista e dos clientes), com a escolha
+ * de quem paga nas férias do analista em `pacientes`. Poucas linhas por
+ * conta, então vem tudo de uma vez — quem calcula filtra por data. */
+export async function getFerias() {
+  const { supabase } = require('./supabase');
+  const { data, error } = await supabase
+    .from('ferias')
+    .select('id, tipo, patient_id, data_inicio, data_fim, paga, observacao, created_at, patients(nome), ferias_pacientes(patient_id, paga)')
+    .order('data_inicio', { ascending: false });
+  if (error) {
+    // Banco ainda sem a tabela (app atualizado antes da migration): a
+    // agenda e o financeiro seguem funcionando, só sem férias.
+    if (error.code === '42P01' || error.code === 'PGRST205') return [];
+    throw error;
+  }
+  return (data || []).map(({ patients, ferias_pacientes, ...f }) => ({
+    ...f,
+    patient_nome: patients?.nome ?? null,
+    pacientes: ferias_pacientes || [],
+  }));
+}
+
+/**
+ * Cria ou altera uma férias. `pacientes` ([{ patient_id, paga }]) só vale
+ * para as férias do analista. Depois de gravar, acerta a agenda no período
+ * antigo e no novo (ver `sincronizarCompromissosDeFerias`).
+ */
+export async function salvarFerias({ id = null, tipo, patientId = null, dataInicio, dataFim, paga, observacao = null, pacientes = [] }) {
+  const { supabase } = require('./supabase');
+  const userId = await getUserId();
+  const registro = {
+    user_id: userId,
+    tipo,
+    patient_id: tipo === 'cliente' ? patientId : null,
+    data_inicio: dataInicio,
+    data_fim: dataFim,
+    paga: !!paga,
+    observacao: observacao?.trim() || null,
+  };
+
+  let anterior = null;
+  let feriasId = id;
+  if (id) {
+    const { data: antes } = await supabase.from('ferias').select('data_inicio, data_fim').eq('id', id).maybeSingle();
+    anterior = antes;
+    const { error } = await supabase.from('ferias').update(registro).eq('id', id);
+    if (error) throw error;
+  } else {
+    const { data, error } = await supabase.from('ferias').insert(registro).select('id').single();
+    if (error) throw error;
+    feriasId = data.id;
+  }
+
+  if (tipo === 'analista') {
+    const { error: errDel } = await supabase.from('ferias_pacientes').delete().eq('ferias_id', feriasId);
+    if (errDel) throw errDel;
+    if (pacientes.length > 0) {
+      const { error: errIns } = await supabase.from('ferias_pacientes').insert(
+        pacientes.map((p) => ({ ferias_id: feriasId, patient_id: p.patient_id, paga: !!p.paga, user_id: userId }))
+      );
+      if (errIns) throw errIns;
+    }
+  }
+
+  const inicio = anterior && anterior.data_inicio < dataInicio ? anterior.data_inicio : dataInicio;
+  const fim = anterior && anterior.data_fim > dataFim ? anterior.data_fim : dataFim;
+  await sincronizarCompromissosDeFerias(inicio, fim);
+  return feriasId;
+}
+
+/** Apaga uma férias e devolve à agenda os compromissos do período (voltam
+ * a "agendado"; os pagamentos já registrados ficam como estavam). */
+export async function excluirFerias(id) {
+  const { supabase } = require('./supabase');
+  const { data: antes } = await supabase.from('ferias').select('data_inicio, data_fim').eq('id', id).maybeSingle();
+  const { error } = await supabase.from('ferias').delete().eq('id', id);
+  if (error) throw error;
+  if (antes) await sincronizarCompromissosDeFerias(antes.data_inicio, antes.data_fim);
+}
+
+/**
+ * Deixa os compromissos de um período coerentes com as férias gravadas:
+ *  1. cria, já em férias, os compromissos que a grade fixa teria no período
+ *     e que ainda não existem (a agenda só cria compromisso quando o dia é
+ *     aberto; sem isso a sessão de férias paga não apareceria na cobrança);
+ *  2. passa para 'ferias' o que estava 'agendado' e caiu nas férias;
+ *  3. devolve a 'agendado' o que estava em férias e deixou de estar
+ *     (férias encurtadas ou apagadas).
+ * Sessões já realizadas, faltas e cancelamentos nunca são tocados.
+ */
+export async function sincronizarCompromissosDeFerias(inicioISO, fimISO) {
+  const { supabase } = require('./supabase');
+  const userId = await getUserId();
+  const [ferias, { data: slots, error: errS }, { data: livres, error: errL }] = await Promise.all([
+    getFerias(),
+    supabase
+      .from('availability_slots')
+      .select('*')
+      .or('patient_id.not.is.null,tipo.in.(sessao_grupo,supervisao_grupo,outros)'),
+    supabase.from('horarios_liberados').select('date, start_time').eq('user_id', userId).gte('date', inicioISO).lte('date', fimISO),
+  ]);
+  if (errS) throw errS;
+  if (errL) throw errL;
+  const liberadas = new Set((livres || []).map((l) => `${l.date}|${l.start_time}`));
+
+  // 1. Compromissos que faltam, já nascendo em férias.
+  const novos = [];
+  const gruposNovos = [];
+  for (const iso of datasDoPeriodo(inicioISO, fimISO)) {
+    const diaSemana = diaSemanaDeISO(iso);
+    for (const slot of slots || []) {
+      if (slot.day_of_week !== diaSemana || !slotAtivoNaData(slot, iso)) continue;
+      // Antes da 1ª sessão de um horário quinzenal/personalizado não há ciclo.
+      if (slot.recorrencia_data_referencia && slot.recorrencia_data_referencia > iso) continue;
+      if (liberadas.has(`${iso}|${slot.start_time}`)) continue;
+      if (!horarioFicaEmFerias(slot, iso, ferias)) continue;
+      novos.push({
+        user_id: userId, patient_id: slot.patient_id, date: iso,
+        start_time: slot.start_time, end_time: slot.end_time,
+        modality: slot.modality, status: STATUS_FERIAS,
+        tipo: slot.tipo || 'sessao_individual', titulo: slot.titulo || null,
+      });
+      if (ehTipoGrupo(slot.tipo)) gruposNovos.push({ iso, slot });
+    }
+  }
+  for (let i = 0; i < novos.length; i += 200) {
+    const { error } = await supabase
+      .from('appointments')
+      .upsert(novos.slice(i, i + 200), { onConflict: 'user_id,date,start_time', ignoreDuplicates: true });
+    if (error) throw error;
+  }
+
+  // 2 e 3. Acerta o status do que já existe no período.
+  const { data: existentes, error: errA } = await supabase
+    .from('appointments')
+    .select('id, patient_id, date, start_time, tipo, status')
+    .eq('user_id', userId)
+    .in('status', ['agendado', STATUS_FERIAS])
+    .gte('date', inicioISO)
+    .lte('date', fimISO);
+  if (errA) throw errA;
+  const paraFerias = [];
+  const paraAgendado = [];
+  (existentes || []).forEach((a) => {
+    const emFerias = horarioFicaEmFerias(a, a.date, ferias);
+    if (emFerias && a.status === 'agendado') paraFerias.push(a.id);
+    if (!emFerias && a.status === STATUS_FERIAS) paraAgendado.push(a.id);
+  });
+  const atualizar = async (ids, status) => {
+    for (let i = 0; i < ids.length; i += 200) {
+      const { error } = await supabase.from('appointments').update({ status }).in('id', ids.slice(i, i + 200));
+      if (error) throw error;
+    }
+  };
+  await atualizar(paraFerias, STATUS_FERIAS);
+  await atualizar(paraAgendado, 'agendado');
+
+  // Grupo recém-criado precisa da lista de participantes copiada do molde.
+  const porChave = new Map((existentes || []).map((a) => [`${a.date}|${a.start_time}`, a.id]));
+  for (const { iso, slot } of gruposNovos) {
+    const appointmentId = porChave.get(`${iso}|${slot.start_time}`);
+    if (appointmentId) await sincronizarParticipantesAppointment(appointmentId, slot.id);
+  }
 }
 
 // ── Paralisação / retorno da análise (item G.20) ───────
@@ -1853,15 +2033,24 @@ function inicioDaSemana(date) {
  * transforma o preço da sessão no total mensal de Entradas. Exportada pra
  * ser testável: é aqui que semanal, quinzenal, personalizada e avulso
  * precisam se comportar de forma diferente. */
-export function contarOcorrenciasAtivasNoMes(slot, ano, mesIndex) {
+export function contarOcorrenciasAtivasNoMes(slot, ano, mesIndex, ferias = null) {
+  return datasDasOcorrenciasNoMes(slot, ano, mesIndex)
+    // Férias não pagas tiram a sessão do previsto; pagas continuam contando.
+    .filter((iso) => !ferias || ocorrenciaContaComFerias(slot.patient_id, iso, ferias))
+    .length;
+}
+
+/** Datas ISO em que o horário acontece no mês (pela grade fixa). */
+export function datasDasOcorrenciasNoMes(slot, ano, mesIndex) {
   const diasNoMes = new Date(ano, mesIndex + 1, 0).getDate();
-  let total = 0;
+  const datas = [];
   for (let d = 1; d <= diasNoMes; d++) {
     const data = new Date(ano, mesIndex, d);
     if (data.getDay() !== slot.day_of_week) continue;
-    if (slotAtivoNaData(slot, dataParaISO(data))) total++;
+    const iso = dataParaISO(data);
+    if (slotAtivoNaData(slot, iso)) datas.push(iso);
   }
-  return total;
+  return datas;
 }
 
 /**
@@ -1869,8 +2058,11 @@ export function contarOcorrenciasAtivasNoMes(slot, ano, mesIndex) {
  * recorrente de cada analisante e do preço de sessão cadastrado na ficha.
  * `dataRef` define o "hoje"/mês de referência (padrão: data atual).
  */
-export async function getPlanoFinanceiro(dataRef = new Date()) {
-  const slots = await getSlotsOcupados();
+export async function getPlanoFinanceiro(dataRef = new Date(), opcoes = {}) {
+  const [slots, ferias] = await Promise.all([
+    opcoes.slots ? opcoes.slots : getSlotsOcupados(),
+    opcoes.ferias ? opcoes.ferias : getFerias(),
+  ]);
   const diaSemanaHoje = dataRef.getDay();
   const ano = dataRef.getFullYear();
   const mesIndex = dataRef.getMonth();
@@ -1906,7 +2098,8 @@ export async function getPlanoFinanceiro(dataRef = new Date()) {
     // semana (`slotAtivoNaData` já cobre os dois casos, e o semanal comum
     // continua sempre ativo).
     const dataOcorrenciaSemana = dataParaISO(adicionarDias(inicioSemana, slot.day_of_week));
-    if (slotAtivoNaData(slot, dataOcorrenciaSemana)) {
+    if (slotAtivoNaData(slot, dataOcorrenciaSemana)
+      && ocorrenciaContaComFerias(slot.patient_id, dataOcorrenciaSemana, ferias)) {
       totalSemanal += preco;
       itensSemanal.push({
         patient_id: slot.patient_id,
@@ -1920,7 +2113,8 @@ export async function getPlanoFinanceiro(dataRef = new Date()) {
       });
     }
 
-    if (slot.day_of_week === diaSemanaHoje && slotAtivoNaData(slot, hojeISO)) {
+    if (slot.day_of_week === diaSemanaHoje && slotAtivoNaData(slot, hojeISO)
+      && ocorrenciaContaComFerias(slot.patient_id, hojeISO, ferias)) {
       totalDiario += preco;
       itensDiario.push({
         patient_id: slot.patient_id,
@@ -1933,7 +2127,7 @@ export async function getPlanoFinanceiro(dataRef = new Date()) {
       });
     }
 
-    const ocorrencias = contarOcorrenciasAtivasNoMes(slot, ano, mesIndex);
+    const ocorrencias = contarOcorrenciasAtivasNoMes(slot, ano, mesIndex, ferias);
     const subtotalMes = preco * ocorrencias;
     totalMensal += subtotalMes;
 
@@ -2061,12 +2255,14 @@ export async function getPagamentosPorPaciente(patientId) {
  * `valorSugerido` é o que deve ser cobrado por aquela sessão: no grupo, o
  * valor combinado pro grupo (migration 0051); fora dele, o preço da ficha
  * — quem chama não precisa decidir de onde tirar. */
-export async function getSessoesCobrancaDoMes(patientId, ano, mesIndex) {
+export async function getSessoesCobrancaDoMes(patientId, ano, mesIndex, feriasDadas = null) {
   const { supabase } = require('./supabase');
   const inicio = `${ano}-${String(mesIndex + 1).padStart(2, '0')}-01`;
   const ultimoDia = new Date(ano, mesIndex + 1, 0).getDate();
   const fim = `${ano}-${String(mesIndex + 1).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
-  const COBRAVEIS = ['realizado', 'nao_realizado'];
+  // Férias entram na busca; quais cobram (as pagas) é decidido abaixo.
+  const COBRAVEIS = ['realizado', 'nao_realizado', STATUS_FERIAS];
+  const ferias = feriasDadas || await getFerias();
 
   const [
     { data: individuais, error: errA },
@@ -2132,7 +2328,14 @@ export async function getSessoesCobrancaDoMes(patientId, ano, mesIndex) {
     }),
   ];
 
+  // Sessão de férias paga só vira cobrança quando a data chega — antes
+  // disso é previsão (ver contarAgendadosDoMesPorPaciente), não dívida.
+  const hoje = hojeISO();
   return linhas
+    .filter((linha) => !(linha.status === STATUS_FERIAS && linha.date > hoje))
+    .filter((linha) => sessaoCobravelComFerias({
+      status: linha.status, patientId, date: linha.date, emGrupo: linha.emGrupo,
+    }, ferias))
     .map((linha) => ({
       ...linha,
       pago: !!mapaPagamentos[linha.appointmentId],
@@ -2182,7 +2385,7 @@ export async function getPagamentosSessaoPorPeriodo(patientId, inicioISO, fimISO
  * Cobre os dois caminhos, igual ao drill-down por sessão: compromisso
  * individual (appointments.patient_id) e em grupo (appointment_participantes).
  */
-export async function contarSessoesDoMesPorPaciente(patientIds, ano, mesIndex) {
+export async function contarSessoesDoMesPorPaciente(patientIds, ano, mesIndex, feriasDadas = null) {
   const { supabase } = require('./supabase');
   const contagem = {};
   (patientIds || []).forEach((id) => {
@@ -2194,35 +2397,40 @@ export async function contarSessoesDoMesPorPaciente(patientIds, ano, mesIndex) {
   const ultimoDia = new Date(ano, mesIndex + 1, 0).getDate();
   const fim = `${ano}-${String(mesIndex + 1).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
 
-  const [{ data: individuais, error: errI }, { data: grupos, error: errG }] = await Promise.all([
+  const comFerias = [...STATUS_PREVISTOS, STATUS_FERIAS];
+  const [{ data: individuais, error: errI }, { data: grupos, error: errG }, ferias] = await Promise.all([
     supabase
       .from('appointments')
       .select('patient_id, date, status')
       .in('patient_id', patientIds)
-      .in('status', STATUS_PREVISTOS)
+      .in('status', comFerias)
       .gte('date', inicio).lte('date', fim),
     supabase
       .from('appointment_participantes')
       .select('patient_id, appointments!inner(date, status)')
       .in('patient_id', patientIds)
-      .in('appointments.status', STATUS_PREVISTOS)
+      .in('appointments.status', comFerias)
       .gte('appointments.date', inicio).lte('appointments.date', fim),
+    feriasDadas ? Promise.resolve(feriasDadas) : getFerias(),
   ]);
   if (errI) throw errI;
   if (errG) throw errG;
 
-  const registrar = (patientId, date, status) => {
+  const registrar = (patientId, date, status, emGrupo) => {
     const alvo = contagem[patientId];
     if (!alvo) return;
+    const sessao = { status, patientId, date, emGrupo };
+    // Férias não pagas saem da conta; pagas contam como sessão feita.
+    if (!sessaoPrevistaComFerias(sessao, ferias)) return;
     alvo.previstas += 1;
-    if (sessaoEhCobravel(status)) {
+    if (sessaoCobravelComFerias(sessao, ferias)) {
       alvo.cobraveis += 1;
       if (!alvo.ultimaSessao || date > alvo.ultimaSessao) alvo.ultimaSessao = date;
     }
   };
 
-  (individuais || []).forEach((a) => registrar(a.patient_id, a.date, a.status));
-  (grupos || []).forEach((ap) => registrar(ap.patient_id, ap.appointments.date, ap.appointments.status));
+  (individuais || []).forEach((a) => registrar(a.patient_id, a.date, a.status, false));
+  (grupos || []).forEach((ap) => registrar(ap.patient_id, ap.appointments.date, ap.appointments.status, true));
 
   return contagem;
 }
@@ -2242,7 +2450,7 @@ export async function contarSessoesDoMesPorPaciente(patientIds, ano, mesIndex) {
  * Datas passadas nunca entram: o que já passou e não virou compromisso não
  * é sessão para cobrar. Devolve { [patient_id]: quantidade }.
  */
-export function projetarOcorrenciasFuturas({ slots, ocupadas, liberadas, ano, mesIndex, hoje }) {
+export function projetarOcorrenciasFuturas({ slots, ocupadas, liberadas, ano, mesIndex, hoje, ferias = [] }) {
   const contagem = {};
   const diasNoMes = new Date(ano, mesIndex + 1, 0).getDate();
   for (const slot of slots || []) {
@@ -2255,6 +2463,8 @@ export function projetarOcorrenciasFuturas({ slots, ocupadas, liberadas, ano, me
       if (!slotAtivoNaData(slot, iso)) continue;
       const chave = `${iso}|${slot.start_time}`;
       if (ocupadas.has(chave) || liberadas.has(chave)) continue;
+      // Férias não pagas: a sessão não vai acontecer nem ser cobrada.
+      if (!ocorrenciaContaComFerias(slot.patient_id, iso, ferias)) continue;
       contagem[slot.patient_id] = (contagem[slot.patient_id] || 0) + 1;
     }
   }
@@ -2264,7 +2474,7 @@ export function projetarOcorrenciasFuturas({ slots, ocupadas, liberadas, ano, me
 /** Sessões futuras do mês por analisante (ver projetarOcorrenciasFuturas),
  *  lendo os horários fixos, os compromissos e as liberações do mês. Não
  *  conta analisante com a análise paralisada (getSlotsOcupados já tira). */
-export async function contarSessoesFuturasDoMes(ano, mesIndex) {
+export async function contarSessoesFuturasDoMes(ano, mesIndex, opcoes = {}) {
   const { supabase } = require('./supabase');
   const hoje = hojeISO();
   const ultimoDia = new Date(ano, mesIndex + 1, 0).getDate();
@@ -2274,22 +2484,23 @@ export async function contarSessoesFuturasDoMes(ano, mesIndex) {
   const desde = inicio > hoje ? inicio : hoje;
 
   const userId = await getUserId();
-  const [slots, { data: compromissos, error: errA }, { data: livres, error: errL }] = await Promise.all([
-    getSlotsOcupados(),
+  const [slots, { data: compromissos, error: errA }, { data: livres, error: errL }, ferias] = await Promise.all([
+    opcoes.slots ? Promise.resolve(opcoes.slots) : getSlotsOcupados(),
     supabase.from('appointments').select('date, start_time').eq('user_id', userId).gte('date', desde).lte('date', fim),
     supabase.from('horarios_liberados').select('date, start_time').eq('user_id', userId).gte('date', desde).lte('date', fim),
+    opcoes.ferias ? Promise.resolve(opcoes.ferias) : getFerias(),
   ]);
   if (errA) throw errA;
   if (errL) throw errL;
   const ocupadas = new Set((compromissos || []).map((a) => `${a.date}|${a.start_time}`));
   const liberadas = new Set((livres || []).map((l) => `${l.date}|${l.start_time}`));
-  return projetarOcorrenciasFuturas({ slots, ocupadas, liberadas, ano, mesIndex, hoje });
+  return projetarOcorrenciasFuturas({ slots, ocupadas, liberadas, ano, mesIndex, hoje, ferias });
 }
 
 /** Compromissos ainda 'agendado' no mês, por analisante (individual e em
  *  grupo). Para quem paga por sessão, são sessões previstas que já existem
  *  como compromisso mas ainda não foram confirmadas. */
-async function contarAgendadosDoMesPorPaciente(patientIds, ano, mesIndex) {
+async function contarAgendadosDoMesPorPaciente(patientIds, ano, mesIndex, ferias = []) {
   const { supabase } = require('./supabase');
   const contagem = {};
   if (!patientIds || patientIds.length === 0) return contagem;
@@ -2297,16 +2508,25 @@ async function contarAgendadosDoMesPorPaciente(patientIds, ano, mesIndex) {
   const ultimoDia = new Date(ano, mesIndex + 1, 0).getDate();
   const fim = `${ano}-${String(mesIndex + 1).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
   const [{ data: individuais, error: errI }, { data: grupos, error: errG }] = await Promise.all([
-    supabase.from('appointments').select('patient_id').in('patient_id', patientIds)
-      .eq('status', 'agendado').gte('date', inicio).lte('date', fim),
+    supabase.from('appointments').select('patient_id, date, status').in('patient_id', patientIds)
+      .in('status', ['agendado', STATUS_FERIAS]).gte('date', inicio).lte('date', fim),
     supabase.from('appointment_participantes').select('patient_id, appointments!inner(date, status)')
       .in('patient_id', patientIds).eq('appointments.status', 'agendado')
       .gte('appointments.date', inicio).lte('appointments.date', fim),
   ]);
   if (errI) throw errI;
   if (errG) throw errG;
-  [...(individuais || []), ...(grupos || [])].forEach((a) => {
+  const hoje = hojeISO();
+  (individuais || []).forEach((a) => {
+    // Férias: só as pagas e ainda por vir (as passadas já são cobrança).
+    if (a.status === STATUS_FERIAS
+      && (a.date <= hoje || !sessaoCobravelComFerias({ status: a.status, patientId: a.patient_id, date: a.date }, ferias))) return;
     contagem[a.patient_id] = (contagem[a.patient_id] || 0) + 1;
+  });
+  // No grupo, quem está de férias não pagas não entra no previsto.
+  (grupos || []).forEach((ap) => {
+    if (!ocorrenciaContaComFerias(ap.patient_id, ap.appointments?.date, ferias)) return;
+    contagem[ap.patient_id] = (contagem[ap.patient_id] || 0) + 1;
   });
   return contagem;
 }
@@ -2314,8 +2534,12 @@ async function contarAgendadosDoMesPorPaciente(patientIds, ano, mesIndex) {
 export async function getRecebimentosDoMes(ano, mesIndex) {
   const { supabase } = require('./supabase');
   // Independentes entre si — rodar em sequência somava o tempo das duas.
+  // Horários e férias lidos uma vez só e repassados a todas as contas
+  // abaixo (antes cada uma buscava os horários de novo).
+  const [slotsOcupados, ferias] = await Promise.all([getSlotsOcupados(), getFerias()]);
+  const opcoesBase = { slots: slotsOcupados, ferias };
   const [plano, statusMap] = await Promise.all([
-    getPlanoFinanceiro(new Date(ano, mesIndex, 1)),
+    getPlanoFinanceiro(new Date(ano, mesIndex, 1), opcoesBase),
     getStatusPagamentos(ano, mesIndex),
   ]);
 
@@ -2358,8 +2582,8 @@ export async function getRecebimentosDoMes(ano, mesIndex) {
   const futurasPorMes = {};
   await Promise.all([...mesesNecessarios.values()].map(async ({ ano: a, mes: m, ids }) => {
     const [contagem, futuras] = await Promise.all([
-      contarSessoesDoMesPorPaciente(ids, a, m),
-      contarSessoesFuturasDoMes(a, m),
+      contarSessoesDoMesPorPaciente(ids, a, m, ferias),
+      contarSessoesFuturasDoMes(a, m, opcoesBase),
     ]);
     contagensPorMes[`${a}-${m}`] = contagem;
     futurasPorMes[`${a}-${m}`] = futuras;
@@ -2400,8 +2624,17 @@ export async function getRecebimentosDoMes(ano, mesIndex) {
       // Variável: o que já aconteceu ou está marcado (`previstas`) mais as
       // sessões futuras do horário fixo que ainda não viraram compromisso.
       sessoesMes: ehMensalFixo ? contagem.cobraveis : contagem.previstas + futuras,
+      // Mensal fixo com férias não pagas no mês: desconto proporcional às
+      // sessões perdidas (decisão do Paulo, 26/11/2026).
       valorPrevisto: ehMensalFixo
-        ? Number(contato.valor_mensal_fixo) || 0
+        ? valorMensalFixoComFerias(
+          contato.valor_mensal_fixo,
+          slotsOcupados
+            .filter((s) => s.patient_id === item.patient_id)
+            .flatMap((s) => datasDasOcorrenciasNoMes(s, competencia.ano, competencia.mes)),
+          item.patient_id,
+          ferias,
+        )
         : precoUnitario * (contagem.previstas + futuras),
       telefone: contato.telefone || null,
       email: contato.email || null,
@@ -2424,8 +2657,8 @@ export async function getRecebimentosDoMes(ano, mesIndex) {
   // Cobrança: sessão que ainda vai acontecer não é dívida.
   const idsPorSessao = (porSessaoPacientes || []).map((p) => p.id);
   const [futurasPorSessao, agendadasPorSessao] = await Promise.all([
-    idsPorSessao.length ? contarSessoesFuturasDoMes(ano, mesIndex) : {},
-    contarAgendadosDoMesPorPaciente(idsPorSessao, ano, mesIndex),
+    idsPorSessao.length ? contarSessoesFuturasDoMes(ano, mesIndex, opcoesBase) : {},
+    contarAgendadosDoMesPorPaciente(idsPorSessao, ano, mesIndex, ferias),
   ]);
 
   // Uma consulta por analisante de cobrança "por sessão" — antes rodava em
@@ -2435,7 +2668,7 @@ export async function getRecebimentosDoMes(ano, mesIndex) {
   // analisantes nessa modalidade.
   const recebimentosSessao = await Promise.all(
     (porSessaoPacientes || []).map(async (p) => {
-      const sessoes = await getSessoesCobrancaDoMes(p.id, ano, mesIndex);
+      const sessoes = await getSessoesCobrancaDoMes(p.id, ano, mesIndex, ferias);
       // Preço da ficha convertido UMA vez por analisante (não por sessão):
       // é o mesmo valor pra todas as sessões individuais dele.
       const precoFicha = await converterParaBRL(parsePreco(p.preco_sessao), p.preco_moeda);

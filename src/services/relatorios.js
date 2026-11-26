@@ -211,6 +211,7 @@ async function gerarConteudoFrequenciaLocal(paciente) {
   const faltas = contagem.nao_realizado || 0;
   const cancelados = contagem.cancelado || 0;
   const agendados = contagem.agendado || 0;
+  const emFerias = contagem.ferias || 0;
   const baseComparecimento = realizados + faltas;
   const taxaComparecimento = baseComparecimento > 0
     ? Math.round((realizados / baseComparecimento) * 1000) / 10
@@ -233,6 +234,7 @@ async function gerarConteudoFrequenciaLocal(paciente) {
     `Faltas: ${faltas}`,
     `Cancelados: ${cancelados}`,
     `Agendados (futuros): ${agendados}`,
+    ...(emFerias > 0 ? [`Em férias: ${emFerias}`] : []),
     '',
     taxaComparecimento != null
       ? `Taxa de comparecimento (realizados / realizados + faltas): ${taxaComparecimento}%`

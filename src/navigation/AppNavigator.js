@@ -45,6 +45,8 @@ import ConfiguracaoFiscalAutomaticaScreen from '../screens/ConfiguracaoFiscalAut
 import EditarHorarioScreen from '../screens/DisponibilidadeScreen';
 import MarcarHorarioAvulsoScreen from '../screens/MarcarHorarioAvulsoScreen';
 import DetalheCompromissoScreen from '../screens/DetalheCompromissoScreen';
+import FeriasScreen from '../screens/FeriasScreen';
+import FormularioFeriasScreen from '../screens/FormularioFeriasScreen';
 
 // Início — afazeres e relatórios
 import AfazeresScreen from '../screens/AfazeresScreen';
@@ -224,6 +226,9 @@ function AppStackNavigator() {
         component={DetalheCompromissoScreen}
         options={{ title: 'Compromisso' }}
       />
+
+      <Stack.Screen name="Ferias" component={FeriasScreen} />
+      <Stack.Screen name="FormularioFerias" component={FormularioFeriasScreen} />
 
       <Stack.Screen name="SessoesStatus" component={SessoesStatusScreen} />
       <Stack.Screen name="AppsConectados" component={AppsConectadosScreen} />

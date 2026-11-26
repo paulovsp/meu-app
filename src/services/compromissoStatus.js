@@ -11,11 +11,12 @@ export function horarioJaPassou(dataISO, endTime) {
 }
 
 /**
- * status: 'agendado' | 'realizado' | 'cancelado' | 'nao_realizado'
+ * status: 'agendado' | 'realizado' | 'cancelado' | 'nao_realizado' | 'ferias'
  * Retorna um dos: 'agendado_futuro', 'aguardando_confirmacao',
  * 'realizado_ok', 'realizado_sem_relato', 'cancelado', 'nao_realizado'.
  */
 export function getEstadoCompromisso({ status, temTranscricao, horarioPassou }) {
+  if (status === 'ferias') return 'ferias';
   if (status === 'cancelado') return 'cancelado';
   if (status === 'nao_realizado') return 'nao_realizado';
   if (status === 'realizado') {
@@ -35,4 +36,5 @@ export const ESTADO_LABEL = {
   realizado_sem_relato: { texto: 'Realizada — sem relato', cor: '#975451' },
   cancelado: { texto: 'Cancelada', cor: '#8C857B' },
   nao_realizado: { texto: 'Não realizada', cor: '#975451' },
+  ferias: { texto: 'Férias', cor: '#6E5A8A' },
 };

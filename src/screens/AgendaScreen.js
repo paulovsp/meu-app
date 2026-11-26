@@ -29,7 +29,12 @@ import {
   temRelatoNaDataEmLote,
   slotAtivoNaData,
   horariosTemporariamenteLivres,
+  getFerias,
 } from '../services/database';
+import {
+  feriasDoAnalistaNaData, feriasNaData, horarioFicaEmFerias, formatarPeriodoFerias, STATUS_FERIAS,
+} from '../services/ferias';
+import ArteFerias from '../components/ArteFerias';
 import { formatarValorMoeda } from '../services/currency';
 import { horarioJaPassou, getEstadoCompromisso, ESTADO_LABEL } from '../services/compromissoStatus';
 import { mensagemDeErro } from '../services/erros';
@@ -50,6 +55,16 @@ const COR_ONLINE = '#44745B'; // verde escuro
 const COR_TEMP_LIVRE = '#F2C94C'; // amarelo
 const COR_TEMP_LIVRE_TEXTO = '#5C4A0E';
 const COR_TEMP_LIVRE_FUNDO = '#FBF1CF';
+// Férias (de um cliente, ou do analista quando ele escolhe ver os horários
+// por baixo da arte): lavanda, longe do amarelo e do verde.
+const COR_FERIAS = '#8E7BAA';
+const COR_FERIAS_TEXTO = '#6E5A8A';
+const COR_FERIAS_FUNDO = '#EEE8F5';
+
+function dataCurtaBR(iso) {
+  const [, m, d] = String(iso || '').split('-');
+  return d && m ? `${d}/${m}` : '';
+}
 
 function toISO(date) {
   const ano = date.getFullYear();
@@ -137,6 +152,10 @@ export default function AgendaScreen({ navigation }) {
   // aparecendo ocupado numa data específica que foi liberada de propósito.
   const [liberados, setLiberados] = useState(new Set());
   const [temTranscricaoMap, setTemTranscricaoMap] = useState({});
+  const [ferias, setFerias] = useState([]);
+  // Nas férias do analista a arte cobre a agenda; tocar em "ver horários"
+  // mostra o que está por baixo (cada sessão marcada como férias).
+  const [verHorariosNasFerias, setVerHorariosNasFerias] = useState(false);
   // Na versão Agenda não há relato clínico: sessão realizada é só
   // realizada, sem o aviso "sem relato".
   const [versao, setVersao] = useState(VERSAO_COMPLETA);
@@ -165,8 +184,12 @@ export default function AgendaScreen({ navigation }) {
   async function carregarDadosAgenda() {
     setCarregando(true);
     try {
-      const disponibilidades = await getAvailabilitySlots();
+      const [disponibilidades, listaFerias] = await Promise.all([
+        getAvailabilitySlots(),
+        getFerias().catch(() => []),
+      ]);
       setAvailability(disponibilidades || []);
+      setFerias(listaFerias || []);
 
       if (modoView === 'diario') {
         const dataISO = toISO(dataRef);
@@ -291,6 +314,34 @@ export default function AgendaScreen({ navigation }) {
     return liberados.has(`${dataISO}|${startTime}`);
   }
 
+  function feriasDoAnalista(dataISO) {
+    return feriasDoAnalistaNaData(ferias, dataISO);
+  }
+
+  // A arte cobre o dia? Só nas férias do analista e enquanto ele não pediu
+  // para ver os horários por baixo.
+  function arteCobreODia(dataISO) {
+    return !verHorariosNasFerias && !!feriasDoAnalista(dataISO);
+  }
+
+  function slotEmFerias(slot, dataISO, compromisso) {
+    if (compromisso) return compromisso.status === STATUS_FERIAS;
+    return horarioFicaEmFerias(slot, dataISO, ferias);
+  }
+
+  // "Férias até 31/01 · paga" — para o card do dia.
+  function textoDasFerias(slot, dataISO) {
+    const doAnalista = feriasDoAnalista(dataISO);
+    const registro = doAnalista
+      || ferias.find((f) => f.tipo === 'cliente' && f.patient_id === slot.patient_id
+        && f.data_inicio <= dataISO && dataISO <= f.data_fim);
+    if (!registro) return 'Férias';
+    const quem = doAnalista ? 'Suas férias' : 'Férias';
+    const situacao = slot.patient_id ? feriasNaData(ferias, slot.patient_id, dataISO) : null;
+    const pagamento = situacao ? (situacao.paga ? ' · paga' : ' · não paga') : '';
+    return `${quem} até ${dataCurtaBR(registro.data_fim)}${pagamento}`;
+  }
+
   function abrirEdicaoHorario({ slot, dataISO, appointment }) {
     navigation.navigate('EditarHorario', {
       slotId: slot?.id || null,
@@ -409,6 +460,7 @@ export default function AgendaScreen({ navigation }) {
     const ocupado = !liberado && (!!compromisso || !!slot.patient_id || tipo === 'outros' || ehTipoGrupo(tipo));
     const modality = compromisso?.modality || slot.modality;
     const horario = slot.start_time;
+    const emFerias = !liberado && slotEmFerias(slot, dataISO, compromisso);
 
     const nomePaciente = nomeExibicaoEvento({
       tipo,
@@ -422,7 +474,7 @@ export default function AgendaScreen({ navigation }) {
         key={key}
         style={[
           styles.slotBtn,
-          { height: m.slotH, backgroundColor: ocupado ? corTipoEvento(tipo) : '#43A047' },
+          { height: m.slotH, backgroundColor: emFerias ? COR_FERIAS : (ocupado ? corTipoEvento(tipo) : '#43A047') },
         ]}
         onPress={() => abrirCompromissoOuEdicao({ slot, dataISO })}
         onLongPress={() => {
@@ -439,7 +491,7 @@ export default function AgendaScreen({ navigation }) {
             style={[styles.slotPacienteTxt, { fontSize: m.fN, lineHeight: Math.round(m.fN * 1.2), marginBottom: m.fBadge + 2 }]}
             numberOfLines={m.linhasNome}
           >
-            {nomePaciente}
+            {emFerias ? `${nomePaciente} · férias` : nomePaciente}
           </Text>
         )}
 
@@ -464,6 +516,7 @@ export default function AgendaScreen({ navigation }) {
     const ocupado = !liberado && (!!compromisso || !!slot.patient_id || tipo === 'outros' || ehTipoGrupo(tipo));
     const modality = compromisso?.modality || slot.modality;
     const eventoIndividual = tipo === 'sessao_individual' || tipo === 'supervisao_individual';
+    const emFerias = !liberado && slotEmFerias(slot, dataISO, compromisso);
 
     const nomePaciente = nomeExibicaoEvento({
       tipo,
@@ -501,7 +554,7 @@ export default function AgendaScreen({ navigation }) {
         key={key}
         style={[
           styles.diaCard,
-          { borderLeftColor: ocupado ? corTipoEvento(tipo) : '#43A047' },
+          { borderLeftColor: emFerias ? COR_FERIAS : (ocupado ? corTipoEvento(tipo) : '#43A047') },
         ]}
         onPress={() => abrirCompromissoOuEdicao({ slot, dataISO })}
         onLongPress={() => {
@@ -517,16 +570,16 @@ export default function AgendaScreen({ navigation }) {
           <View
             style={[
               styles.diaCardStatus,
-              { backgroundColor: ocupado ? '#F1E4E3' : '#E2EFE8' },
+              { backgroundColor: emFerias ? COR_FERIAS_FUNDO : (ocupado ? '#F1E4E3' : '#E2EFE8') },
             ]}
           >
             <Text
               style={[
                 styles.diaCardStatusTxt,
-                { color: ocupado ? '#975451' : '#44745B' },
+                { color: emFerias ? COR_FERIAS_TEXTO : (ocupado ? '#975451' : '#44745B') },
               ]}
             >
-              {ocupado ? 'Ocupado' : 'Livre'}
+              {emFerias ? 'Férias' : (ocupado ? 'Ocupado' : 'Livre')}
             </Text>
           </View>
         </View>
@@ -539,6 +592,11 @@ export default function AgendaScreen({ navigation }) {
             <Text style={styles.diaCardNome} numberOfLines={1}>
               {nomePaciente || 'Analisante'}
             </Text>
+            {emFerias && (
+              <Text style={[styles.diaCardReservado, { color: COR_FERIAS_TEXTO }]}>
+                {textoDasFerias(slot, dataISO)}
+              </Text>
+            )}
             {reservadoAte && (
               <Text style={styles.diaCardReservado}>
                 Reservado até {reservadoAte} — depois fica livre
@@ -557,7 +615,7 @@ export default function AgendaScreen({ navigation }) {
                 <Text style={styles.diaCardInfoItem}>{preco}</Text>
               ) : null}
             </View>
-            {estadoInfo && (
+            {estadoInfo && !emFerias && (
               <Text style={[styles.diaCardEstado, { color: estadoInfo.cor }]}>
                 ● {estadoInfo.texto}
               </Text>
@@ -760,7 +818,62 @@ export default function AgendaScreen({ navigation }) {
     }
 
     const m = medirSemana(dias);
-    return <View style={styles.semanaContainer}>{dias.map((d) => renderColunaDia(d, m))}</View>;
+
+    // Dias seguidos de férias do analista viram um bloco só: os cabeçalhos
+    // dos dias continuam em cima, e a arte ocupa a largura de todos eles.
+    const blocos = [];
+    dias.forEach((d) => {
+      const iso = toISO(d);
+      const registro = arteCobreODia(iso) ? feriasDoAnalista(iso) : null;
+      const ultimo = blocos[blocos.length - 1];
+      if (registro && ultimo?.ferias?.id === registro.id) ultimo.dias.push(d);
+      else blocos.push({ ferias: registro, dias: [d] });
+    });
+
+    return (
+      <View style={styles.semanaContainer}>
+        {blocos.map((bloco) => (bloco.ferias
+          ? renderBlocoFerias(bloco, m)
+          : bloco.dias.map((d) => renderColunaDia(d, m))))}
+      </View>
+    );
+  }
+
+  function abrirFerias() {
+    navigation.navigate('Ferias');
+  }
+
+  function renderBlocoFerias({ ferias: registro, dias }, m) {
+    const largura = dias.length * (m.colW + 2) - 2;
+    return (
+      <View key={`ferias-${toISO(dias[0])}`} style={[styles.colunaDia, styles.blocoFerias, { width: largura }]}>
+        <View style={{ flexDirection: 'row' }}>
+          {dias.map((data) => (
+            <TouchableOpacity
+              key={`cab-${toISO(data)}`}
+              style={[styles.diaHeader, { flex: 1 }]}
+              onPress={() => abrirDiaEspecifico(data)}
+              activeOpacity={0.6}
+            >
+              <Text style={[styles.diaHeaderSemana, { fontSize: m.fCab }]}>{DIAS_LABEL[data.getDay()]}</Text>
+              <Text style={[styles.diaHeaderData, { fontSize: m.fCab - 1 }]}>
+                {String(data.getDate()).padStart(2, '0')}/
+                {String(data.getMonth() + 1).padStart(2, '0')}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <View style={{ flex: 1, padding: 3 }}>
+          <ArteFerias
+            compacta={dias.length < 3}
+            periodo={formatarPeriodoFerias(registro.data_inicio, registro.data_fim)}
+            mensagem={dias.length >= 4 ? 'Bom descanso.' : null}
+            onPress={abrirFerias}
+            style={{ borderRadius: 6 }}
+          />
+        </View>
+      </View>
+    );
   }
 
   function renderDiario() {
@@ -768,6 +881,7 @@ export default function AgendaScreen({ navigation }) {
     const diaSemana = dataRef.getDay();
     const slots = slotsDoDiaDaSemana(diaSemana, dataISO);
     const semNadaHoje = itensDoDia(dataISO, slots).length === 0;
+    const feriasHoje = feriasDoAnalista(dataISO);
 
     return (
       <View style={styles.diarioContainer}>
@@ -789,10 +903,28 @@ export default function AgendaScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
+        {feriasHoje && !verHorariosNasFerias ? (
+          <View style={[styles.diarioArte, { paddingBottom: insets.bottom + 12 }]}>
+            <ArteFerias
+              periodo={formatarPeriodoFerias(feriasHoje.data_inicio, feriasHoje.data_fim)}
+              onPress={abrirFerias}
+            />
+            <TouchableOpacity onPress={() => setVerHorariosNasFerias(true)} style={styles.linkFerias}>
+              <Text style={styles.linkFeriasTxt}>Ver os horários deste dia</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
         <ScrollView
           contentContainerStyle={[styles.diarioLista, { paddingBottom: insets.bottom + 24 }]}
           showsVerticalScrollIndicator={false}
         >
+          {feriasHoje && (
+            <TouchableOpacity onPress={() => setVerHorariosNasFerias(false)} style={styles.avisoFerias}>
+              <Text style={styles.avisoFeriasTxt}>
+                Suas férias: {formatarPeriodoFerias(feriasHoje.data_inicio, feriasHoje.data_fim)} · mostrar a arte
+              </Text>
+            </TouchableOpacity>
+          )}
           {semNadaHoje && (
             <Text style={styles.semHorariosDia}>
               Não há disponibilidades cadastradas para este dia.
@@ -803,6 +935,7 @@ export default function AgendaScreen({ navigation }) {
             ? renderFolgaDiarioCard({ slot, dataISO, key })
             : renderSlotDiarioCard({ slot, dataISO, key })))}
         </ScrollView>
+        )}
       </View>
     );
   }
@@ -872,17 +1005,23 @@ export default function AgendaScreen({ navigation }) {
         </View>
       )}
 
-      <TouchableOpacity
-        style={styles.btnNovoHorario}
-        onPress={() =>
-          navigation.navigate('EditarHorario', {
-            date: toISO(dataRef),
-            dayOfWeek: dataRef.getDay(),
-          })
-        }
-      >
-        <Text style={styles.btnNovoHorarioTxt}>+ Novo Horário</Text>
-      </TouchableOpacity>
+      <View style={styles.linhaBotoes}>
+        <TouchableOpacity
+          style={[styles.btnNovoHorario, { flex: 1 }]}
+          onPress={() =>
+            navigation.navigate('EditarHorario', {
+              date: toISO(dataRef),
+              dayOfWeek: dataRef.getDay(),
+            })
+          }
+        >
+          <Text style={styles.btnNovoHorarioTxt}>+ Novo Horário</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.btnFerias} onPress={abrirFerias}>
+          <Ionicons name="sunny-outline" size={17} color="#497363" />
+          <Text style={styles.btnFeriasTxt}>Férias</Text>
+        </TouchableOpacity>
+      </View>
 
       <Animated.View style={[{ flex: 1 }, animatedStyle]} {...panHandlers}>
         {carregando ? (
@@ -923,6 +1062,7 @@ export default function AgendaScreen({ navigation }) {
           itens: [
             { icon: modoView === 'semanal' ? 'today-outline' : 'calendar-outline', label: modoView === 'semanal' ? 'Ver dia' : 'Ver semana', onPress: () => setModoView(modoView === 'semanal' ? 'diario' : 'semanal') },
             { icon: 'time-outline', label: 'Disponibilidade', onPress: () => navigation.navigate('EditarHorario', {}) },
+            { icon: 'sunny-outline', label: 'Férias', onPress: abrirFerias },
           ],
         }}
       />
@@ -944,15 +1084,24 @@ const styles = StyleSheet.create({
   viewBtnTxt: { color: '#4E4941', fontSize: 13, lineHeight: 19 },
   viewBtnTxtAtivo: { color: '#FFFFFF', fontSize: 13, fontWeight: '500', lineHeight: 19 },
   btnNovoHorario: {
-    marginHorizontal: 12,
-    marginTop: 12,
-    marginBottom: 10,
     padding: 12,
     backgroundColor: '#497363',
     borderRadius: 10,
     alignItems: 'center',
   },
   btnNovoHorarioTxt: { color: '#FFFFFF', fontWeight: '500' },
+  linhaBotoes: { flexDirection: 'row', alignItems: 'center', marginTop: 12, marginBottom: 10, marginHorizontal: 12, gap: 8 },
+  btnFerias: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 11, paddingHorizontal: 14,
+    borderRadius: 10, borderWidth: 1, borderColor: '#A8CBBA', backgroundColor: '#E4EFE9',
+  },
+  btnFeriasTxt: { color: '#497363', fontWeight: '500' },
+  blocoFerias: { backgroundColor: '#FBF6EE' },
+  diarioArte: { flex: 1, paddingHorizontal: 16, paddingTop: 4 },
+  linkFerias: { alignSelf: 'center', paddingVertical: 10, paddingHorizontal: 12 },
+  linkFeriasTxt: { color: '#497363', fontSize: 13, textDecorationLine: 'underline', lineHeight: 19 },
+  avisoFerias: { backgroundColor: COR_FERIAS_FUNDO, borderRadius: 10, padding: 10, marginBottom: 12 },
+  avisoFeriasTxt: { color: COR_FERIAS_TEXTO, fontSize: 13, textAlign: 'center', lineHeight: 19 },
   navSemana: {
     flexDirection: 'row',
     justifyContent: 'space-between',

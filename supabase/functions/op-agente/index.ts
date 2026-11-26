@@ -446,6 +446,16 @@ Deno.serve(servir('op-agente', async (req) => {
       const donoEmail = String(body?.dono_email || '').trim().toLowerCase();
       const ficha = body?.ficha || {};
       const registros = Array.isArray(body?.registros) ? body.registros : [];
+      // Histórico de paralisações da ficha cadastral (interrupção → retorno).
+      // Só entra em analisante sem histórico nenhum; o período em aberto, se
+      // houver, vira o status (data_paralizacao), como faz o app.
+      const paralizacoes = (Array.isArray(body?.paralizacoes) ? body.paralizacoes : [])
+        .filter((p: Record<string, unknown>) => /^\d{4}-\d{2}-\d{2}$/.test(String(p?.data_inicio || '')))
+        .map((p: Record<string, unknown>) => ({
+          data_inicio: String(p.data_inicio),
+          data_fim: /^\d{4}-\d{2}-\d{2}$/.test(String(p?.data_fim || '')) ? String(p.data_fim) : null,
+        }));
+      const supervisionando = ficha?.eh_supervisionando === true;
       const ensaio = body?.modo !== 'gravar';
       const nome = String(ficha?.nome || '').trim();
       if (!donoEmail || !nome) return json({ error: 'dono_email e ficha.nome são obrigatórios.' }, 400);
@@ -474,9 +484,24 @@ Deno.serve(servir('op-agente', async (req) => {
             if (error) return json({ error: error.message }, 500);
           }
         } else {
-          const { data, error } = await admin.from('patients').insert({ user_id: dono.id, nome, eh_analisante: true, ...novos }).select('id').single();
+          const { data, error } = await admin.from('patients').insert({ user_id: dono.id, nome, eh_analisante: !supervisionando, eh_supervisionando: supervisionando, ...novos }).select('id').single();
           if (error) return json({ error: error.message }, 500);
           patientId = data.id;
+        }
+      }
+
+      const { count: periodosExistentes } = patientId
+        ? await admin.from('patient_paralizacoes').select('id', { count: 'exact', head: true }).eq('patient_id', patientId)
+        : { count: 0 };
+      const periodosNovos = (periodosExistentes || 0) === 0 ? paralizacoes : [];
+      if (!ensaio && patientId && periodosNovos.length) {
+        const { error } = await admin.from('patient_paralizacoes')
+          .insert(periodosNovos.map((p) => ({ patient_id: patientId, ...p })));
+        if (error) return json({ error: error.message }, 500);
+        const aberto = periodosNovos.filter((p) => !p.data_fim).sort((a, b) => b.data_inicio.localeCompare(a.data_inicio))[0];
+        if (aberto) {
+          const { error: errStatus } = await admin.from('patients').update({ data_paralizacao: aberto.data_inicio }).eq('id', patientId);
+          if (errStatus) return json({ error: errStatus.message }, 500);
         }
       }
 
@@ -505,7 +530,7 @@ Deno.serve(servir('op-agente', async (req) => {
         }
       }
       await admin.from('op_eventos').insert({ origem: 'arquivista', severidade: 'info', mensagem: `${ensaio ? 'Ensaio' : 'Importação'}: ${registros.length} registros (${pendentes.length} novos)`, contexto: { ensaio, analisanteNova: !existente, camposNovos: Object.keys(novos), registros: registros.length, novos: pendentes.length, gravados } });
-      return json({ ok: true, ensaio, analisante: existente ? 'existente' : 'nova', camposNovos: Object.keys(novos), registrosRecebidos: registros.length, registrosNovos: pendentes.length, gravados });
+      return json({ ok: true, ensaio, analisante: existente ? 'existente' : 'nova', camposNovos: Object.keys(novos), periodosNovos: periodosNovos.length, registrosRecebidos: registros.length, registrosNovos: pendentes.length, gravados });
     }
 
     // Só para peça substituída (cabeçalho `substituida_por`): apaga o post

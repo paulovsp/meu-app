@@ -14,6 +14,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { envelope, enviarEmail, escaparHtml, h2, p } from '../_shared/emailDrSig.ts';
 import { servir } from '../_shared/registrarEvento.ts';
+import { contasDeFeriasHoje } from '../_shared/feriasDoAnalista.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -181,6 +182,7 @@ Deno.serve(servir('enviar-digest-diario', async (req) => {
     semNadaAvisar: 0,
     erros: [] as string[],
     ensaio: [] as { para: string; secoes: string[]; html: string }[],
+    deFerias: 0,
   };
 
   // Modo de ensaio: monta tudo exatamente como no envio real e devolve o
@@ -201,7 +203,14 @@ Deno.serve(servir('enviar-digest-diario', async (req) => {
       .in('assinatura_status', ['ativa', 'cortesia']);
     if (error) throw error;
 
+    // Analista de férias não recebe resumo nem push (pedido do Paulo).
+    const deFerias = await contasDeFeriasHoje(supabaseAdmin);
+
     for (const perfil of perfis || []) {
+      if (deFerias.has(perfil.id)) {
+        resultado.deFerias++;
+        continue;
+      }
       try {
         // O push de "sessão aguardando confirmação" sai daqui porque o
         // número já é calculado pro e-mail — mandar de outro lugar seria

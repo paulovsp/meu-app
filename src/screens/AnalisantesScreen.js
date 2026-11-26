@@ -205,7 +205,7 @@ export default function AnalisantesScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <CabecalhoTela
-        titulo="Arquivo"
+        titulo="Clientes"
         onVoltar={() => navigation.goBack()}
         acoes={(
           <>

@@ -1,0 +1,150 @@
+name: Publicar (OTA, funções, migrações)
+
+# Publica no app que já está instalado nos aparelhos, sem precisar do PC.
+# Disparado só à mão (pelo Claude, depois do "aprovo" escrito do Paulo).
+# Sempre publica a partir da main.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ota:
+        description: "Atualização do app (OTA, canal production): nao, ensaio (confere tudo e não publica) ou publicar"
+        type: choice
+        options: [nao, ensaio, publicar]
+        default: nao
+      mensagem:
+        description: "Mensagem da atualização (aparece na lista do EAS)"
+        type: string
+        default: ""
+      runtime_esperado:
+        description: "Fingerprint da versão da Play Console (a OTA só sai se bater)"
+        type: string
+        default: "764ffa1f4fa9c08217eee7850f15ab6683cdf39e"
+      funcoes:
+        description: "Funções do Supabase para publicar, separadas por espaço (vazio = nenhuma)"
+        type: string
+        default: ""
+      migracoes:
+        description: "Aplicar migrações pendentes no banco (supabase db push)?"
+        type: boolean
+        default: false
+
+concurrency:
+  group: publicar
+  cancel-in-progress: false
+
+env:
+  SUPABASE_PROJECT_REF: iahtyvqjgukdgrftpyxm
+  # Valores públicos que o app embute no bundle (os mesmos de docs/redefinir-senha.html).
+  # No PC eles vêm do .env, que não está no repositório.
+  EXPO_PUBLIC_SUPABASE_URL: https://iahtyvqjgukdgrftpyxm.supabase.co
+  EXPO_PUBLIC_SUPABASE_ANON_KEY: sb_publishable_GEYLOEfzFHU0zkdpJCNDVw_cVbO_rS6
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Só a partir da main
+        if: ${{ github.ref != 'refs/heads/main' }}
+        run: |
+          echo "Este workflow só publica a partir da main (recebi ${{ github.ref }})."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Rodar testes (jest)
+        run: npx jest --silent
+
+      # ---------- Migrações ----------
+      - name: Instalar Supabase CLI
+        if: ${{ inputs.migracoes || inputs.funcoes != '' }}
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Aplicar migrações
+        if: ${{ inputs.migracoes }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ] || [ -z "$SUPABASE_DB_PASSWORD" ]; then
+            echo "Faltam os segredos SUPABASE_ACCESS_TOKEN e/ou SUPABASE_DB_PASSWORD no GitHub."
+            exit 1
+          fi
+          supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+          supabase db push --linked --password "$SUPABASE_DB_PASSWORD"
+
+      # ---------- Funções ----------
+      - name: Publicar funções
+        if: ${{ inputs.funcoes != '' }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          FUNCOES: ${{ inputs.funcoes }}
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "Falta o segredo SUPABASE_ACCESS_TOKEN no GitHub."
+            exit 1
+          fi
+          # verify_jwt de cada função vem do supabase/config.toml
+          for f in $FUNCOES; do
+            if [ ! -d "supabase/functions/$f" ]; then
+              echo "Função '$f' não existe em supabase/functions."
+              exit 1
+            fi
+            supabase functions deploy "$f" --project-ref "$SUPABASE_PROJECT_REF" --use-api
+          done
+
+      # ---------- OTA ----------
+      - name: Conferir fingerprint contra a versão instalada
+        if: ${{ inputs.ota != 'nao' }}
+        env:
+          ESPERADO: ${{ inputs.runtime_esperado }}
+        run: |
+          ATUAL=$(npx expo-updates fingerprint:generate --platform android 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).hash))')
+          echo "Fingerprint atual:   $ATUAL"
+          echo "Fingerprint esperado: $ESPERADO"
+          if [ "$ATUAL" != "$ESPERADO" ]; then
+            echo "Não bate: a atualização não chegaria a ninguém. Nada foi publicado."
+            exit 1
+          fi
+
+      - name: Conferir que o app sabe onde está o servidor
+        if: ${{ inputs.ota != 'nao' }}
+        run: |
+          npx expo export --platform android --output-dir /tmp/export > /dev/null
+          if grep -rq "$EXPO_PUBLIC_SUPABASE_URL" /tmp/export && grep -rq "$EXPO_PUBLIC_SUPABASE_ANON_KEY" /tmp/export; then
+            echo "Bundle aponta para o servidor certo."
+          else
+            echo "O bundle não tem o endereço/chave do Supabase. Nada foi publicado."
+            exit 1
+          fi
+
+      - name: Configurar EAS
+        if: ${{ inputs.ota != 'nao' }}
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Conferir acesso ao EAS (ensaio)
+        if: ${{ inputs.ota == 'ensaio' }}
+        run: |
+          eas whoami
+          eas update:list --branch production --limit 1 --non-interactive || eas update:list --limit 1 --non-interactive
+
+      - name: Publicar OTA (production)
+        if: ${{ inputs.ota == 'publicar' }}
+        env:
+          MENSAGEM: ${{ inputs.mensagem }}
+        run: |
+          MSG="${MENSAGEM:-$(git log -1 --pretty=%s)}"
+          eas update --channel production --platform android --message "$MSG" --non-interactive

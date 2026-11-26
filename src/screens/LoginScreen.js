@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, ScrollView, Alert,
+  Keyboard, ScrollView, Alert,
   StatusBar, Modal, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -75,6 +75,27 @@ export default function LoginScreen({ navigation }) {
   const [modalEsqueciVisivel, setModalEsqueciVisivel] = useState(false);
   const [emailEsqueci, setEmailEsqueci] = useState('');
   const [enviandoEsqueci, setEnviandoEsqueci] = useState(false);
+
+  // Teclado na tela de entrada.
+  //
+  // Antes era um KeyboardAvoidingView. No Android (SDK 54, edge-to-edge) ele
+  // às vezes não devolvia o espaço quando o teclado era fechado pelo botão
+  // de voltar, e a rolagem ficava onde o teclado tinha deixado: a tela
+  // continuava "subida". Aqui o espaço do teclado é controlado à mão — entra
+  // quando o teclado abre, sai quando fecha — e, ao fechar, a tela volta
+  // sozinha para o topo, como estava antes de tocar no campo.
+  const [alturaTeclado, setAlturaTeclado] = useState(0);
+  const rolagemRef = useRef(null);
+  useEffect(() => {
+    const abriu = Keyboard.addListener('keyboardDidShow', (e) => {
+      setAlturaTeclado(e?.endCoordinates?.height || 0);
+    });
+    const fechou = Keyboard.addListener('keyboardDidHide', () => {
+      setAlturaTeclado(0);
+      rolagemRef.current?.scrollTo({ y: 0, animated: true });
+    });
+    return () => { abriu.remove(); fechou.remove(); };
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -210,11 +231,9 @@ export default function LoginScreen({ navigation }) {
         </View>
       </View>
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior="padding"
-      >
+      <View style={{ flex: 1, paddingBottom: alturaTeclado }}>
         <ScrollView
+          ref={rolagemRef}
           style={s.scroll}
           contentContainerStyle={s.scrollInner}
           keyboardShouldPersistTaps="handled"
@@ -307,7 +326,7 @@ export default function LoginScreen({ navigation }) {
             </Text>
           </View>
         </ScrollView>
-      </KeyboardAvoidingView>
+      </View>
 
       <Modal
         visible={modalEsqueciVisivel}

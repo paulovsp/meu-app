@@ -51,9 +51,9 @@ export const PASSOS_DEMONSTRACAO = [
   },
   {
     rota: 'Patients',
-    titulo: 'O Arquivo: analisantes e supervisionandos',
+    titulo: 'Clientes: analisantes e supervisionandos',
     texto:
-      'O Arquivo guarda os dois, em abas separadas. Ferenczi e Stekel aparecem nas duas: '
+      'Clientes guarda os dois, em abas separadas. Ferenczi e Stekel aparecem nas duas: '
       + 'estão em análise e em supervisão, em dias diferentes.\n\n'
       + 'Toque em qualquer ficha para ver o histórico completo da pessoa.',
   },

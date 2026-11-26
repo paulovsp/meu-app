@@ -10,11 +10,11 @@
 // versão Agenda o botão aparece com cadeado e explica como mudar de versão
 // (ver src/services/versao.js) — some não, pra pessoa saber que existe.
 //
-// A ordem é a da grade 2×2: Novo registro e Arquivo em cima, Relatórios e
+// A ordem é a da grade 2×2: Novo registro e Clientes em cima, Relatórios e
 // Busca Dr.Sig embaixo. A Busca saiu da aba Início e veio pra cá.
 export const CLINICA_BUTTONS = [
   { id: 'record',     icon: 'create-outline',        label: 'Novo registro', screen: 'AddRecord',  corBadge: '#447362', bloqueiaSemAssinatura: true, exigeArquivo: true },
-  { id: 'patients',   icon: 'folder-open-outline',   label: 'Arquivo',       screen: 'Patients',   corBadge: '#825F4D' },
+  { id: 'patients',   icon: 'folder-open-outline',   label: 'Clientes',      screen: 'Patients',   corBadge: '#825F4D' },
   { id: 'relatorios', icon: 'document-text-outline', label: 'Relatórios',    screen: 'Relatorios', corBadge: '#776746' },
   { id: 'busca',      icon: 'sparkles-outline',      label: 'Busca Dr.Sig',  screen: 'Busca',      corBadge: '#675A9A', exigeArquivo: true },
 ];

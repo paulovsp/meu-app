@@ -88,7 +88,7 @@ function AppStackNavigator() {
       <Stack.Screen
         name="Patients"
         component={AnalisantesScreen}
-        options={{ title: 'Arquivo' }}
+        options={{ title: 'Clientes' }}
       />
 
       <Stack.Screen

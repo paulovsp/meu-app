@@ -1,9 +1,9 @@
 import React, { useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Image } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Image, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import CabecalhoTela from '../components/CabecalhoTela';
-import SignatureScreen from 'react-native-signature-canvas';
+import SignatureScreen from '../components/QuadroAssinatura';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -149,7 +149,7 @@ export default function AssinaturaScreen() {
     <SafeAreaView style={s.container} edges={['bottom']}>
       <CabecalhoTela titulo="Assinatura" onVoltar={() => navigation.goBack()} />
       <Text style={s.dica}>
-        Desenhe sua assinatura com o dedo no espaço abaixo. Ela vai aparecer
+        Desenhe sua assinatura {Platform.OS === 'web' ? 'com o mouse' : 'com o dedo'} no espaço abaixo. Ela vai aparecer
         acima do seu nome nos recibos — não substitui o nome, CPF nem CRP
         impressos.
       </Text>

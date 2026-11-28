@@ -8,6 +8,7 @@ import {
   Image,
   TouchableOpacity,
   Alert,
+  Platform,
   useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,6 +19,7 @@ import { deleteRecord, getRecordById } from '../services/database';
 import { mensagemDeErro } from '../services/erros';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import CabecalhoTela from '../components/CabecalhoTela';
+import HtmlNoNavegador from '../web/HtmlNoNavegador';
 
 // ⚠️ NOVO: Labels de autor
 const AUTHOR_LABELS = {
@@ -68,6 +70,11 @@ export default function DetalheRegistroScreen() {
   };
 
   const abrirArquivo = async (uri, mime, nome) => {
+    // Versão de computador: o anexo abre numa aba nova do navegador.
+    if (Platform.OS === 'web') {
+      window.open(uri, '_blank', 'noopener');
+      return;
+    }
     try {
       const disponivel = await Sharing.isAvailableAsync();
       if (!disponivel) {
@@ -90,6 +97,42 @@ export default function DetalheRegistroScreen() {
     .replace(/\*\*([\s\S]+?)\*\*/g, '<b>$1</b>')
     .replace(/__([\s\S]+?)__/g, '<u>$1</u>')
     .replace(/_([\s\S]+?)_/g, '<i>$1</i>');
+
+  const documentoHtml = `
+                  <!DOCTYPE html>
+                  <html>
+                  <head>
+                    <meta charset="utf-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+                    <style>
+                      * { margin: 0; padding: 0; box-sizing: border-box; }
+                      body {
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+                        font-size: 16px;
+                        color: #302C28;
+                        line-height: 1.65;
+                        padding: 0;
+                        word-wrap: break-word;
+                        overflow-wrap: break-word;
+                        white-space: pre-wrap;
+                        -webkit-text-size-adjust: 100%;
+                      }
+                      p { margin-bottom: 10px; }
+                      b, strong { font-weight: 700; }
+                      i, em { font-style: italic; }
+                      u { text-decoration: underline; }
+                      s, strike { text-decoration: line-through; }
+                      ul, ol { padding-left: 24px; margin-bottom: 10px; }
+                      li { margin-bottom: 4px; line-height: 1.5; }
+                      br { line-height: 0.8; }
+                      span { font-size: 16px; color: #302C28; line-height: 1.65; }
+                    </style>
+                  </head>
+                  <body>
+                    ${conteudoHtml}
+                  </body>
+                  </html>
+                `;
 
   const injectedJS = `
     setTimeout(() => {
@@ -178,45 +221,12 @@ Este registro contém falas alternadas entre analista (A:) e analisante (P:).
             </View>
           )}
           <View style={styles.webviewContainer}>
+            {Platform.OS === 'web' ? (
+              <HtmlNoNavegador html={documentoHtml} />
+            ) : (
             <WebView
               originWhitelist={['*']}
-              source={{
-                html: `
-                  <!DOCTYPE html>
-                  <html>
-                  <head>
-                    <meta charset="utf-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-                    <style>
-                      * { margin: 0; padding: 0; box-sizing: border-box; }
-                      body {
-                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-                        font-size: 16px;
-                        color: #302C28;
-                        line-height: 1.65;
-                        padding: 0;
-                        word-wrap: break-word;
-                        overflow-wrap: break-word;
-                        white-space: pre-wrap;
-                        -webkit-text-size-adjust: 100%;
-                      }
-                      p { margin-bottom: 10px; }
-                      b, strong { font-weight: 700; }
-                      i, em { font-style: italic; }
-                      u { text-decoration: underline; }
-                      s, strike { text-decoration: line-through; }
-                      ul, ol { padding-left: 24px; margin-bottom: 10px; }
-                      li { margin-bottom: 4px; line-height: 1.5; }
-                      br { line-height: 0.8; }
-                      span { font-size: 16px; color: #302C28; line-height: 1.65; }
-                    </style>
-                  </head>
-                  <body>
-                    ${conteudoHtml}
-                  </body>
-                  </html>
-                `
-              }}
+              source={{ html: documentoHtml }}
               style={{ height: webViewHeight }}
               scrollEnabled={false}
               javaScriptEnabled={true}
@@ -229,6 +239,7 @@ Este registro contém falas alternadas entre analista (A:) e analisante (P:).
               }}
               showsVerticalScrollIndicator={false}
             />
+            )}
           </View>
         </View>
       ) : null}

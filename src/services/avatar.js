@@ -1,6 +1,19 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
+import { Platform } from 'react-native';
 import { supabase } from './supabase';
+
+// Lê a foto escolhida como bytes. No celular a foto é um arquivo do
+// aparelho; na versão de computador é um endereço do próprio navegador
+// (blob: ou data:), que se lê com fetch.
+async function lerFoto(uri) {
+  if (Platform.OS === 'web') {
+    const resposta = await fetch(uri);
+    return resposta.arrayBuffer();
+  }
+  const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+  return decode(base64);
+}
 
 /** Envia a foto de perfil pro Storage (bucket "avatars", sempre no path
  * "<user_id>/avatar.jpg" — cada profissional só pode escrever no próprio,
@@ -11,10 +24,10 @@ export async function enviarFotoPerfil(uri) {
   const userId = session.user.id;
   const path = `${userId}/avatar.jpg`;
 
-  const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+  const bytes = await lerFoto(uri);
   const { error: erroUpload } = await supabase.storage
     .from('avatars')
-    .upload(path, decode(base64), { contentType: 'image/jpeg', upsert: true });
+    .upload(path, bytes, { contentType: 'image/jpeg', upsert: true });
   if (erroUpload) throw erroUpload;
 
   const { data: pub } = supabase.storage.from('avatars').getPublicUrl(path);
@@ -40,10 +53,10 @@ export async function enviarFotoCapa(uri) {
   const userId = session.user.id;
   const path = `${userId}/capa.jpg`;
 
-  const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+  const bytes = await lerFoto(uri);
   const { error: erroUpload } = await supabase.storage
     .from('avatars')
-    .upload(path, decode(base64), { contentType: 'image/jpeg', upsert: true });
+    .upload(path, bytes, { contentType: 'image/jpeg', upsert: true });
   if (erroUpload) throw erroUpload;
 
   const { data: pub } = supabase.storage.from('avatars').getPublicUrl(path);

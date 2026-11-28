@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  Keyboard, ScrollView, Alert,
+  Keyboard, ScrollView, Alert, Platform,
   StatusBar, Modal, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -241,6 +241,7 @@ export default function LoginScreen({ navigation }) {
           <Text style={s.title}>Boas vindas!</Text>
           <Text style={s.subtitle}>Entre com seu e-mail e senha.</Text>
 
+          {Platform.OS !== 'web' && (<>
           <TouchableOpacity
             style={[s.btnDigital, entrandoComDigital && { opacity: 0.7 }]}
             onPress={handleEntrarComDigital}
@@ -252,6 +253,7 @@ export default function LoginScreen({ navigation }) {
             </Text>
           </TouchableOpacity>
           <Text style={s.ouTexto}>ou entre com e-mail e senha</Text>
+          </>)}
 
           <Text style={s.label}>E-mail</Text>
           <TextInput

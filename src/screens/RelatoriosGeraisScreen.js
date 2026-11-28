@@ -6,7 +6,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView,
-  ActivityIndicator, Alert, Share, KeyboardAvoidingView,
+  ActivityIndicator, Alert, KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -21,6 +21,7 @@ import {
   mascararDataBR, interpretarDataDigitada, dataBRParaISO, dataISOParaBR, dataParaISO,
 } from '../services/validacao';
 import { mensagemDeErro } from '../services/erros';
+import { compartilharTexto } from '../services/compartilhar';
 
 const COLORS = {
   bg: '#F7F5F0',
@@ -160,7 +161,7 @@ export default function RelatoriosGeraisScreen() {
   async function compartilhar() {
     if (!relatorio) return;
     try {
-      await Share.share({ message: montarTextoRelatorio(relatorio) });
+      await compartilharTexto(montarTextoRelatorio(relatorio));
     } catch (err) {
       Alert.alert('Não foi possível compartilhar', mensagemDeErro(err));
     }

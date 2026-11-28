@@ -17,7 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import CabecalhoTela from '../components/CabecalhoTela';
 import * as ImagePicker from 'expo-image-picker';
-import { isSupported as ocrSuportado, extractTextFromImage } from 'expo-text-extractor';
+import { isSupported as ocrSuportado, extractTextFromImage } from '../services/ocr';
 import {
   listarPacientes, addRecord, editRecord, getAppointmentByPatientAndDate,
 } from '../services/database';

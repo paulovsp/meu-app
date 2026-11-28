@@ -3,8 +3,7 @@
 // direto ao analisante (e cópia ao contador), via Edge Function
 // `enviar-recibo`. Nota: não gera PDF nenhum — manda só um resumo dos
 // dados pro contador, que emite a nota fiscal de verdade por fora do app.
-import * as Print from 'expo-print';
-import * as FileSystem from 'expo-file-system/legacy';
+import { htmlParaPdfBase64 } from './pdf';
 import { supabase } from './supabase';
 import { formatarMoeda } from './database';
 import { montarMensagemReciboPaciente, montarMensagemReciboContador, montarMensagemNotaContador } from './mensagens';
@@ -111,8 +110,7 @@ export async function emitirRecibo({ profissional, paciente, valor, periodo }) {
   }
 
   const html = gerarHtmlRecibo({ profissional, paciente, valor, periodo });
-  const { uri } = await Print.printToFileAsync({ html });
-  const pdfBase64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+  const pdfBase64 = await htmlParaPdfBase64(html);
 
   // Só o TEXTO vai; quem o transforma em HTML, e quem decide para quais
   // endereços o e-mail sai, é o servidor — a partir da ficha do analisante

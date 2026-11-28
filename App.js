@@ -1,6 +1,7 @@
 import 'react-native-gesture-handler';
 
 import React, { useEffect } from 'react';
+import { Platform, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import * as SplashScreen from 'expo-splash-screen';
@@ -10,6 +11,12 @@ import AppNavigator from './src/navigation/AppNavigator';
 import { navigationRef } from './src/navigation/navigationRef';
 import { AuthProvider } from './src/contexts/AuthContext';
 import LimiteDeErro from './src/components/LimiteDeErro';
+import { AlertaWebHost, instalarAlertaWeb } from './src/web/AlertaWeb';
+import { LARGURA_MAXIMA_WEB } from './src/web/larguraMaxima';
+import { papel } from './src/theme';
+
+// Só na versão de computador (no celular não faz nada).
+instalarAlertaWeb();
 
 // ─── Atualização OTA na PRIMEIRA abertura, não na segunda ───────────────
 //
@@ -64,10 +71,27 @@ export default function App() {
       <LimiteDeErro>
         <AuthProvider>
           <NavigationContainer ref={navigationRef}>
-            <AppNavigator />
+            {Platform.OS === 'web' ? (
+              // Computador: o app numa coluna central (ver larguraMaxima.js).
+              <View style={colunaWeb}>
+                <AppNavigator />
+              </View>
+            ) : (
+              <AppNavigator />
+            )}
           </NavigationContainer>
+          {Platform.OS === 'web' && <AlertaWebHost />}
         </AuthProvider>
       </LimiteDeErro>
     </SafeAreaProvider>
   );
 }
+
+const colunaWeb = {
+  flex: 1,
+  width: '100%',
+  maxWidth: LARGURA_MAXIMA_WEB,
+  alignSelf: 'center',
+  backgroundColor: papel.base,
+  overflow: 'hidden',
+};

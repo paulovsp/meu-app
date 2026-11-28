@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
   TextInput, Alert, ActivityIndicator, Image, Switch, Modal,
-  KeyboardAvoidingView, Share,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -15,6 +15,7 @@ import {
   filtrarRecebimentosMensais, calcularStatusGeralRecebimentos, getGanhosMensaisEstimados,
 } from '../services/database';
 import { getResumoAgendaHoje } from '../services/agendaResumo';
+import { compartilharTexto } from '../services/compartilhar';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -1261,7 +1262,7 @@ export default function PerfilScreen({ navigation }) {
                   <Text style={st.indicaCodigoRotulo}>Seu código</Text>
                   <TouchableOpacity
                     style={st.indicaCodigoCaixa}
-                    onPress={() => Share.share({ message: convite(indicacoes.codigo) })}
+                    onPress={() => compartilharTexto(convite(indicacoes.codigo))}
                   >
                     <Text style={st.indicaCodigo}>{indicacoes.codigo}</Text>
                     <Ionicons name="share-outline" size={20} color="#497363" />
@@ -1382,6 +1383,7 @@ export default function PerfilScreen({ navigation }) {
             </TouchableOpacity>
 
             <Text style={st.sectionTitle}>Segurança</Text>
+            {Platform.OS !== 'web' && (
             <View style={st.bioRow}>
               <View style={{ flex: 1 }}>
                 <Text style={st.bioLabel}>Entrar com digital</Text>
@@ -1401,6 +1403,7 @@ export default function PerfilScreen({ navigation }) {
                 />
               )}
             </View>
+            )}
 
             <TouchableOpacity style={st.trocarSenhaBtn} onPress={() => setModalSenhaVisivel(true)}>
               <Text style={st.trocarSenhaBtnText}>Alterar senha</Text>

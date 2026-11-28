@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView, Alert, Dimensions, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView, Alert, Dimensions, ActivityIndicator, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../services/supabase';
 import { excluirConta } from '../services/conta';
@@ -8,7 +8,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { desativarLoginBiometrico } from '../services/biometria';
 
 const { width: SW } = Dimensions.get('window');
-const PANEL_W = Math.round(SW * 0.78);
+// No computador a coluna é larga: o menu não passa de 360 px.
+const PANEL_W = Platform.OS === 'web' ? Math.min(360, Math.round(SW * 0.78)) : Math.round(SW * 0.78);
 
 export default function MenuLateral({ visible, onClose, navigation, clinicaButtons, adminButtons, contextual }) {
   const { sairLocalmente } = useAuth();

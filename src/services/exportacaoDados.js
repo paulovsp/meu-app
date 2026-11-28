@@ -5,7 +5,9 @@
 // nativa (mesmo mecanismo já usado em DetalheRegistroScreen.js pra anexos).
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import { Platform } from 'react-native';
 import { supabase } from './supabase';
+import { baixarNoNavegador } from './compartilhar';
 import { listarPacientes, getSessions, getRecords } from './database';
 import { hojeISO } from './validacao';
 
@@ -33,6 +35,12 @@ export async function exportarDadosUsuario() {
   };
 
   const nomeArquivo = `drsig-meus-dados-${hojeISO()}.json`;
+
+  // Versão de computador: o arquivo vai direto para a pasta Downloads.
+  if (Platform.OS === 'web') {
+    baixarNoNavegador(nomeArquivo, JSON.stringify(pacote, null, 2), 'application/json');
+    return nomeArquivo;
+  }
   const uri = `${FileSystem.documentDirectory}${nomeArquivo}`;
   await FileSystem.writeAsStringAsync(uri, JSON.stringify(pacote, null, 2));
 

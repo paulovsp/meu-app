@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, ScrollView, Alert,
-  StatusBar,
+  StatusBar, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
@@ -41,7 +41,7 @@ const ORIGENS_DE_CADASTRO = [
 
 function HeaderWave() {
   return (
-    <Svg width="100%" height={HEADER_H} style={StyleSheet.absoluteFill} viewBox="0 0 390 220">
+    <Svg width="100%" height={HEADER_H} style={StyleSheet.absoluteFill} viewBox="0 0 390 220" preserveAspectRatio={Platform.OS === 'web' ? 'none' : undefined}>
       <Defs>
         <LinearGradient id="g1" x1="0" y1="0" x2="1" y2="0">
           <Stop offset="0" stopColor={COLORS.accent} stopOpacity="1" />
